@@ -14,6 +14,7 @@
 #include <validation.h>
 #include <util.h>
 #include <chain.h>
+#include <chainparams.h>
 
 class Shards
 {
@@ -23,11 +24,16 @@ public:
     
     /**Specify the last block used to generate groups.
      */
-    Shards(const CBlockIndex* pblockindex){
+    Shards(const CBlockIndex* pblockindex, const CChainParams& chainParams){
         // iterate the previous 100 blocks and assign their miners to groups.
 //        for(){
             // in blockchain.cpp
             LogPrintf("block height is: %d \n", pblockindex->nHeight);
+            std::shared_ptr<CBlock> pblock = std::make_shared<CBlock>();
+            CBlock& block = *pblock;
+            ReadBlockFromDisk(block, pblockindex, chainParams.GetConsensus());
+            LogPrintf("coinbase tx : ");
+            
 //        }
     }    
 };
