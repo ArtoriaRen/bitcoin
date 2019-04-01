@@ -30,7 +30,6 @@ inline uint256 singleHash(const T1 pbegin, const T1 pend)
 }
 
 /** Compute the 256-bit hash of the concatenation of one object and a uint32_t number. */
-// TODO: test-two nodes should have the same hash output.
 template<typename T1>
 inline uint256 singleHash(const T1 p1begin, const T1 p1end,
                     const uint32_t num) {

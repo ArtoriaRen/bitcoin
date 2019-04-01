@@ -22,10 +22,10 @@
 
 
 bool cmpTxOut(CTxOut txOut1, CTxOut txOut2 ){
-  return txOut1.nValue < txOut2.nValue; 
+    return txOut1.nValue < txOut2.nValue; 
 }
 
-Shards::Shards(const CBlockIndex* pblockindex, const CChainParams& chainParams) {
+Shards::Shards(uint8_t groups, const CBlockIndex* pblockindex, const CChainParams& chainParams) {
     LogPrintf("block height is: %d \n", pblockindex->nHeight);
     std::shared_ptr<CBlock> pblock = std::make_shared<CBlock>();
     CBlock& block = *pblock;
@@ -42,13 +42,19 @@ Shards::Shards(const CBlockIndex* pblockindex, const CChainParams& chainParams) 
 	LogPrintf("get address from scriptPubKey failed!");
     } else {
 	std::string strAddress =  EncodeDestination(address);
-	LogPrintf("coinbase tx receiver account: %s, sha(address || nonce): %d\n", 
+	arith_uint256 hashRes = UintToArith256(singleHash(strAddress.begin(), strAddress.end(), randNum));
+	// compute the ramainder of divided by the value of groups.
+	arith_uint256 groupId = hashRes - (hashRes/groups) * groups;	
+	
+	LogPrintf("coinbase tx receiver account: %s, sha(address || nonce): %d, "
+		"assign to group: %d\n", 
 		strAddress, 
-		singleHash(strAddress.begin(), strAddress.end(), randNum).GetHex()
-		);
+		hashRes.GetHex(),
+		groupId.GetHex()
+	);
     }
-
-  
+    
+    
     
     //        }
 }

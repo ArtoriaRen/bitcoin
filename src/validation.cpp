@@ -2185,7 +2185,9 @@ void static UpdateTip(const CBlockIndex *pindexNew, const CChainParams& chainPar
     if (!warningMessages.empty())
         LogPrintf(" warning='%s'", boost::algorithm::join(warningMessages, ", "));
     LogPrintf("\n");
-    Shards shards = Shards(pindexNew, chainParams);
+
+    // Shard nodes into 100 groups.
+    Shards shards = Shards(100, pindexNew, chainParams);
 
 }
 

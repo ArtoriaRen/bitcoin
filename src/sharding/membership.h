@@ -29,7 +29,7 @@ public:
     
     /**Specify the last block used to generate groups.
      */
-    Shards(const CBlockIndex* pblockindex, const CChainParams& chainParams);
+    Shards(uint8_t groups, const CBlockIndex* pblockindex, const CChainParams& chainParams);
     ~Shards(){
     }
 };
