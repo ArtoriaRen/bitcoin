@@ -11,6 +11,7 @@
  */
 
 #include <sharding/membership.h>
+#include <sharding/sha256.h>
 #include <script/standard.h>
 #include <pubkey.h>
 #include <uint256.h>
@@ -25,21 +26,29 @@ bool cmpTxOut(CTxOut txOut1, CTxOut txOut2 ){
 }
 
 Shards::Shards(const CBlockIndex* pblockindex, const CChainParams& chainParams) {
-    // iterate the previous 100 blocks and assign their miners to groups.
-    //        for(){
     LogPrintf("block height is: %d \n", pblockindex->nHeight);
     std::shared_ptr<CBlock> pblock = std::make_shared<CBlock>();
     CBlock& block = *pblock;
+    uint32_t randNum{block.nNonce};
+    LogPrintf("block nonce is: %d \n", randNum);
+    // iterate the previous 100 blocks and assign their miners to groups.
+    //        for(){
     ReadBlockFromDisk(block, pblockindex, chainParams.GetConsensus());
     CTransactionRef coinbaseTx = block.vtx[0];
-    LogPrintf("Is coinbase tx : %d , hash= %s\n", coinbaseTx->IsCoinBase(), coinbaseTx->GetHash().ToString());
+    LogPrintf("Is coinbase tx : %d , hash= %s\n", coinbaseTx->IsCoinBase(), coinbaseTx->GetHash().GetHex());
     CTxDestination address;
     std::vector<CTxOut>::const_iterator maxTxOut(std::max_element(coinbaseTx->vout.begin(), coinbaseTx->vout.end(), cmpTxOut)); 
     if (!ExtractDestination(maxTxOut->scriptPubKey, address)){
 	LogPrintf("get address from scriptPubKey failed!");
     } else {
-	LogPrintf("coinbase tx receiver account: %s\n", EncodeDestination(address));
+	std::string strAddress =  EncodeDestination(address);
+	LogPrintf("coinbase tx receiver account: %s, sha(address || nonce): %d\n", 
+		strAddress, 
+		singleHash(strAddress.begin(), strAddress.end(), randNum).GetHex()
+		);
     }
+
+  
     
     //        }
 }

@@ -21,9 +21,11 @@
 
 class Shards
 {
-public:
+private:
     // Map group ids to the members in the group.
-//    unordered_map<int, vector<"?coninbase tx receiver's adress hash">> mapGroupMember;
+    std::unordered_map<int, std::vector<std::string>> mapGroupMember;
+
+public:
     
     /**Specify the last block used to generate groups.
      */
