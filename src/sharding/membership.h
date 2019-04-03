@@ -23,7 +23,7 @@ class Shards
 {
 private:
     // Map group ids to the members in the group.
-    std::unordered_map<int, std::vector<std::string>> mapGroupMember;
+    std::unordered_map<uint32_t, std::vector<std::string>> mapGroupMember;
 
 public:
     
@@ -32,6 +32,8 @@ public:
     Shards(uint8_t groups, const CBlockIndex* pBlockIndex, const CChainParams& chainParams);
     ~Shards(){
     }
+    // handler function for rpc-client's getGroups command.
+    void getGroups();
 };
 
 
