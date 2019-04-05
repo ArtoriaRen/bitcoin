@@ -2187,7 +2187,7 @@ void static UpdateTip(const CBlockIndex *pindexNew, const CChainParams& chainPar
     LogPrintf("\n");
 
     // Shard nodes into 100 groups.
-    Shards shards = Shards(100, pindexNew, chainParams);
+    Shards shards(100, pindexNew, chainParams);
 
 }
 

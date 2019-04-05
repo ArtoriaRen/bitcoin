@@ -25,7 +25,8 @@ bool cmpTxOut(CTxOut txOut1, CTxOut txOut2 ){
     return txOut1.nValue < txOut2.nValue; 
 }
 
-Shards::Shards(uint8_t groups, const CBlockIndex* pBlockIndex, const CChainParams& chainParams):mapGroupMember(){
+Shards::Shards(uint8_t groups, const CBlockIndex* pBlockIndex, const CChainParams& chainParams){
+    assert(mapGroupMember.size() == 0);
     CBlock block;
     uint32_t randNum{block.nNonce};
     LogPrintf("last block nonce is (used as random number for sharding): %d \n", randNum);
