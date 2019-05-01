@@ -276,7 +276,7 @@ class CRegTestParams : public CChainParams {
 public:
     CRegTestParams() {
         strNetworkID = "regtest";
-        consensus.nSubsidyHalvingInterval = 150;
+        consensus.nSubsidyHalvingInterval = INT_MAX; // disable reward halving
         consensus.BIP16Height = 0; // always enforce P2SH BIP16 on regtest
         consensus.BIP34Height = 100000000; // BIP34 has not activated on regtest (far in the future so block v1 are not rejected in tests)
         consensus.BIP34Hash = uint256();
@@ -312,7 +312,7 @@ public:
         nDefaultPort = 18444;
         nPruneAfterHeight = 1000;
 
-        genesis = CreateGenesisBlock(1296688602, 2, 0x207fffff, 1, 50 * COIN);
+        genesis = CreateGenesisBlock(1296688602, 2, 0x207fffff, 1, COIN); // set reward to be one coin so we can use it as block count.
         consensus.hashGenesisBlock = genesis.GetHash();
         assert(consensus.hashGenesisBlock == uint256S("0x0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"));
         assert(genesis.hashMerkleRoot == uint256S("0x4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
