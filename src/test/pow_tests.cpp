@@ -83,4 +83,15 @@ BOOST_AUTO_TEST_CASE(GetBlockProofEquivalentTime_test)
     }
 }
 
+/* Test HPAM target calculation */
+BOOST_AUTO_TEST_CASE(get_hpam_target)
+{
+    const auto chainParams = CreateChainParams(CBaseChainParams::REGTEST);
+    const std::string hash_str("3fffff8000000000000000000000000000000000000000000000000000000001");
+    const uint256 hash = uint256S(hash_str); 
+    unsigned int nNonce = 7;
+    unsigned int nBits = 545259519; 
+    BOOST_CHECK_EQUAL(CheckProofOfWork(hash, nNonce, nBits, chainParams->GetConsensus()), false);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

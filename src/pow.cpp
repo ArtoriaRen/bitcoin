@@ -77,10 +77,15 @@ bool CheckProofOfWork(uint256 hash, unsigned int nNonce, unsigned int nBits, con
     bool fOverflow;
     arith_uint256 bnTarget, hpamTarget;
     arith_uint256 steps;
-    const uint64_t One_64bits = 1; 
-    const arith_uint256 One_256bits(One_64bits); 
+    unsigned int firstBit = 0;
 
     bnTarget.SetCompact(nBits, &fNegative, &fOverflow);
+    // find the first bit of value 1
+    for(int i = 0; i< 32 && firstBit == 0; i++){
+	if((nNonce & 1<< (31-i)) != 0){
+	    firstBit = 31 - i;
+	}
+    }
 
     // Check range
     if (fNegative || bnTarget == 0 || fOverflow || bnTarget > UintToArith256(params.powLimit))
@@ -88,8 +93,8 @@ bool CheckProofOfWork(uint256 hash, unsigned int nNonce, unsigned int nBits, con
 
     // Check proof of work matches claimed amount
     // calculate HPAM target
-    steps = (One_256bits << 255)/bnTarget*nNonce;
-    hpamTarget = bnTarget/steps;
+    hpamTarget = bnTarget/(1 + (bnTarget >> (256 - firstBit))*(nNonce >> (firstBit)));//+1 to avoid divided by 0; also convert floor to ceilling.
+    std::cout << "firstBit = " << firstBit  <<", bnTarget = " << bnTarget.ToString() << ", Nonce = " << nNonce << ", nBits=" << nBits << ", hpamTarget = "  << hpamTarget.ToString() <<std::endl;
     if (UintToArith256(hash) > hpamTarget)
         return false;
 
