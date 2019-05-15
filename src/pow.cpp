@@ -10,6 +10,8 @@
 #include <primitives/block.h>
 #include <uint256.h>
 
+#include "helper/colorPrint.h"
+
 unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params& params)
 {
     assert(pindexLast != nullptr);
@@ -71,14 +73,13 @@ unsigned int CalculateNextWorkRequired(const CBlockIndex* pindexLast, int64_t nF
     return bnNew.GetCompact();
 }
 
-bool CheckProofOfWork(uint256 hash, unsigned int nNonce, unsigned int nBits, const Consensus::Params& params)
+bool CheckProofOfWork(uint256 hash, uint32_t nNonce, unsigned int nBits, const Consensus::Params& params)
 {
     bool fNegative;
     bool fOverflow;
     arith_uint256 bnTarget, hpamTarget;
-    arith_uint256 steps;
     unsigned int firstBit = 0;
-
+    
     bnTarget.SetCompact(nBits, &fNegative, &fOverflow);
     // find the first bit of value 1
     for(int i = 0; i< 32 && firstBit == 0; i++){
@@ -93,10 +94,13 @@ bool CheckProofOfWork(uint256 hash, unsigned int nNonce, unsigned int nBits, con
 
     // Check proof of work matches claimed amount
     // calculate HPAM target
-    hpamTarget = bnTarget/(1 + (bnTarget >> (256 - firstBit))*(nNonce >> (firstBit)));//+1 to avoid divided by 0; also convert floor to ceilling.
-    std::cout << "firstBit = " << firstBit  <<", bnTarget = " << bnTarget.ToString() << ", Nonce = " << nNonce << ", nBits=" << nBits << ", hpamTarget = "  << hpamTarget.ToString() <<std::endl;
-    if (UintToArith256(hash) > hpamTarget)
+    hpamTarget = bnTarget/(1 + (bnTarget >> (256 - firstBit))*(nNonce >> firstBit));//+1 to avoid divided by 0; also convert floor to ceilling.
+    std::cout << "firstBit = " << firstBit  <<", bnTarget = " << bnTarget.ToString() << ", Nonce = " << nNonce << ", nBits=" << nBits << ", hpamTarget = "  << hpamTarget.ToString() << ", 256 ... = " << ((256 - firstBit)*(nNonce >> firstBit)) << ", bnTarget... = " << (bnTarget >> ((256 - firstBit)*(nNonce >> firstBit))).ToString() <<std::endl;
+    if (UintToArith256(hash) > hpamTarget){
+    	std::cout<< "invalid header hash = " << hash.ToString() <<std::endl;
         return false;
+    }
 
+    std::cout<< "valid header hash = " << hash.ToString() <<std::endl;
     return true;
 }

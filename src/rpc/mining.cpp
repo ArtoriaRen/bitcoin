@@ -28,6 +28,7 @@
 
 #include <memory>
 #include <stdint.h>
+#include "helper/colorPrint.h"
 
 unsigned int ParseConfirmTarget(const UniValue& value)
 {
@@ -126,8 +127,10 @@ UniValue generateBlocks(std::shared_ptr<CReserveScript> coinbaseScript, int nGen
             LOCK(cs_main);
             IncrementExtraNonce(pblock, chainActive.Tip(), nExtraNonce);
         }
+	std::cout << "\ngenerateBlocks API, begin with nonce = " << pblock->nNonce << std::endl;
         while (nMaxTries > 0 && pblock->nNonce < nInnerLoopCount && !CheckProofOfWork(pblock->GetHash(), pblock->nNonce, pblock->nBits, Params().GetConsensus())) {
             ++pblock->nNonce;
+	    std::cout<< "nonce = " << pblock->nNonce << std::endl;
             --nMaxTries;
         }
         if (nMaxTries == 0) {
@@ -717,13 +720,11 @@ UniValue submitblock(const JSONRPCRequest& request)
             + HelpExampleRpc("submitblock", "\"mydata\"")
         );
     }
-
     std::shared_ptr<CBlock> blockptr = std::make_shared<CBlock>();
     CBlock& block = *blockptr;
     if (!DecodeHexBlk(block, request.params[0].get_str())) {
         throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "Block decode failed");
     }
-
     if (block.vtx.empty() || !block.vtx[0]->IsCoinBase()) {
         throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "Block does not start with a coinbase");
     }
