@@ -3404,7 +3404,8 @@ UniValue generate(const JSONRPCRequest& request)
 		"\nMine up to nblocks blocks immediately (before the RPC call returns) to an address in the wallet.\n"
 		"\nArguments:\n"
 		"1. nblocks      (numeric, required) How many blocks are generated immediately.\n"
-		"2. maxtries     (numeric, optional) How many iterations to try (default = 1000000).\n"
+	        "2. nsleep       (numeric, optional) The amount of time in milliseconds to sleep after incrementing a nonce. This is used for regtest."
+		"3. maxtries     (numeric, optional) How many iterations to try (default = 1000000).\n"
 		"\nResult:\n"
 		"[ blockhashes ]     (array) hashes of blocks generated\n"
 		"\nExamples:\n"
@@ -3414,9 +3415,13 @@ UniValue generate(const JSONRPCRequest& request)
     }
     
     int num_generate = request.params[0].get_int();
+    int nSleep = 0;
+    if (!request.params[1].isNull()){
+	nSleep = request.params[1].get_int();
+    }
     uint64_t max_tries = 1000000;
-    if (!request.params[1].isNull()) {
-        max_tries = request.params[1].get_int();
+    if (!request.params[2].isNull()) {
+        max_tries = request.params[2].get_int();
     }
     
     std::shared_ptr<CReserveScript> coinbase_script;
@@ -3432,7 +3437,7 @@ UniValue generate(const JSONRPCRequest& request)
         throw JSONRPCError(RPC_INTERNAL_ERROR, "No coinbase script available");
     }
     
-    return generateBlocks(coinbase_script, num_generate, max_tries, true);
+    return generateBlocks(coinbase_script, num_generate, max_tries, true, nSleep);
 }
 
 UniValue rescanblockchain(const JSONRPCRequest& request)

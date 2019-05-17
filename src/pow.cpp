@@ -9,6 +9,7 @@
 #include <chain.h>
 #include <primitives/block.h>
 #include <uint256.h>
+#include <util.h>
 
 #include "helper/colorPrint.h"
 
@@ -16,7 +17,7 @@ unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHead
 {
     assert(pindexLast != nullptr);
     unsigned int nProofOfWorkLimit = UintToArith256(params.powLimit).GetCompact();
-
+    
     // Only change once per difficulty adjustment interval
     if ((pindexLast->nHeight+1) % params.DifficultyAdjustmentInterval() != 0)
     {
@@ -38,13 +39,14 @@ unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHead
         }
         return pindexLast->nBits;
     }
-
+    
+    LogPrintf("retarget block height = %d \n", pindexLast->nHeight+1);
     // Go back by what we want to be 14 days worth of blocks
     int nHeightFirst = pindexLast->nHeight - (params.DifficultyAdjustmentInterval()-1);
     assert(nHeightFirst >= 0);
     const CBlockIndex* pindexFirst = pindexLast->GetAncestor(nHeightFirst);
     assert(pindexFirst);
-
+    
     return CalculateNextWorkRequired(pindexLast, pindexFirst->GetBlockTime(), params);
 }
 
@@ -52,24 +54,25 @@ unsigned int CalculateNextWorkRequired(const CBlockIndex* pindexLast, int64_t nF
 {
     if (params.fPowNoRetargeting)
         return pindexLast->nBits;
-
+    
     // Limit adjustment step
     int64_t nActualTimespan = pindexLast->GetBlockTime() - nFirstBlockTime;
     if (nActualTimespan < params.nPowTargetTimespan/4)
         nActualTimespan = params.nPowTargetTimespan/4;
     if (nActualTimespan > params.nPowTargetTimespan*4)
         nActualTimespan = params.nPowTargetTimespan*4;
-
+    
     // Retarget
     const arith_uint256 bnPowLimit = UintToArith256(params.powLimit);
     arith_uint256 bnNew;
     bnNew.SetCompact(pindexLast->nBits);
     bnNew *= nActualTimespan;
     bnNew /= params.nPowTargetTimespan;
-
+    
     if (bnNew > bnPowLimit)
         bnNew = bnPowLimit;
-
+    LogPrintf("Newtarget= %s \n", bnNew.ToString());
+    
     return bnNew.GetCompact();
 }
 
@@ -87,11 +90,11 @@ bool CheckProofOfWork(uint256 hash, uint32_t nNonce, unsigned int nBits, const C
 	    firstBit = 31 - i;
 	}
     }
-
+    
     // Check range
     if (fNegative || bnTarget == 0 || fOverflow || bnTarget > UintToArith256(params.powLimit))
         return false;
-
+    
     // Check proof of work matches claimed amount
     // calculate HPAM target
     hpamTarget = bnTarget/(1 + (bnTarget >> (256 - firstBit))*(nNonce >> firstBit));//+1 to avoid divided by 0; also convert floor to ceilling.
@@ -100,7 +103,7 @@ bool CheckProofOfWork(uint256 hash, uint32_t nNonce, unsigned int nBits, const C
     	std::cout<< "invalid header hash = " << hash.ToString() <<std::endl;
         return false;
     }
-
+    
     std::cout<< "valid header hash = " << hash.ToString() <<std::endl;
     return true;
 }

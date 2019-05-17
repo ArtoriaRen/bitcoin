@@ -104,11 +104,12 @@ UniValue getnetworkhashps(const JSONRPCRequest& request)
     return GetNetworkHashPS(!request.params[0].isNull() ? request.params[0].get_int() : 120, !request.params[1].isNull() ? request.params[1].get_int() : -1);
 }
 
-UniValue generateBlocks(std::shared_ptr<CReserveScript> coinbaseScript, int nGenerate, uint64_t nMaxTries, bool keepScript)
+UniValue generateBlocks(std::shared_ptr<CReserveScript> coinbaseScript, int nGenerate, uint64_t nMaxTries, bool keepScript, int nSleep)
 {
     static const int nInnerLoopCount = 0x10000;
     int nHeightEnd = 0;
     int nHeight = 0;
+    time_t begin, end;
 
     {   // Don't keep cs_main locked
         LOCK(cs_main);
@@ -128,11 +129,14 @@ UniValue generateBlocks(std::shared_ptr<CReserveScript> coinbaseScript, int nGen
             IncrementExtraNonce(pblock, chainActive.Tip(), nExtraNonce);
         }
 	std::cout << "\ngenerateBlocks API, begin with nonce = " << pblock->nNonce << std::endl;
+	time(&begin);
         while (nMaxTries > 0 && pblock->nNonce < nInnerLoopCount && !CheckProofOfWork(pblock->GetHash(), pblock->nNonce, pblock->nBits, Params().GetConsensus())) {
             ++pblock->nNonce;
 	    std::cout<< "nonce = " << pblock->nNonce << std::endl;
             --nMaxTries;
+	    std::this_thread::sleep_for(std::chrono::milliseconds(nSleep)); // sleep for a while so that this process does not hog the cpu.
         }
+	time(&end);
         if (nMaxTries == 0) {
             break;
         }
@@ -150,6 +154,7 @@ UniValue generateBlocks(std::shared_ptr<CReserveScript> coinbaseScript, int nGen
         {
             coinbaseScript->KeepScript();
         }
+	std::cout<< RED << "hash rate = " << pblock->nNonce / difftime(end, begin) << " hashes/sec" << RESET << std::endl;
     }
     return blockHashes;
 }
@@ -163,7 +168,8 @@ UniValue generatetoaddress(const JSONRPCRequest& request)
             "\nArguments:\n"
             "1. nblocks      (numeric, required) How many blocks are generated immediately.\n"
             "2. address      (string, required) The address to send the newly generated bitcoin to.\n"
-            "3. maxtries     (numeric, optional) How many iterations to try (default = 1000000).\n"
+	    "3. nsleep       (numeric, optional) The amount of time in milliseconds to sleep after incrementing a nonce. This is used for regtest."
+            "4. maxtries     (numeric, optional) How many iterations to try (default = 1000000).\n"
             "\nResult:\n"
             "[ blockhashes ]     (array) hashes of blocks generated\n"
             "\nExamples:\n"
@@ -172,9 +178,13 @@ UniValue generatetoaddress(const JSONRPCRequest& request)
         );
 
     int nGenerate = request.params[0].get_int();
+    int nSleep = 0;
+    if (!request.params[2].isNull()){
+	nSleep = request.params[2].get_int();
+    }
     uint64_t nMaxTries = 1000000;
-    if (!request.params[2].isNull()) {
-        nMaxTries = request.params[2].get_int();
+    if (!request.params[3].isNull()) {
+        nMaxTries = request.params[3].get_int();
     }
 
     CTxDestination destination = DecodeDestination(request.params[1].get_str());
@@ -185,7 +195,7 @@ UniValue generatetoaddress(const JSONRPCRequest& request)
     std::shared_ptr<CReserveScript> coinbaseScript = std::make_shared<CReserveScript>();
     coinbaseScript->reserveScript = GetScriptForDestination(destination);
 
-    return generateBlocks(coinbaseScript, nGenerate, nMaxTries, false);
+    return generateBlocks(coinbaseScript, nGenerate, nMaxTries, false, nSleep);
 }
 
 UniValue getmininginfo(const JSONRPCRequest& request)
