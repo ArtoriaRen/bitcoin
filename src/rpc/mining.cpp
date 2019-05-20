@@ -28,6 +28,7 @@
 
 #include <memory>
 #include <stdint.h>
+#include <util.h>
 #include "helper/colorPrint.h"
 
 unsigned int ParseConfirmTarget(const UniValue& value)
@@ -128,18 +129,25 @@ UniValue generateBlocks(std::shared_ptr<CReserveScript> coinbaseScript, int nGen
             LOCK(cs_main);
             IncrementExtraNonce(pblock, chainActive.Tip(), nExtraNonce);
         }
-	std::cout << "\ngenerateBlocks API, begin with nonce = " << pblock->nNonce << std::endl;
 	time(&begin);
-        while (nMaxTries > 0 && pblock->nNonce < nInnerLoopCount && !CheckProofOfWork(pblock->GetHash(), pblock->nNonce, pblock->nBits, Params().GetConsensus())) {
+        while (nMaxTries > 0 && 
+		pblock->nNonce < nInnerLoopCount && 
+		!CheckProofOfWork(pblock->GetHash(), pblock->nNonce, pblock->nBits, Params().GetConsensus()) && 
+		chainActive.Height() == nHeight) {
             ++pblock->nNonce;
-	    std::cout<< "nonce = " << pblock->nNonce << std::endl;
             --nMaxTries;
 	    std::this_thread::sleep_for(std::chrono::milliseconds(nSleep)); // sleep for a while so that this process does not hog the cpu.
         }
 	time(&end);
         if (nMaxTries == 0) {
+	    LogPrintf("reach nMaxTries. \n");
             break;
         }
+
+	if (chainActive.Height() != nHeight){
+	    LogPrintf("received new blocks from other nodes. waste work! \n");
+	}
+	    
         if (pblock->nNonce == nInnerLoopCount) {
             continue;
         }
@@ -154,7 +162,7 @@ UniValue generateBlocks(std::shared_ptr<CReserveScript> coinbaseScript, int nGen
         {
             coinbaseScript->KeepScript();
         }
-	std::cout<< RED << "hash rate = " << pblock->nNonce / difftime(end, begin) << " hashes/sec" << RESET << std::endl;
+	LogPrintf("hash rate = %d  hashes/sec \n",  pblock->nNonce/difftime(end, begin));
     }
     return blockHashes;
 }

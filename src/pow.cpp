@@ -95,15 +95,22 @@ bool CheckProofOfWork(uint256 hash, uint32_t nNonce, unsigned int nBits, const C
     if (fNegative || bnTarget == 0 || fOverflow || bnTarget > UintToArith256(params.powLimit))
         return false;
     
+#ifdef HPAM
     // Check proof of work matches claimed amount
     // calculate HPAM target
     hpamTarget = bnTarget/(1 + (bnTarget >> (256 - firstBit))*(nNonce >> firstBit));//+1 to avoid divided by 0; also convert floor to ceilling.
     std::cout << "firstBit = " << firstBit  <<", bnTarget = " << bnTarget.ToString() << ", Nonce = " << nNonce << ", nBits=" << nBits << ", hpamTarget = "  << hpamTarget.ToString() << ", 256 ... = " << ((256 - firstBit)*(nNonce >> firstBit)) << ", bnTarget... = " << (bnTarget >> ((256 - firstBit)*(nNonce >> firstBit))).ToString() <<std::endl;
     if (UintToArith256(hash) > hpamTarget){
-    	std::cout<< "invalid header hash = " << hash.ToString() <<std::endl;
+//    	std::cout<< "invalid header hash = " << hash.ToString() <<std::endl;
         return false;
     }
+
+#else 
+   if(UintToArith256(hash) > bnTarget){
+       return false;
+   } 
     
+#endif
     std::cout<< "valid header hash = " << hash.ToString() <<std::endl;
     return true;
 }
