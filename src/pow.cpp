@@ -81,25 +81,32 @@ bool CheckProofOfWork(uint256 hash, uint32_t nNonce, unsigned int nBits, const C
     bool fNegative;
     bool fOverflow;
     arith_uint256 bnTarget, hpamTarget;
-    unsigned int firstBit = 0;
+    unsigned int firstBit = 0, firstBitBnTarget = 0; 
+    uint64_t difficulty = 0; // may have to use arith_uint256 in main net.
     
     bnTarget.SetCompact(nBits, &fNegative, &fOverflow);
-    // find the first bit of value 1
-    for(int i = 0; i< 32 && firstBit == 0; i++){
-	if((nNonce & 1<< (31-i)) != 0){
-	    firstBit = 31 - i;
-	}
-    }
     
     // Check range
     if (fNegative || bnTarget == 0 || fOverflow || bnTarget > UintToArith256(params.powLimit))
         return false;
     
+    // find the first non-zero bit 
+    for(int i = 0; i< 32 && firstBit == 0; i++){
+	if((nNonce & 1<< (31-i)) != 0){
+	    firstBit = 31 - i;
+	}
+    }
+
+
+    //firts
+    firstBitBnTarget = bnTarget.bits(); 
+    difficulty = 1 << (256 - firstBitBnTarget);
 #ifdef HPAM
     // Check proof of work matches claimed amount
     // calculate HPAM target
-    hpamTarget = bnTarget/(1 + (bnTarget >> (256 - firstBit))*(nNonce >> firstBit));//+1 to avoid divided by 0; also convert floor to ceilling.
-    std::cout << "firstBit = " << firstBit  <<", bnTarget = " << bnTarget.ToString() << ", Nonce = " << nNonce << ", nBits=" << nBits << ", hpamTarget = "  << hpamTarget.ToString() << ", 256 ... = " << ((256 - firstBit)*(nNonce >> firstBit)) << ", bnTarget... = " << (bnTarget >> ((256 - firstBit)*(nNonce >> firstBit))).ToString() <<std::endl;
+    
+    hpamTarget = bnTarget/(1 + (nNonce/difficulty >> 1));//+1 to avoid divided by 0; The first 2*difficulty blocks are of original difficulty.
+    LogPrintf("nonce = %d, bnTarget = %s, firstBitBnTarget = %d, difficulty = %d, hpamTarget = %s \n", nNonce, bnTarget.ToString(), firstBitBnTarget, difficulty, hpamTarget.ToString());
     if (UintToArith256(hash) > hpamTarget){
 //    	std::cout<< "invalid header hash = " << hash.ToString() <<std::endl;
         return false;
@@ -111,6 +118,6 @@ bool CheckProofOfWork(uint256 hash, uint32_t nNonce, unsigned int nBits, const C
    } 
     
 #endif
-    std::cout<< "valid header hash = " << hash.ToString() <<std::endl;
+    LogPrintf("valid header hash = %s", hash.ToString());
     return true;
 }
