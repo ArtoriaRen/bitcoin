@@ -118,6 +118,6 @@ bool CheckProofOfWork(uint256 hash, uint32_t nNonce, unsigned int nBits, const C
    } 
     
 #endif
-    LogPrintf("valid header hash = %s", hash.ToString());
+    LogPrintf("valid header hash = %s \n", hash.ToString());
     return true;
 }

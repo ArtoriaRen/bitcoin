@@ -137,7 +137,7 @@ UniValue generateBlocks(std::shared_ptr<CReserveScript> coinbaseScript, int nGen
 		chainActive.Height() == nHeight) {
             ++pblock->nNonce;
             --nMaxTries;
-	    std::this_thread::sleep_for(std::chrono::milliseconds(nSleep)); // sleep for a while so that this process does not hog the cpu.
+	    std::this_thread::sleep_for(std::chrono::microseconds(nSleep)); // sleep for a while so that this process does not hog the cpu.
         }
 	time(&end);
         if (nMaxTries == 0) {
