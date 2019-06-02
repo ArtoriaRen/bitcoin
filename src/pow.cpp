@@ -106,7 +106,7 @@ bool CheckProofOfWork(uint256 hash, uint32_t nNonce, unsigned int nBits, const C
     // calculate HPAM target
     
     hpamTarget = bnTarget/(1 + (nNonce/difficulty));//+1 to avoid divided by 0; The first 1*difficulty blocks are of original difficulty.
-    LogPrintf("nonce = %d, bnTarget = %s, firstBitBnTarget = %d, difficulty = %d, hpamTarget = %s \n", nNonce, bnTarget.ToString(), firstBitBnTarget, difficulty, hpamTarget.ToString());
+//    LogPrintf("nonce = %d, bnTarget = %s, firstBitBnTarget = %d, difficulty = %d, hpamTarget = %s \n", nNonce, bnTarget.ToString(), firstBitBnTarget, difficulty, hpamTarget.ToString());
     if (UintToArith256(hash) > hpamTarget){
 //    	std::cout<< "invalid header hash = " << hash.ToString() <<std::endl;
         return false;

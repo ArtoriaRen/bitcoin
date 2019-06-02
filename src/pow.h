@@ -5,7 +5,7 @@
 
 #ifndef BITCOIN_POW_H
 #define BITCOIN_POW_H
-#define HPAM
+//#define HPAM
 #include <consensus/params.h>
 
 #include <stdint.h>
