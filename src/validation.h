@@ -30,6 +30,8 @@
 
 #include <atomic>
 
+#include <pbft/pbft.h>
+
 class CBlockIndex;
 class CBlockTreeDB;
 class CChainParams;
@@ -190,6 +192,9 @@ extern arith_uint256 nMinimumChainWork;
 
 /** Best header we've seen so far (used for getheaders queries' starting points). */
 extern CBlockIndex *pindexBestHeader;
+
+/** pbft object*/
+extern CPbft pbftObject;
 
 /** Minimum disk space required - used in CheckDiskSpace() */
 static const uint64_t nMinDiskSpace = 52428800;
