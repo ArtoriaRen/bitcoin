@@ -14,6 +14,8 @@
 
 #include <vector>
 
+#include <netbase.h>
+
 /**
  * Maximum amount of time that a block timestamp is allowed to exceed the
  * current network-adjusted time before the block will be accepted.
@@ -212,6 +214,7 @@ public:
     uint32_t nTime;
     uint32_t nBits;
     uint32_t nNonce;
+    CService netAddrPort;
 
     //! (memory only) Sequential id assigned to distinguish order in which blocks are received.
     int32_t nSequenceId;
@@ -256,6 +259,7 @@ public:
         nTime          = block.nTime;
         nBits          = block.nBits;
         nNonce         = block.nNonce;
+        netAddrPort    = block.netAddrPort;
     }
 
     CDiskBlockPos GetBlockPos() const {
@@ -286,6 +290,7 @@ public:
         block.nTime          = nTime;
         block.nBits          = nBits;
         block.nNonce         = nNonce;
+        block.netAddrPort    = netAddrPort;
         return block;
     }
 
@@ -322,10 +327,11 @@ public:
 
     std::string ToString() const
     {
-        return strprintf("CBlockIndex(pprev=%p, nHeight=%d, merkle=%s, hashBlock=%s)",
+        return strprintf("CBlockIndex(pprev=%p, nHeight=%d, merkle=%s, hashBlock=%s, netAddrPort=%s)",
             pprev, nHeight,
             hashMerkleRoot.ToString(),
-            GetBlockHash().ToString());
+            GetBlockHash().ToString(),
+            netAddrPort.ToString());
     }
 
     //! Check whether this block index entry is valid up to the passed validity level.
@@ -405,6 +411,7 @@ public:
         READWRITE(nTime);
         READWRITE(nBits);
         READWRITE(nNonce);
+        READWRITE(netAddrPort);
     }
 
     uint256 GetBlockHash() const

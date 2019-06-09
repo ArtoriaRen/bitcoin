@@ -45,6 +45,7 @@ public:
         READWRITE(nTime);
         READWRITE(nBits);
         READWRITE(nNonce);
+        READWRITE(netAddrPort);
     }
 
     void SetNull()
@@ -115,6 +116,7 @@ public:
         block.nTime          = nTime;
         block.nBits          = nBits;
         block.nNonce         = nNonce;
+        block.netAddrPort    = netAddrPort;
         return block;
     }
 

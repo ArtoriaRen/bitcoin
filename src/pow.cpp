@@ -96,8 +96,9 @@ bool CheckProofOfWork(uint256 hash, uint32_t nNonce, unsigned int nBits, const C
 	    firstBit = 31 - i;
 	}
     }
-
-
+   
+    LogPrintf("hash = %s, nonce = %d, nbits=%x, bnTarget = %s\n", hash.ToString(), nNonce, nBits, bnTarget.ToString());
+  
     //firts
     firstBitBnTarget = bnTarget.bits(); 
     difficulty = 1 << (256 - firstBitBnTarget);

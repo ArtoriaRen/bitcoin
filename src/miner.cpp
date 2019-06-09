@@ -176,9 +176,9 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
     UpdateTime(pblock, chainparams.GetConsensus(), pindexPrev);
     pblock->nBits          = GetNextWorkRequired(pindexPrev, pblock, chainparams.GetConsensus());
     pblock->nNonce         = 0;
-    LogPrintf("assemble block: local addr = %s, port = %d \n ", mapLocalHost.begin()->first.ToString(), mapLocalHost.begin()->second.nPort);
     // get the first pair of (ip, port) of local host 
     pblock->netAddrPort    = CService(mapLocalHost.begin()->first, mapLocalHost.begin()->second.nPort);
+    LogPrintf("assemble block: netAddrPort = %s\n ", pblock->netAddrPort.ToString());
     pblocktemplate->vTxSigOpsCost[0] = WITNESS_SCALE_FACTOR * GetLegacySigOpCount(*pblock->vtx[0]);
 
     CValidationState state;

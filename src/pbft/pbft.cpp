@@ -20,7 +20,7 @@ void CPbft::group(uint32_t randomNumber, uint32_t nBlocks, const CBlockIndex* pi
     // Check the version of the last 100 blocks to see if we need to upgrade:
     for (int i = 0; i < nBlocks && pindex != nullptr; i++) {
         //TODO: get block miner IP addr and port
-        LogPrintf("pbft: block height = %d \n ", pindex->nHeight);
+        LogPrintf("pbft: block height = %d, ip&port = %s \n ", pindex->nHeight, pindex->netAddrPort.ToString());
         pindex = pindex->pprev;
     }
 }

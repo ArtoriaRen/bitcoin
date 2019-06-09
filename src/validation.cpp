@@ -1108,8 +1108,10 @@ bool ReadBlockFromDisk(CBlock& block, const CDiskBlockPos& pos, const Consensus:
     }
 
     // Check the header
-    if (!CheckProofOfWork(block.GetHash(), block.nNonce, block.nBits, consensusParams))
+    LogPrintf("block read from disk hash = %d, block.nNonce = %d, block.nBits = %d\n", block.GetHash().ToString(), block.nNonce,block.nBits);
+    if (!CheckProofOfWork(block.GetHash(), block.nNonce, block.nBits, consensusParams)){
         return error("ReadBlockFromDisk: Errors in block header at %s", pos.ToString());
+    }
 
     return true;
 }
@@ -2809,6 +2811,7 @@ CBlockIndex* CChainState::AddToBlockIndex(const CBlockHeader& block)
         pindexBestHeader = pindexNew;
 
     setDirtyBlockIndex.insert(pindexNew);
+    LogPrintf("AddToBlockIndex: ip port = %s\n", pindexNew->netAddrPort.ToString());
 
     return pindexNew;
 }
