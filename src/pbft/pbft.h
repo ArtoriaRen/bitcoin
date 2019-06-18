@@ -18,33 +18,78 @@
 #include "primitives/block.h"
 #include "chain.h"
 
+//global view number
+
 enum Phase {pre_prepare, prepare, commit, reply};
-       
-struct CPbftMessage {
-    std::string Phase;
+
+class CPbftMessage {
+protected:
+    Phase phase;
     uint32_t view;
     uint32_t seq;
     uint32_t sendeId;
-    //what type?  digest;
+    uint256 digest;
+    std::vector<unsigned char> vchSig; //serilized ecdsa signature.
 };
 
-struct CPre_prepare : public CPbftMessage{
+class CPre_prepare : public CPbftMessage{
     CBlock block; 
+    
+public:
+    CPre_prepare(){
+    	phase = Phase::pre_prepare;
+    }
+};
+
+
+class CPrepare: public CPbftMessage{
+
+public:
+    CPrepare(){
+    	phase = Phase::prepare;
+    }
+};
+
+class CCommit: public CPbftMessage{
+    
+public:
+    CCommit(){
+    	phase = Phase::commit;
+    }
+    
 };
 
 class CPbft{
 public:
+    int view;
+    // TODO: the key type should be digest
+    unordered_map<std::string, CPbftMessage> log;
     std::vector<CService> members;
     CService leader;
- 
     uint32_t nGroups; // number of groups.
     
     CPbft(){
+	view = 0;
         nGroups = 1;
     }
     
     // calculate the leader and group members based on the random number and the blockchain.
     void group(uint32_t randomNumber, uint32_t nBlocks, const CBlockIndex* pindex);
+    
+    CPre_prepare assemblePre_prepare(const CBlock& block);
+    
+    bool onReceivePrePrepare(const CPre_prepare& pre_prepare);
+    
+    void sendPrepare();
+    
+    //TODO: find the key used to sign and verify messages 
+    void onReceivePrepare(const CPrepare& prepare);
+	
+ 
+    
+    void sendCommit();
+    
+    
     
     
 };
