@@ -18,6 +18,7 @@
 #include "util.h"
 #include "primitives/block.h"
 #include "chain.h"
+#include "net.h"
 
 //global view number
 
@@ -78,7 +79,7 @@ public:
     
 };
 
-class CPbft{
+class CPbft : public NetEventsInterface {
 public:
     int view;
     // TODO: the key should be of type uint256 which is the type of digest. But we need overwrite hash function and equal function.
@@ -88,11 +89,21 @@ public:
     uint32_t nGroups; // number of groups.
     uint32_t nFaulty;
     
-    CPbft(){
-	view = 0;
-        nGroups = 1;
-    }
-    
+    explicit CPbft(CConnman*  connmanIn);    
+
+    void InitializeNode(CNode* pnode) override;
+    void FinalizeNode(NodeId nodeid, bool& fUpdateConnectionTime) override;
+    /** Process protocol messages received from a given node */
+    bool ProcessMessages(CNode* pfrom, std::atomic<bool>& interrupt) override;
+    /**
+    * Send queued protocol messages to be sent to a give node.
+    *
+    * @param[in]   pto             The node which we are sending messages to.
+    * @param[in]   interrupt       Interrupt condition for processing threads
+    * @return                      True if there is more work to be done
+    */
+    bool SendMessages(CNode* pto, std::atomic<bool>& interrupt) override;
+
     // calculate the leader and group members based on the random number and the blockchain.
     void group(uint32_t randomNumber, uint32_t nBlocks, const CBlockIndex* pindex);
     
@@ -117,7 +128,9 @@ public:
     
     // TODO: may block header hash can be used as digest?
     void excuteTransactions(const uint256& digest);
-    
+
+private:
+    CConnman* const connman;
 };
 
 

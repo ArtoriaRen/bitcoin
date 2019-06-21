@@ -43,6 +43,7 @@
 #include <util.h>
 #include <utilmoneystr.h>
 #include <validationinterface.h>
+#include "pbft/pbft.h"
 #ifdef ENABLE_WALLET
 #include <wallet/init.h>
 #endif
@@ -74,6 +75,8 @@ static const bool DEFAULT_STOPAFTERBLOCKIMPORT = false;
 
 std::unique_ptr<CConnman> g_connman;
 std::unique_ptr<PeerLogicValidation> peerLogic;
+std::unique_ptr<CConnman> g_pbft_connman;
+std::unique_ptr<CPbft> pbftLogic;
 
 #if ENABLE_ZMQ
 static CZMQNotificationInterface* pzmqNotificationInterface = nullptr;
@@ -199,6 +202,8 @@ void Shutdown()
     if (g_connman) g_connman->Stop();
     peerLogic.reset();
     g_connman.reset();
+    pbftLogic.reset();
+    g_pbft_connman.reset();
 
     StopTorControl();
 
@@ -1287,8 +1292,10 @@ bool AppInitMain()
     assert(!g_connman);
     g_connman = std::unique_ptr<CConnman>(new CConnman(GetRand(std::numeric_limits<uint64_t>::max()), GetRand(std::numeric_limits<uint64_t>::max())));
     CConnman& connman = *g_connman;
+    CConnman& pbft_connman = *g_pbft_connman;
 
     peerLogic.reset(new PeerLogicValidation(&connman, scheduler));
+    pbftLogic.reset(new CPbft(&pbft_connman));
     RegisterValidationInterface(peerLogic.get());
 
     // sanitize comments per BIP-0014, format user agent and check total size
@@ -1738,7 +1745,13 @@ bool AppInitMain()
     if (!connman.Start(scheduler, connOptions)) {
         return false;
     }
-
+    
+    CConnman::Options pbftConnOptions(connOptions);
+    pbftConnOptions.m_msgproc = pbftLogic.get();
+    if (!pbft_connman.Start(scheduler, pbftConnOptions)) {
+	std::cout << "pbft_connman failed to start!" << std::endl;
+    } 
+    
     // ********************************************************* Step 12: finished
 
     SetRPCWarmupFinished();
