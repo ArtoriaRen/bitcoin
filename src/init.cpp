@@ -170,6 +170,8 @@ void Interrupt()
     InterruptTorControl();
     if (g_connman)
         g_connman->Interrupt();
+    if (g_pbft_connman)
+        g_pbft_connman->Interrupt();
 }
 
 void Shutdown()
@@ -202,6 +204,7 @@ void Shutdown()
     if (g_connman) g_connman->Stop();
     peerLogic.reset();
     g_connman.reset();
+    if (g_pbft_connman) g_pbft_connman->Stop();
     pbftLogic.reset();
     g_pbft_connman.reset();
 
@@ -1292,6 +1295,8 @@ bool AppInitMain()
     assert(!g_connman);
     g_connman = std::unique_ptr<CConnman>(new CConnman(GetRand(std::numeric_limits<uint64_t>::max()), GetRand(std::numeric_limits<uint64_t>::max())));
     CConnman& connman = *g_connman;
+    assert(!g_pbft_connman);
+    g_pbft_connman = std::unique_ptr<CConnman>(new CConnman(GetRand(std::numeric_limits<uint64_t>::max()), GetRand(std::numeric_limits<uint64_t>::max())));
     CConnman& pbft_connman = *g_pbft_connman;
 
     peerLogic.reset(new PeerLogicValidation(&connman, scheduler));
@@ -1742,12 +1747,16 @@ bool AppInitMain()
             connOptions.m_specified_outgoing = connect;
         }
     }
+    CConnman::Options pbftConnOptions(connOptions);
     if (!connman.Start(scheduler, connOptions)) {
         return false;
     }
     
-    CConnman::Options pbftConnOptions(connOptions);
     pbftConnOptions.m_msgproc = pbftLogic.get();
+    pbftConnOptions.vBinds.clear();
+    in_addr addr;
+    addr.s_addr = static_cast<uint32_t>(0x00000000);
+    pbftConnOptions.vBinds.push_back(CService(addr, static_cast<short unsigned int>(8340)));
     if (!pbft_connman.Start(scheduler, pbftConnOptions)) {
 	std::cout << "pbft_connman failed to start!" << std::endl;
     } 
