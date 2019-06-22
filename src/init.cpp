@@ -1747,16 +1747,22 @@ bool AppInitMain()
             connOptions.m_specified_outgoing = connect;
         }
     }
-    CConnman::Options pbftConnOptions(connOptions);
     if (!connman.Start(scheduler, connOptions)) {
         return false;
     }
     
+    // set network parameters for pbft. 
+    CConnman::Options pbftConnOptions(connOptions);
     pbftConnOptions.m_msgproc = pbftLogic.get();
+    pbftConnOptions.m_added_nodes = gArgs.GetArgs("-addpbftnode");
     pbftConnOptions.vBinds.clear();
+	// Use port 8340 as the default port
     in_addr addr;
     addr.s_addr = static_cast<uint32_t>(0x00000000);
-    pbftConnOptions.vBinds.push_back(CService(addr, static_cast<short unsigned int>(8340)));
+	int pbftPort = std::stoi(gArgs.GetArg("-pbftport", "8340"));
+	std::cout << "pbftPort = " << pbftPort << std::endl;
+    pbftConnOptions.vBinds.push_back(CService(addr, pbftPort));
+
     if (!pbft_connman.Start(scheduler, pbftConnOptions)) {
 	std::cout << "pbft_connman failed to start!" << std::endl;
     } 

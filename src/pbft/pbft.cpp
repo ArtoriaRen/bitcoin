@@ -15,11 +15,11 @@ CPbft::CPbft(CConnman* connmanIn):connman(connmanIn){
 
 
     bool CPbft::ProcessMessages(CNode* pnode, std::atomic<bool>& interrupt) {
-	std::cout << "cpbft processMessage" << std::endl;
+//	std::cout << "cpbft processMessage" << std::endl;
 	return true;
     }
     bool CPbft::SendMessages(CNode* pnode, std::atomic<bool>& interrupt) {
-	std::cout << "cpbft sendMessage "<< std::endl;
+//	std::cout << "cpbft sendMessage "<< std::endl;
 	return true;
     }
     void CPbft::InitializeNode(CNode* pnode) {
