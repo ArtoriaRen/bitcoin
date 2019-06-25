@@ -11,6 +11,8 @@
  * Created on June 4, 2019, 2:37 PM
  */
 
+// TODO: serialize all pbft messages
+
 #ifndef PBFT_H
 #define PBFT_H
 #include <unordered_map>
@@ -19,6 +21,7 @@
 #include "primitives/block.h"
 #include "chain.h"
 #include "net.h"
+#include "pbft/udp_server_client.h"
 
 //global view number
 
@@ -79,30 +82,21 @@ public:
     
 };
 
-class CPbft : public NetEventsInterface {
+
+class CPbft{
 public:
     int view;
+    // a map stroring messages about each proposal
     // TODO: the key should be of type uint256 which is the type of digest. But we need overwrite hash function and equal function.
     std::unordered_map<std::string, CPbftLog> log;
+    // group member list (use hard coded ip address first)
     std::vector<CService> members;
     CService leader;
     uint32_t nGroups; // number of groups.
     uint32_t nFaulty;
     
-    explicit CPbft(CConnman*  connmanIn);    
-
-    void InitializeNode(CNode* pnode) override;
-    void FinalizeNode(NodeId nodeid, bool& fUpdateConnectionTime) override;
-    /** Process protocol messages received from a given node */
-    bool ProcessMessages(CNode* pfrom, std::atomic<bool>& interrupt) override;
-    /**
-    * Send queued protocol messages to be sent to a give node.
-    *
-    * @param[in]   pto             The node which we are sending messages to.
-    * @param[in]   interrupt       Interrupt condition for processing threads
-    * @return                      True if there is more work to be done
-    */
-    bool SendMessages(CNode* pto, std::atomic<bool>& interrupt) override;
+    explicit CPbft(int serverPort, int clientPort);    
+    ~CPbft();
 
     // calculate the leader and group members based on the random number and the blockchain.
     void group(uint32_t randomNumber, uint32_t nBlocks, const CBlockIndex* pindex);
@@ -130,7 +124,9 @@ public:
     void excuteTransactions(const uint256& digest);
 
 private:
-    CConnman* const connman;
+    UdpServer udpServer;
+    UdpClient udpClient;
+    char* pRecvBuf;
 };
 
 

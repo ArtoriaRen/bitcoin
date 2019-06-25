@@ -5,33 +5,23 @@
  */
 
 
-#include "pbft.h"
+#include <locale>
 
-CPbft::CPbft(CConnman* connmanIn):connman(connmanIn){
-	std::cout << "cpbft constructor with connman" << std::endl;
+#include "pbft/pbft.h"
+
+CPbft::CPbft(int serverPort, int clientPort): udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient("localhost", clientPort)){
+    std::cout << "cpbft constructor" << std::endl;
     view = 0;
     nGroups = 1;
 }
 
 
-    bool CPbft::ProcessMessages(CNode* pnode, std::atomic<bool>& interrupt) {
-//	std::cout << "cpbft processMessage" << std::endl;
-	return true;
-    }
-    bool CPbft::SendMessages(CNode* pnode, std::atomic<bool>& interrupt) {
-//	std::cout << "cpbft sendMessage "<< std::endl;
-	return true;
-    }
-    void CPbft::InitializeNode(CNode* pnode) {
-	std::cout << "cpbft initialize"<< std::endl;
+CPbft::~CPbft(){
+    delete []pRecvBuf;
+}
 
-    }
-    void CPbft::FinalizeNode(NodeId id, bool& update_connection_time) {
-	std::cout << "cpbft finalize"<< std::endl;
-
-    }
 /**
- * Constructor. Go through the last nBlocks block, calculate membership of nGroups groups.
+ * Go through the last nBlocks block, calculate membership of nGroups groups.
  * @param random is the random number used to group nodes.
  * @param nBlocks is number of blocks whose miner participate in the PBFT.
  * @return 
@@ -63,12 +53,16 @@ CCommit CPbft::assembleCommit(const uint256& digest){
 
 
 bool CPbft::onReceivePrePrepare(const CPre_prepare& pre_prepare){
+    pRecvBuf = new char[128];
+    udpServer.recv(pRecvBuf, 128);
+    std::cout << pRecvBuf << std::endl;
+
     std::cout<< "received pre-prepare" << std::endl;
     // verify signature and return wrong if big is wrong
     
     // add to log
-    log[pre_prepare.digest.ToString()] = CPbftLog(pre_prepare);
-    sendPrepare();
+//    log[pre_prepare.digest.ToString()] = CPbftLog(pre_prepare);
+//    sendPrepare();
     return true;
 }
 
