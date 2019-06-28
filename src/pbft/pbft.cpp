@@ -9,10 +9,12 @@
 
 #include "pbft/pbft.h"
 
-CPbft::CPbft(int serverPort, int clientPort): udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient("localhost", clientPort)){
+CPbft::CPbft(int serverPort, int clientPort): udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient("localhost", clientPort)), privateKey(CKey()){
     std::cout << "cpbft constructor" << std::endl;
-    view = 0;
+    localView = 0;
+    globalView = 0;
     nGroups = 1;
+    publicKey = privateKey.GetPubKey();
 }
 
 
@@ -67,18 +69,18 @@ bool CPbft::onReceivePrePrepare(const CPre_prepare& pre_prepare){
 }
 
 bool CPbft::onReceivePrepare(const CPrepare& prepare){
-    std::cout << "received prepare. Phase  = " << log[prepare.digest.ToString()].phase << std::endl;
+    std::cout << "received prepare. Phase  = " << log[prepare.seq].phase << std::endl;
     //verify sig. if wrong, return false.
     
     
     //add to log
-    log[prepare.digest.ToString()].prepareArray.push_back(prepare);
+    log[prepare.seq].prepareArray.push_back(prepare);
     // count the number of prepare msg. enter commit if greater than 2f
-    if(log[prepare.digest.ToString()].phase == PbftPhase::prepare && log[prepare.digest.ToString()].prepareArray.size() >= (nFaulty << 1) ){
+    if(log[prepare.seq].phase == PbftPhase::prepare && log[prepare.seq].prepareArray.size() >= (nFaulty << 1) ){
 	
 	// enter commit phase
 	std::cout << "enter commit phase" << std::endl;
-	log[prepare.digest.ToString()].phase = PbftPhase::commit;
+	log[prepare.seq].phase = PbftPhase::commit;
 	sendCommit();
 	return true;
     }
@@ -90,13 +92,13 @@ bool CPbft::onReceiveCommit(const CCommit& commit){
     //verify sig. if wrong, return false.
     
     //add to log
-    log[commit.digest.ToString()].commitArray.push_back(commit);
+    log[commit.seq].commitArray.push_back(commit);
     // count the number of prepare msg. enter reply if greater than 2f+1
-    if(log[commit.digest.ToString()].phase == PbftPhase::commit && log[commit.digest.ToString()].commitArray.size() >= (nFaulty << 1 ) + 1 ){
+    if(log[commit.seq].phase == PbftPhase::commit && log[commit.seq].commitArray.size() >= (nFaulty << 1 ) + 1 ){
 	
 	// enter commit phase
 	std::cout << "enter reply phase" << std::endl;
-	log[commit.digest.ToString()].phase = PbftPhase::reply;
+	log[commit.seq].phase = PbftPhase::reply;
 	excuteTransactions(commit.digest);
 	return true;
     }

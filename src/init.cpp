@@ -1766,8 +1766,12 @@ bool AppInitMain()
 //    if (!pbft_connman.Start(scheduler, pbftConnOptions)) {
 //	std::cout << "pbft_connman failed to start!" << std::endl;
 //    } 
+
+    int pbftUdpServerPort = std::stoi(gArgs.GetArg("-pbftudpserverport", "8340"));
+    int pbftUdpClientPort = std::stoi(gArgs.GetArg("-pbftudpclientport", "18340"));
+
     CPre_prepare pre_prepare;
-    CPbft pbft(8340, 18340);
+    CPbft pbft(pbftUdpServerPort,pbftUdpClientPort);
     pbft.onReceivePrePrepare(pre_prepare);
     
     // ********************************************************* Step 12: finished

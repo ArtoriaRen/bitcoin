@@ -22,6 +22,8 @@
 #include "chain.h"
 #include "net.h"
 #include "pbft/udp_server_client.h"
+#include "key.h"
+#include "pubkey.h"
 
 //global view number
 
@@ -32,7 +34,7 @@ public:
     PbftPhase phase;
     uint32_t view;
     uint32_t seq;
-    uint32_t sendeId;
+    uint32_t senderId;
     uint256 digest;
     std::vector<unsigned char> vchSig; //serilized ecdsa signature.
 };
@@ -64,7 +66,7 @@ public:
     
 };
 
-class CPbftLog{
+class CPbftLogEntry{
 public:
     CPre_prepare pre_prepare;
     std::vector<CPrepare> prepareArray;
@@ -72,9 +74,9 @@ public:
     PbftPhase phase;
     
 
-    CPbftLog(){}
+    CPbftLogEntry(){}
     
-    CPbftLog(const CPre_prepare& pp){
+    CPbftLogEntry(const CPre_prepare& pp){
 	pre_prepare = pp;
 	// log for a pre-prepare message will not be created if the sig is wrong, so the protocol for this entry directly enter Prepare phase once created.
 	phase = PbftPhase::prepare;
@@ -85,13 +87,15 @@ public:
 
 class CPbft{
 public:
-    int view;
-    // a map stroring messages about each proposal
-    // TODO: the key should be of type uint256 which is the type of digest. But we need overwrite hash function and equal function.
-    std::unordered_map<std::string, CPbftLog> log;
+    int globalView;
+    int localView;
+    // pbft log. The index is sequence number.
+    std::vector<CPbftLogEntry> log;
     // group member list (use hard coded ip address first)
     std::vector<CService> members;
     CService leader;
+    
+    // TODO: maybe these two parameters should be put in a higher layer class. They are not part of pbft.
     uint32_t nGroups; // number of groups.
     uint32_t nFaulty;
     
@@ -127,6 +131,9 @@ private:
     UdpServer udpServer;
     UdpClient udpClient;
     char* pRecvBuf;
+    // private ECDSA key used to sign messages
+    CKey privateKey;
+    CPubKey publicKey; // public key should be put on the blockchain so every can verify group members.
 };
 
 

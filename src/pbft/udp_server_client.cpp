@@ -44,7 +44,7 @@ UdpClient::UdpClient(const std::string& addr, int port)
     : f_port(port)
     , f_addr(addr)
 {
-    std::cout << "udp client constructor" << std::endl;
+    std::cout << "udp client constructor, port = " << f_port << std::endl;
     char decimal_port[16];
     snprintf(decimal_port, sizeof(decimal_port), "%d", f_port);
     decimal_port[sizeof(decimal_port) / sizeof(decimal_port[0]) - 1] = '\0';
@@ -178,7 +178,7 @@ UdpServer::UdpServer(const std::string& addr, int port)
     : f_port(port)
     , f_addr(addr)
 {
-    std::cout << "udp server constructor" << std::endl;
+    std::cout << "udp server constructor, port = " << f_port << std::endl;
     char decimal_port[16];
     snprintf(decimal_port, sizeof(decimal_port), "%d", f_port);
     decimal_port[sizeof(decimal_port) / sizeof(decimal_port[0]) - 1] = '\0';
