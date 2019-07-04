@@ -37,6 +37,7 @@ public:
     uint32_t senderId;
     uint256 digest;
     std::vector<unsigned char> vchSig; //serilized ecdsa signature.
+    const static uint32_t messageSizeBytes = 128;
 };
 
 class CPre_prepare : public CPbftMessage{
@@ -99,8 +100,17 @@ public:
     uint32_t nGroups; // number of groups.
     uint32_t nFaulty;
     
+    // udp server convert received char array into CPbftMessage and put them in a queue. 
+    std::mutex mtx;
+    std::condition_variable ready;
+    std::deque<CPbftMessage> receiveQue;
+
+    
     explicit CPbft(int serverPort, int clientPort);    
     ~CPbft();
+
+    // There are two  threads: 1. receive udp packets 2. process packet according to the protocol (the current thread). 
+    void start();
 
     // calculate the leader and group members based on the random number and the blockchain.
     void group(uint32_t randomNumber, uint32_t nBlocks, const CBlockIndex* pindex);
@@ -127,6 +137,8 @@ public:
     // TODO: may block header hash can be used as digest?
     void excuteTransactions(const uint256& digest);
 
+    friend void loopReceive(CPbft& pbftObj);
+
 private:
     UdpServer udpServer;
     UdpClient udpClient;
@@ -134,6 +146,7 @@ private:
     // private ECDSA key used to sign messages
     CKey privateKey;
     CPubKey publicKey; // public key should be put on the blockchain so every can verify group members.
+
 };
 
 

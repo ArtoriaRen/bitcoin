@@ -1772,7 +1772,7 @@ bool AppInitMain()
 
     CPre_prepare pre_prepare;
     CPbft pbft(pbftUdpServerPort,pbftUdpClientPort);
-    pbft.onReceivePrePrepare(pre_prepare);
+    pbft.start();
     
     // ********************************************************* Step 12: finished
     

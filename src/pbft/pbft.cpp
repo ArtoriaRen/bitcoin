@@ -14,12 +14,49 @@ CPbft::CPbft(int serverPort, int clientPort): udpServer(UdpServer("localhost", s
     localView = 0;
     globalView = 0;
     nGroups = 1;
+    privateKey.MakeNewKey(false);
     publicKey = privateKey.GetPubKey();
 }
 
 
 CPbft::~CPbft(){
     delete []pRecvBuf;
+}
+
+void loopReceive(CPbft& pbftObj);
+
+void CPbft::start(){
+   std::thread loopReceiver(loopReceive, std::ref(*this)); 
+    loopReceiver.join();
+}
+
+
+void loopReceive(CPbft& pbftObj){
+    pbftObj.pRecvBuf = new char[CPbftMessage::messageSizeBytes];
+    while(1){
+	if(pbftObj.udpServer.timed_recv(pbftObj.pRecvBuf, CPbftMessage::messageSizeBytes, 500) > 0){
+	    // first byte is message type.
+	    switch(static_cast<PbftPhase>(pbftObj.pRecvBuf[0])){
+		case pre_prepare:
+		    std::cout << "received pre-prepare." << std::endl;
+		    break;
+		case prepare:
+		    std::cout << "prepare msg" << std::endl;
+		    break;
+		case commit:
+		    std::cout << "commit msg" << std::endl;
+		    break;
+		case reply:
+		    std::cout << "reply msg" << std::endl;
+		    break;
+		default:
+		    std::cout << "invalid msg" << std::endl;
+
+	    }
+	}
+	
+	
+    }
 }
 
 /**
