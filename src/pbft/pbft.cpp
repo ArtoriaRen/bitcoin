@@ -1,6 +1,6 @@
 /*
- * To change this license header, choose License Headers in Project Properties.
- * To change this template file, choose Tools | Templates
+ * to change this license header, choose license headers in project properties.
+ * to change this template file, choose tools | templates
  * and open the template in the editor.
  */
 
@@ -10,31 +10,43 @@
 #include "pbft/pbft.h"
 
 CPbft::CPbft(int serverPort, int clientPort): udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient("localhost", clientPort)), privateKey(CKey()){
-    std::cout << "cpbft constructor" << std::endl;
+    std::cout << "CPbft constructor" << std::endl;
     localView = 0;
     globalView = 0;
     nGroups = 1;
     privateKey.MakeNewKey(false);
     publicKey = privateKey.GetPubKey();
+    stopLock = std::unique_lock<std::mutex>(mtxStopUdp, std::defer_lock);
+    pRecvBuf = new char[CPbftMessage::messageSizeBytes];
 }
 
 
 CPbft::~CPbft(){
     delete []pRecvBuf;
+    if(receiver.joinable()){
+	stopLock.lock();
+	stopFlag = true;
+	stopLock.unlock();
+	receiver.join();
+    }
+    stopLock.~unique_lock();
+    mtxStopUdp.~mutex();
 }
 
-void loopReceive(CPbft& pbftObj);
-
-void CPbft::start(){
-   std::thread loopReceiver(loopReceive, std::ref(*this)); 
-    loopReceiver.join();
-}
-
-
-void loopReceive(CPbft& pbftObj){
-    pbftObj.pRecvBuf = new char[CPbftMessage::messageSizeBytes];
-    while(1){
-	if(pbftObj.udpServer.timed_recv(pbftObj.pRecvBuf, CPbftMessage::messageSizeBytes, 500) > 0){
+void interruptableReceive(CPbft& pbftObj){
+    while(true){
+	// if stopFlag is set, return. stopLock conforms to RAII.
+	pbftObj.stopLock.lock();
+	if(pbftObj.stopFlag){
+	    pbftObj.stopLock.unlock();
+	    return;
+	}
+	// release mutex so that the parent thread can set stopFlag while this thread is receiving packets.
+	pbftObj.stopLock.unlock();
+	// timeout block on receving a new packet. 
+	ssize_t recvBytes =  pbftObj.udpServer.timed_recv(pbftObj.pRecvBuf, CPbftMessage::messageSizeBytes, 500);
+	if( recvBytes > 0){
+	    std::cout << pbftObj.pRecvBuf[0] << std::endl;
 	    // first byte is message type.
 	    switch(static_cast<PbftPhase>(pbftObj.pRecvBuf[0])){
 		case pre_prepare:
@@ -51,12 +63,14 @@ void loopReceive(CPbft& pbftObj){
 		    break;
 		default:
 		    std::cout << "invalid msg" << std::endl;
-
+		    
 	    }
-	}
-	
-	
+	} 
     }
+}
+
+void CPbft::start(){
+    receiver = std::thread(interruptableReceive, std::ref(*this)); 
 }
 
 /**
@@ -94,14 +108,13 @@ CCommit CPbft::assembleCommit(const uint256& digest){
 bool CPbft::onReceivePrePrepare(const CPre_prepare& pre_prepare){
     pRecvBuf = new char[128];
     udpServer.recv(pRecvBuf, 128);
-    std::cout << pRecvBuf << std::endl;
-
+    
     std::cout<< "received pre-prepare" << std::endl;
     // verify signature and return wrong if big is wrong
     
     // add to log
-//    log[pre_prepare.digest.ToString()] = CPbftLog(pre_prepare);
-//    sendPrepare();
+    //    log[pre_prepare.digest.ToString()] = CPbftLog(pre_prepare);
+    //    sendPrepare();
     return true;
 }
 

@@ -16,6 +16,7 @@
 #ifndef PBFT_H
 #define PBFT_H
 #include <unordered_map>
+#include <mutex>
 #include "netaddress.h"
 #include "util.h"
 #include "primitives/block.h"
@@ -101,9 +102,16 @@ public:
     uint32_t nFaulty;
     
     // udp server convert received char array into CPbftMessage and put them in a queue. 
-    std::mutex mtx;
+    std::mutex mtxMsg;
     std::condition_variable ready;
     std::deque<CPbftMessage> receiveQue;
+
+    // flag for terminating udp server
+    std::mutex mtxStopUdp;
+    std::unique_lock<std::mutex> stopLock;
+    bool stopFlag = false;
+
+
 
     
     explicit CPbft(int serverPort, int clientPort);    
@@ -137,7 +145,7 @@ public:
     // TODO: may block header hash can be used as digest?
     void excuteTransactions(const uint256& digest);
 
-    friend void loopReceive(CPbft& pbftObj);
+    friend void interruptableReceive(CPbft& pbftObj);
 
 private:
     UdpServer udpServer;
@@ -146,6 +154,7 @@ private:
     // private ECDSA key used to sign messages
     CKey privateKey;
     CPubKey publicKey; // public key should be put on the blockchain so every can verify group members.
+    std::thread receiver;
 
 };
 
