@@ -75,8 +75,7 @@ static const bool DEFAULT_STOPAFTERBLOCKIMPORT = false;
 
 std::unique_ptr<CConnman> g_connman;
 std::unique_ptr<PeerLogicValidation> peerLogic;
-//std::unique_ptr<CConnman> g_pbft_connman;
-//std::unique_ptr<CPbft> pbftLogic;
+std::unique_ptr<CPbft> pbftLogic;
 
 #if ENABLE_ZMQ
 static CZMQNotificationInterface* pzmqNotificationInterface = nullptr;
@@ -170,8 +169,6 @@ void Interrupt()
     InterruptTorControl();
     if (g_connman)
         g_connman->Interrupt();
-//    if (g_pbft_connman)
-//        g_pbft_connman->Interrupt();
 }
 
 void Shutdown()
@@ -204,9 +201,7 @@ void Shutdown()
     if (g_connman) g_connman->Stop();
     peerLogic.reset();
     g_connman.reset();
-//    if (g_pbft_connman) g_pbft_connman->Stop();
-//    pbftLogic.reset();
-//    g_pbft_connman.reset();
+    if (pbftLogic) pbftLogic.reset();
     
     StopTorControl();
     
@@ -1300,7 +1295,6 @@ bool AppInitMain()
 //    CConnman& pbft_connman = *g_pbft_connman;
     
     peerLogic.reset(new PeerLogicValidation(&connman, scheduler));
-//    pbftLogic.reset(new CPbft(&pbft_connman));
     RegisterValidationInterface(peerLogic.get());
     
     // sanitize comments per BIP-0014, format user agent and check total size
@@ -1767,12 +1761,13 @@ bool AppInitMain()
 //	std::cout << "pbft_connman failed to start!" << std::endl;
 //    } 
 
+    // create pbft instance
     int pbftUdpServerPort = std::stoi(gArgs.GetArg("-pbftudpserverport", "8340"));
     int pbftUdpClientPort = std::stoi(gArgs.GetArg("-pbftudpclientport", "18340"));
 
-    CPre_prepare pre_prepare;
-    CPbft pbft(pbftUdpServerPort,pbftUdpClientPort);
-    pbft.start();
+    pbftLogic.reset(new CPbft(pbftUdpServerPort,pbftUdpClientPort));
+
+    pbftLogic->start();
     
     // ********************************************************* Step 12: finished
     

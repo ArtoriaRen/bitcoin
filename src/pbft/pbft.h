@@ -106,19 +106,14 @@ public:
     std::condition_variable ready;
     std::deque<CPbftMessage> receiveQue;
 
-    // flag for terminating udp server
-    std::mutex mtxStopUdp;
-    std::unique_lock<std::mutex> stopLock;
-    bool stopFlag = false;
-
-
-
     
     explicit CPbft(int serverPort, int clientPort);    
     ~CPbft();
 
     // There are two  threads: 1. receive udp packets 2. process packet according to the protocol (the current thread). 
     void start();
+    // Stop udp server.
+    void stop();
 
     // calculate the leader and group members based on the random number and the blockchain.
     void group(uint32_t randomNumber, uint32_t nBlocks, const CBlockIndex* pindex);

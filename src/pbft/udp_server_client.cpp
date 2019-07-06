@@ -41,8 +41,8 @@
  * \param[in] port  The port number.
  */
 UdpClient::UdpClient(const std::string& addr, int port)
-    : f_port(port)
-    , f_addr(addr)
+: f_port(port)
+, f_addr(addr)
 {
     std::cout << "udp client constructor, port = " << f_port << std::endl;
     char decimal_port[16];
@@ -175,8 +175,8 @@ int UdpClient::send(const char *msg, size_t size)
  * \param[in] port  The port we receive from.
  */
 UdpServer::UdpServer(const std::string& addr, int port)
-    : f_port(port)
-    , f_addr(addr)
+: f_port(port)
+, f_addr(addr)
 {
     std::cout << "udp server constructor, port = " << f_port << std::endl;
     char decimal_port[16];
@@ -298,25 +298,9 @@ int UdpServer::recv(char *msg, size_t max_size)
  */
 int UdpServer::timed_recv(char *msg, size_t max_size, int max_wait_ms)
 {
-    fd_set s;
-    FD_ZERO(&s);
-    FD_SET(f_socket, &s);
-    struct timeval timeout;
-    timeout.tv_sec = max_wait_ms / 1000;
-    timeout.tv_usec = (max_wait_ms % 1000) * 1000;
-    int retval = select(f_socket + 1, &s, &s, &s, &timeout);
-    if(retval == -1)
-    {
-        // select() set errno accordingly
-        return -1;
-    }
-    if(retval > 0)
-    {
-        // our socket has data
-        return ::recv(f_socket, msg, max_size, 0);
-    }
-
-    // our socket has no data. retval == 0 means timeout.
-    errno = EAGAIN;
-    return -1;
+    struct timeval tv;
+    tv.tv_sec = max_wait_ms / 1000;
+    tv.tv_usec = (max_wait_ms % 1000) * 1000;
+    setsockopt(f_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+    return ::recv(f_socket, msg, max_size, 0);
 }

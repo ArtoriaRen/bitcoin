@@ -8,6 +8,7 @@
 #include <locale>
 
 #include "pbft/pbft.h"
+#include "init.h"
 
 CPbft::CPbft(int serverPort, int clientPort): udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient("localhost", clientPort)), privateKey(CKey()){
     std::cout << "CPbft constructor" << std::endl;
@@ -16,34 +17,20 @@ CPbft::CPbft(int serverPort, int clientPort): udpServer(UdpServer("localhost", s
     nGroups = 1;
     privateKey.MakeNewKey(false);
     publicKey = privateKey.GetPubKey();
-    stopLock = std::unique_lock<std::mutex>(mtxStopUdp, std::defer_lock);
     pRecvBuf = new char[CPbftMessage::messageSizeBytes];
 }
 
 
 CPbft::~CPbft(){
     delete []pRecvBuf;
-    if(receiver.joinable()){
-	stopLock.lock();
-	stopFlag = true;
-	stopLock.unlock();
-	receiver.join();
-    }
-    stopLock.~unique_lock();
-    mtxStopUdp.~mutex();
 }
 
+
+
 void interruptableReceive(CPbft& pbftObj){
-    while(true){
-	// if stopFlag is set, return. stopLock conforms to RAII.
-	pbftObj.stopLock.lock();
-	if(pbftObj.stopFlag){
-	    pbftObj.stopLock.unlock();
-	    return;
-	}
-	// release mutex so that the parent thread can set stopFlag while this thread is receiving packets.
-	pbftObj.stopLock.unlock();
-	// timeout block on receving a new packet. 
+    bool fShutdown = ShutdownRequested();
+    while(!fShutdown){
+	// timeout block on receving a new packet. Attention: timeout is in milliseconds. 
 	ssize_t recvBytes =  pbftObj.udpServer.timed_recv(pbftObj.pRecvBuf, CPbftMessage::messageSizeBytes, 500);
 	if( recvBytes > 0){
 	    std::cout << pbftObj.pRecvBuf[0] << std::endl;
@@ -66,12 +53,16 @@ void interruptableReceive(CPbft& pbftObj){
 		    
 	    }
 	} 
+        fShutdown = ShutdownRequested();
+	std::cout << "shutdown requested ? " << fShutdown <<std::endl;
     }
 }
 
 void CPbft::start(){
     receiver = std::thread(interruptableReceive, std::ref(*this)); 
+	receiver.join();
 }
+
 
 /**
  * Go through the last nBlocks block, calculate membership of nGroups groups.
