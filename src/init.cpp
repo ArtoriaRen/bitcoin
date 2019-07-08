@@ -1745,27 +1745,11 @@ bool AppInitMain()
         return false;
     }
     
-//    // set network parameters for pbft. 
-//    CConnman::Options pbftConnOptions(connOptions);
-//    pbftConnOptions.m_msgproc = pbftLogic.get();
-//    pbftConnOptions.m_added_nodes = gArgs.GetArgs("-addpbftnode");
-//    pbftConnOptions.vBinds.clear();
-//    // Use port 8340 as the default port
-//    in_addr addr;
-//    addr.s_addr = static_cast<uint32_t>(0x00000000);
-//    int pbftPort = std::stoi(gArgs.GetArg("-pbftport", "8340"));
-//    std::cout << "pbftPort = " << pbftPort << std::endl;
-//    pbftConnOptions.vBinds.push_back(CService(addr, pbftPort));
-//    
-//    if (!pbft_connman.Start(scheduler, pbftConnOptions)) {
-//	std::cout << "pbft_connman failed to start!" << std::endl;
-//    } 
 
     // create pbft instance
     int pbftUdpServerPort = std::stoi(gArgs.GetArg("-pbftudpserverport", "8340"));
-    int pbftUdpClientPort = std::stoi(gArgs.GetArg("-pbftudpclientport", "18340"));
 
-    pbftLogic.reset(new CPbft(pbftUdpServerPort,pbftUdpClientPort));
+    pbftLogic.reset(new CPbft(pbftUdpServerPort));
 
     pbftLogic->start();
     

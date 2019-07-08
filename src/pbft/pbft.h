@@ -25,66 +25,8 @@
 #include "pbft/udp_server_client.h"
 #include "key.h"
 #include "pubkey.h"
-
-//global view number
-
-enum PbftPhase {pre_prepare, prepare, commit, reply};
-
-class CPbftMessage {
-public:
-    PbftPhase phase;
-    uint32_t view;
-    uint32_t seq;
-    uint32_t senderId;
-    uint256 digest;
-    std::vector<unsigned char> vchSig; //serilized ecdsa signature.
-    const static uint32_t messageSizeBytes = 128;
-};
-
-class CPre_prepare : public CPbftMessage{
-    CBlock block; // we can use P2P network to disseminate the block before the primary send Pre_prepare msg so that the block does not have to be in the Pre-prepare message.
-    
-public:
-    CPre_prepare(){
-    	phase = PbftPhase::pre_prepare;
-    }
-};
-
-
-class CPrepare: public CPbftMessage{
-
-public:
-    CPrepare(){
-    	phase = PbftPhase::prepare;
-    }
-};
-
-class CCommit: public CPbftMessage{
-    
-public:
-    CCommit(){
-    	phase = PbftPhase::commit;
-    }
-    
-};
-
-class CPbftLogEntry{
-public:
-    CPre_prepare pre_prepare;
-    std::vector<CPrepare> prepareArray;
-    std::vector<CCommit> commitArray;
-    PbftPhase phase;
-    
-
-    CPbftLogEntry(){}
-    
-    CPbftLogEntry(const CPre_prepare& pp){
-	pre_prepare = pp;
-	// log for a pre-prepare message will not be created if the sig is wrong, so the protocol for this entry directly enter Prepare phase once created.
-	phase = PbftPhase::prepare;
-    }
-    
-};
+#include "pbft/pbft_msg.h"
+#include "pbft/pbft_log_entry.h"
 
 
 class CPbft{
@@ -107,7 +49,7 @@ public:
     std::deque<CPbftMessage> receiveQue;
 
     
-    explicit CPbft(int serverPort, int clientPort);    
+    explicit CPbft(int serverPort);    
     ~CPbft();
 
     // There are two  threads: 1. receive udp packets 2. process packet according to the protocol (the current thread). 

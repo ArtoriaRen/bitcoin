@@ -176,7 +176,9 @@ BITCOIN_CORE_H = \
   zmq/zmqnotificationinterface.h \
   zmq/zmqpublishnotifier.h \
   pbft/pbft.h \
-  pbft/udp_server_client.h
+  pbft/udp_server_client.h \
+  pbft/pbft_msg.h \
+  pbft/pbft_log_entry.h
 
 
 obj/build.h: FORCE
@@ -229,6 +231,8 @@ libbitcoin_server_a_SOURCES = \
   versionbits.cpp \
   pbft/pbft.cpp \
   pbft/udp_server_client.cpp \
+  pbft/pbft_msg.cpp \
+  pbft/pbft_log_entry.cpp \
   $(BITCOIN_CORE_H)
 
 if ENABLE_ZMQ

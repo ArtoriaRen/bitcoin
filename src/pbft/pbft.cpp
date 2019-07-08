@@ -9,8 +9,11 @@
 
 #include "pbft/pbft.h"
 #include "init.h"
+#include "pbft/pbft_msg.h"
 
-CPbft::CPbft(int serverPort, int clientPort): udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient("localhost", clientPort)), privateKey(CKey()){
+
+
+CPbft::CPbft(int serverPort): udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient()), privateKey(CKey()){
     std::cout << "CPbft constructor" << std::endl;
     localView = 0;
     globalView = 0;
@@ -25,19 +28,22 @@ CPbft::~CPbft(){
     delete []pRecvBuf;
 }
 
-
+//------------------ func run in udp server thread-------------
 
 void interruptableReceive(CPbft& pbftObj){
     bool fShutdown = ShutdownRequested();
     while(!fShutdown){
 	// timeout block on receving a new packet. Attention: timeout is in milliseconds. 
 	ssize_t recvBytes =  pbftObj.udpServer.timed_recv(pbftObj.pRecvBuf, CPbftMessage::messageSizeBytes, 500);
-	if( recvBytes > 0){
-	    std::cout << pbftObj.pRecvBuf[0] << std::endl;
+	// recvBytes should be greater than 5 to fill all fields of a PbftMessage object.
+	if( recvBytes > 5){
+	    std::cout << pbftObj.pRecvBuf[0] - '0' << std::endl;
 	    // first byte is message type.
-	    switch(static_cast<PbftPhase>(pbftObj.pRecvBuf[0])){
+            CPre_prepare dummyPreprepare;
+	    switch(static_cast<PbftPhase>(pbftObj.pRecvBuf[0] - '0')){
 		case pre_prepare:
-		    std::cout << "received pre-prepare." << std::endl;
+		    pbftObj.onReceivePrePrepare(dummyPreprepare);
+
 		    break;
 		case prepare:
 		    std::cout << "prepare msg" << std::endl;
@@ -54,9 +60,9 @@ void interruptableReceive(CPbft& pbftObj){
 	    }
 	} 
         fShutdown = ShutdownRequested();
-	std::cout << "shutdown requested ? " << fShutdown <<std::endl;
     }
 }
+
 
 void CPbft::start(){
     receiver = std::thread(interruptableReceive, std::ref(*this)); 
@@ -97,15 +103,13 @@ CCommit CPbft::assembleCommit(const uint256& digest){
 
 
 bool CPbft::onReceivePrePrepare(const CPre_prepare& pre_prepare){
-    pRecvBuf = new char[128];
-    udpServer.recv(pRecvBuf, 128);
     
     std::cout<< "received pre-prepare" << std::endl;
     // verify signature and return wrong if big is wrong
     
     // add to log
-    //    log[pre_prepare.digest.ToString()] = CPbftLog(pre_prepare);
-    //    sendPrepare();
+//        log[pre_prepare.seq] = CPbftLogEntry(pre_prepare);
+        sendPrepare();
     return true;
 }
 
@@ -148,7 +152,13 @@ bool CPbft::onReceiveCommit(const CCommit& commit){
 
 void CPbft::sendPrepare(){
     // send prepare to all nodes in the members array.
-    std::cout << "sending Prepare..." << std::endl;
+    
+    std::cout << "sending Prepare..." << std::endl; 
+    CPbftMessage dummyMsg(PbftPhase::commit);
+    std::ostringstream oss;
+    int pbftPeerPort = std::stoi(gArgs.GetArg("-pbftpeerport", "18340"));
+    dummyMsg.serialize<std::ostringstream>(oss); 
+    udpClient.sendto(oss, "127.0.0.1", pbftPeerPort);
 }
 
 void CPbft::sendCommit(){
@@ -158,3 +168,4 @@ void CPbft::sendCommit(){
 void CPbft::excuteTransactions(const uint256& digest){
     std::cout << "executing tx..." << std::endl;
 }
+

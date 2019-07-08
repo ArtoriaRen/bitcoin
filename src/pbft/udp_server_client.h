@@ -20,27 +20,6 @@
 #include <stdexcept>
 #include "util.h"
 
-//class CTcpServer{
-//private:
-//    const int MAX = 80;
-//    // conn
-//    int sockfd, connfd, len; 
-//    struct sockaddr_in servaddr, cli; 
-//    
-//public:
-//    bool CTcpServer(unsigned short port);
-//    virtual bool processMessages();
-//};
-//
-//
-//class CTcpClient{
-//public:
-//    // send msg to an array of nodes.
-//    bool sendMsg(const vector<CService>& nodes, const void * buf);
-//
-//
-//};
-
 
 class UdpClient_server_runtime_error : public std::runtime_error
 {
@@ -52,20 +31,17 @@ public:
 class UdpClient
 {
 public:
-                        UdpClient(const std::string& addr, int port);
+                        UdpClient();
                         ~UdpClient();
 
     int                 get_socket() const;
     int                 get_port() const;
     std::string         get_addr() const;
 
-    int                 send(const char *msg, size_t size);
+    int                 sendto(std::ostringstream& oss, const std::string& addr, int port);
 
 private:
     int                 f_socket;
-    int                 f_port;
-    std::string         f_addr;
-    struct addrinfo *   f_addrinfo;
 };
 
 
