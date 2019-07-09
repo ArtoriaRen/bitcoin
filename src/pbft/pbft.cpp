@@ -12,12 +12,10 @@
 #include "pbft/pbft_msg.h"
 
 
-
-CPbft::CPbft(int serverPort): udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient()), privateKey(CKey()){
-    std::cout << "CPbft constructor" << std::endl;
-    localView = 0;
-    globalView = 0;
-    nGroups = 1;
+//----------placeholder:members is initialized as size-4.
+CPbft::CPbft(int serverPort): localView(0), globalView(0), log(std::vector<CPbftLogEntry>(CPbft::logSize)), members(std::vector<CService>(4)), nGroups(1), udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient()), privateKey(CKey()){
+    nFaulty = (members.size() - 1)/3;
+    std::cout << "CPbft constructor. faulty nodes in a group =  "<< nFaulty << std::endl;
     privateKey.MakeNewKey(false);
     publicKey = privateKey.GetPubKey();
     pRecvBuf = new char[CPbftMessage::messageSizeBytes];
@@ -37,25 +35,29 @@ void interruptableReceive(CPbft& pbftObj){
 	ssize_t recvBytes =  pbftObj.udpServer.timed_recv(pbftObj.pRecvBuf, CPbftMessage::messageSizeBytes, 500);
 	// recvBytes should be greater than 5 to fill all fields of a PbftMessage object.
 	if( recvBytes > 5){
-	    std::cout << pbftObj.pRecvBuf[0] - '0' << std::endl;
 	    // first byte is message type.
-            CPre_prepare dummyPreprepare;
-	    switch(static_cast<PbftPhase>(pbftObj.pRecvBuf[0] - '0')){
+	    std::cout << pbftObj.pRecvBuf[0] - '0' << std::endl;
+	    //----------placeholder. should deserialize the receiveBuf.
+	    std::string recvString(pbftObj.pRecvBuf, recvBytes);
+	    std::istringstream iss(recvString);
+	    CPbftMessage recvMsg;
+	    recvMsg.deserialize<std::istringstream>(iss);
+	    switch(recvMsg.phase){
 		case pre_prepare:
-		    pbftObj.onReceivePrePrepare(dummyPreprepare);
-
+		    pbftObj.onReceivePrePrepare(recvMsg);
 		    break;
 		case prepare:
-		    std::cout << "prepare msg" << std::endl;
+		    pbftObj.onReceivePrepare(recvMsg);
 		    break;
 		case commit:
-		    std::cout << "commit msg" << std::endl;
+		    pbftObj.onReceiveCommit(recvMsg);
 		    break;
 		case reply:
-		    std::cout << "reply msg" << std::endl;
+		    // only the local leader need to handle the reply message?
+		    std::cout << "received reply msg" << std::endl;
 		    break;
 		default:
-		    std::cout << "invalid msg" << std::endl;
+		    std::cout << "received invalid msg" << std::endl;
 		    
 	    }
 	} 
@@ -66,7 +68,7 @@ void interruptableReceive(CPbft& pbftObj){
 
 void CPbft::start(){
     receiver = std::thread(interruptableReceive, std::ref(*this)); 
-	receiver.join();
+    receiver.join();
 }
 
 
@@ -85,62 +87,58 @@ void CPbft::group(uint32_t randomNumber, uint32_t nBlocks, const CBlockIndex* pi
         pindex = pindex->pprev;
     }
     
-    nFaulty = (members.size() - 1)/3;
 }
 
 
-CPre_prepare CPbft::assemblePre_prepare(const CBlock& block){
-    return CPre_prepare();
-}
-
-CPrepare CPbft::assemblePrepare(const uint256& digest){
-    return CPrepare();
-}
-
-CCommit CPbft::assembleCommit(const uint256& digest){
-    return CCommit();
-}
 
 
-bool CPbft::onReceivePrePrepare(const CPre_prepare& pre_prepare){
+bool CPbft::onReceivePrePrepare(const CPbftMessage& pre_prepare){
     
     std::cout<< "received pre-prepare" << std::endl;
-    // verify signature and return wrong if big is wrong
+    // verify signature and return wrong if sig is wrong
+//    if(! verify(sig)){
+//	return false;
+//    }
     
+    // assume sigs are all good, so the protocol enters prepare phase.
+    std::cout << "enter prepare phase. seq in pre-prepare = " << pre_prepare.seq << std::endl;
+    log[pre_prepare.seq].phase = PbftPhase::prepare;
     // add to log
-//        log[pre_prepare.seq] = CPbftLogEntry(pre_prepare);
-        sendPrepare();
+    log[pre_prepare.seq] = CPbftLogEntry(pre_prepare);
+    broadcast(assembleMsg(log[pre_prepare.seq].phase));
     return true;
 }
 
-bool CPbft::onReceivePrepare(const CPrepare& prepare){
-    std::cout << "received prepare. Phase  = " << log[prepare.seq].phase << std::endl;
+bool CPbft::onReceivePrepare(const CPbftMessage& prepare){
+    std::cout << "received prepare. seq in prepare = " << prepare.seq << ", Phase  = " << log[prepare.seq].phase << std::endl;
     //verify sig. if wrong, return false.
     
     
-    //add to log
-    log[prepare.seq].prepareArray.push_back(prepare);
+    //-----------add to log (currently use placeholder)
+//    log[prepare.seq].prepareArray.push_back(prepare);
     // count the number of prepare msg. enter commit if greater than 2f
-    if(log[prepare.seq].phase == PbftPhase::prepare && log[prepare.seq].prepareArray.size() >= (nFaulty << 1) ){
-	
+//    if(log[prepare.seq].phase == PbftPhase::prepare && log[prepare.seq].prepareArray.size() >= (nFaulty << 1) ){
+    log[prepare.seq].prepareCount++;
+    if(log[prepare.seq].phase == PbftPhase::prepare && log[prepare.seq].prepareCount == (nFaulty << 1) ){
 	// enter commit phase
 	std::cout << "enter commit phase" << std::endl;
 	log[prepare.seq].phase = PbftPhase::commit;
-	sendCommit();
+	broadcast(assembleMsg(log[prepare.seq].phase));
 	return true;
     }
     return true;
 }
 
-bool CPbft::onReceiveCommit(const CCommit& commit){
+bool CPbft::onReceiveCommit(const CPbftMessage& commit){
     std::cout << "received commit" << std::endl;
     //verify sig. if wrong, return false.
     
-    //add to log
-    log[commit.seq].commitArray.push_back(commit);
+    //-----------add to log (currently use placeholder)
+//    log[commit.seq].commitArray.push_back(commit);
     // count the number of prepare msg. enter reply if greater than 2f+1
-    if(log[commit.seq].phase == PbftPhase::commit && log[commit.seq].commitArray.size() >= (nFaulty << 1 ) + 1 ){
-	
+//    if(log[commit.seq].phase == PbftPhase::commit && log[commit.seq].commitArray.size() >= (nFaulty << 1 ) + 1 ){
+	 log[commit.seq].commitCount++;
+    if(log[commit.seq].phase == PbftPhase::commit && log[commit.seq].commitCount >= (nFaulty << 1 ) + 1 ){
 	// enter commit phase
 	std::cout << "enter reply phase" << std::endl;
 	log[commit.seq].phase = PbftPhase::reply;
@@ -150,19 +148,18 @@ bool CPbft::onReceiveCommit(const CCommit& commit){
     return true;
 }
 
-void CPbft::sendPrepare(){
-    // send prepare to all nodes in the members array.
-    
-    std::cout << "sending Prepare..." << std::endl; 
-    CPbftMessage dummyMsg(PbftPhase::commit);
-    std::ostringstream oss;
-    int pbftPeerPort = std::stoi(gArgs.GetArg("-pbftpeerport", "18340"));
-    dummyMsg.serialize<std::ostringstream>(oss); 
-    udpClient.sendto(oss, "127.0.0.1", pbftPeerPort);
+// TODO: the real param should include digest, i.e. the block header hash.----(currently use placeholder)
+CPbftMessage CPbft::assembleMsg(PbftPhase phase){
+    return CPbftMessage(phase);
 }
 
-void CPbft::sendCommit(){
-    std::cout << "sending Commit..." << std::endl;
+void CPbft::broadcast(const CPbftMessage& msg){
+    // send prepare to all nodes in the members array.
+    std::cout << "sending phase =" << msg.phase << std::endl; 
+    std::ostringstream oss;
+    int pbftPeerPort = std::stoi(gArgs.GetArg("-pbftpeerport", "18340"));
+    msg.serialize<std::ostringstream>(oss); 
+    udpClient.sendto(oss, "127.0.0.1", pbftPeerPort);
 }
 
 void CPbft::excuteTransactions(const uint256& digest){

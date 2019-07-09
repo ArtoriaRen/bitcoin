@@ -31,19 +31,21 @@
 
 class CPbft{
 public:
-    int globalView;
     int localView;
+    int globalView;
+    static const size_t logSize = 200; 
     // pbft log. The index is sequence number.
     std::vector<CPbftLogEntry> log;
-    // group member list (use hard coded ip address first)
+
+    // TODO: parameters should be put in a higher layer class. They are not part of pbft.
+    // group member list of the group where this node is in (use hard coded ip address first)
     std::vector<CService> members;
     CService leader;
+    uint32_t nFaulty; // number of faulty nodes in this group.
     
-    // TODO: maybe these two parameters should be put in a higher layer class. They are not part of pbft.
-    uint32_t nGroups; // number of groups.
-    uint32_t nFaulty;
+    uint32_t nGroups; // total number of groups.
     
-    // udp server convert received char array into CPbftMessage and put them in a queue. 
+    // udp server convert received char array into CPbftMessage and put them in a queue.(May not be used if we process msg in the udp server thread.) 
     std::mutex mtxMsg;
     std::condition_variable ready;
     std::deque<CPbftMessage> receiveQue;
@@ -60,25 +62,23 @@ public:
     // calculate the leader and group members based on the random number and the blockchain.
     void group(uint32_t randomNumber, uint32_t nBlocks, const CBlockIndex* pindex);
     
-    CPre_prepare assemblePre_prepare(const CBlock& block);
-    CPrepare assemblePrepare(const uint256& digest);
-    CCommit assembleCommit(const uint256& digest);
     
     // Check Pre-prepare message signature and send Prepare message
-    bool onReceivePrePrepare(const CPre_prepare& pre_prepare);
+    bool onReceivePrePrepare(const CPbftMessage& pre_prepare);
     
-    void sendPrepare();
     
     //TODO: find the key used to sign and verify messages 
     // Check Prepare message signature, add to corresponding log, check if we have accumulated 2f Prepare message. If so, send Commit message
-    bool onReceivePrepare(const CPrepare& prepare);
+    bool onReceivePrepare(const CPbftMessage& prepare);
 	
-    void sendCommit();
     
     // Check Prepare message signature, add to corresponding log, check if we have accumulated 2f+1 Commit message. If so, execute transactions and reply. 
-    bool onReceiveCommit(const CCommit& commit);
+    bool onReceiveCommit(const CPbftMessage& commit);
     
     
+    CPbftMessage assembleMsg(PbftPhase phase);
+    void broadcast(const CPbftMessage& msg);
+
     // TODO: may block header hash can be used as digest?
     void excuteTransactions(const uint256& digest);
 
