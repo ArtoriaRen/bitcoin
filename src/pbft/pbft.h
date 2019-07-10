@@ -76,7 +76,7 @@ public:
     bool onReceiveCommit(const CPbftMessage& commit);
     
     
-    CPbftMessage assembleMsg(PbftPhase phase);
+    CPbftMessage assembleMsg(PbftPhase phase, uint32_t seq);
     void broadcast(const CPbftMessage& msg);
 
     // TODO: may block header hash can be used as digest?

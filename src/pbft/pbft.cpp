@@ -35,13 +35,11 @@ void interruptableReceive(CPbft& pbftObj){
 	ssize_t recvBytes =  pbftObj.udpServer.timed_recv(pbftObj.pRecvBuf, CPbftMessage::messageSizeBytes, 500);
 	// recvBytes should be greater than 5 to fill all fields of a PbftMessage object.
 	if( recvBytes > 5){
-	    // first byte is message type.
-	    std::cout << pbftObj.pRecvBuf[0] - '0' << std::endl;
 	    //----------placeholder. should deserialize the receiveBuf.
 	    std::string recvString(pbftObj.pRecvBuf, recvBytes);
 	    std::istringstream iss(recvString);
 	    CPbftMessage recvMsg;
-	    recvMsg.deserialize<std::istringstream>(iss);
+	    recvMsg.deserialize(iss);
 	    switch(recvMsg.phase){
 		case pre_prepare:
 		    pbftObj.onReceivePrePrepare(recvMsg);
@@ -105,7 +103,7 @@ bool CPbft::onReceivePrePrepare(const CPbftMessage& pre_prepare){
     log[pre_prepare.seq].phase = PbftPhase::prepare;
     // add to log
     log[pre_prepare.seq] = CPbftLogEntry(pre_prepare);
-    broadcast(assembleMsg(log[pre_prepare.seq].phase));
+    broadcast(assembleMsg(log[pre_prepare.seq].phase, pre_prepare.seq));
     return true;
 }
 
@@ -123,7 +121,7 @@ bool CPbft::onReceivePrepare(const CPbftMessage& prepare){
 	// enter commit phase
 	std::cout << "enter commit phase" << std::endl;
 	log[prepare.seq].phase = PbftPhase::commit;
-	broadcast(assembleMsg(log[prepare.seq].phase));
+	broadcast(assembleMsg(log[prepare.seq].phase, prepare.seq));
 	return true;
     }
     return true;
@@ -149,8 +147,10 @@ bool CPbft::onReceiveCommit(const CPbftMessage& commit){
 }
 
 // TODO: the real param should include digest, i.e. the block header hash.----(currently use placeholder)
-CPbftMessage CPbft::assembleMsg(PbftPhase phase){
-    return CPbftMessage(phase);
+CPbftMessage CPbft::assembleMsg(PbftPhase phase, uint32_t seq){
+    CPbftMessage toSent(log[seq].pre_prepare);
+    toSent.phase = phase;
+    return toSent;
 }
 
 void CPbft::broadcast(const CPbftMessage& msg){
@@ -158,7 +158,7 @@ void CPbft::broadcast(const CPbftMessage& msg){
     std::cout << "sending phase =" << msg.phase << std::endl; 
     std::ostringstream oss;
     int pbftPeerPort = std::stoi(gArgs.GetArg("-pbftpeerport", "18340"));
-    msg.serialize<std::ostringstream>(oss); 
+    msg.serialize(oss); 
     udpClient.sendto(oss, "127.0.0.1", pbftPeerPort);
 }
 

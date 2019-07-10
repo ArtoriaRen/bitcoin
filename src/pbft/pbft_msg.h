@@ -19,6 +19,8 @@
 
 enum PbftPhase {pre_prepare, prepare, commit, reply};
 
+class CPre_prepare;
+
 class CPbftMessage {
 public:
     PbftPhase phase;
@@ -28,46 +30,16 @@ public:
     uint256 digest; // use the block header hash as digest.
     std::vector<unsigned char> vchSig; //serilized ecdsa signature.
     const static uint32_t messageSizeBytes = 128;
-
-    CPbftMessage():phase(PbftPhase::pre_prepare), view(0), seq(0), digest(), vchSig(){
-    }
-
-    CPbftMessage(PbftPhase p):phase(p), view(0), seq(0), digest(), vchSig(){
-    }
-
-    // template function must be in header file.
-    template<typename Stream>
-    void serialize(Stream& s) const{
-	 
-	s << static_cast<int>(phase);
-	s << view;
-	s << seq;
-	s << senderId;
-	digest.Serialize(s);
-	for(uint i = 0; i<vchSig.size(); i++){
-	    s << vchSig[i];
-	}
-	
-    }
     
-    template<typename Stream>
-    void deserialize(Stream& s) {
-	int phaseInt;
-	s >> phaseInt;
-	std::cout << "phaseInt = "<< phaseInt << std::endl;
-	
-	phase = static_cast<PbftPhase>(phaseInt);
-	s >> view;
-	s >> seq;
-	s >> senderId;
-	digest.Unserialize(s); // 256 bits = 32 bytes
-	char c;
-	vchSig.clear();
-	while(! (s >> c)){ // TODO: check the ret val when no more data.
-	    std::cout << "deserialize for sig, c=" << c << std::endl;
-	    vchSig.push_back(c);
-	}
-    }
+    CPbftMessage();
+    
+    CPbftMessage(PbftPhase p);
+    
+    CPbftMessage(CPre_prepare& pre_prepare);
+    
+    void serialize(std::ostringstream& s) const;
+    
+    void deserialize(std::istringstream& s); 
 };
 
 class CPre_prepare : public CPbftMessage{
@@ -78,21 +50,14 @@ class CPre_prepare : public CPbftMessage{
 public:
     CPre_prepare():CPbftMessage(PbftPhase::pre_prepare){
     }
-
+    
     //add explicit?
-    CPre_prepare(const CPbftMessage& msg){
-	phase = PbftPhase::pre_prepare;
-	view = msg.view;
-	seq = msg.seq;
-	senderId = msg.senderId;
-	digest = msg.digest;
-	vchSig = msg.vchSig;
-    }
+    CPre_prepare(const CPbftMessage& msg);
 };
 
 
 class CPrepare: public CPbftMessage{
-
+    
 public:
     CPrepare():CPbftMessage(PbftPhase::prepare){
     }
@@ -105,7 +70,6 @@ public:
     }
     
 };
-
 
 #endif /* PBFT_MSG_H */
 
