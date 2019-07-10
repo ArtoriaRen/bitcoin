@@ -4,6 +4,9 @@
  * and open the template in the editor.
  */
 
+// TODO: buffer future prepare and commit.
+
+
 
 #include <locale>
 
@@ -94,16 +97,19 @@ bool CPbft::onReceivePrePrepare(const CPbftMessage& pre_prepare){
     
     std::cout<< "received pre-prepare" << std::endl;
     // verify signature and return wrong if sig is wrong
-//    if(! verify(sig)){
-//	return false;
-//    }
+    //    if(! verify(sig)){
+    //	return false;
+    //    }
     
     // assume sigs are all good, so the protocol enters prepare phase.
     std::cout << "enter prepare phase. seq in pre-prepare = " << pre_prepare.seq << std::endl;
-    log[pre_prepare.seq].phase = PbftPhase::prepare;
     // add to log
     log[pre_prepare.seq] = CPbftLogEntry(pre_prepare);
-    broadcast(assembleMsg(log[pre_prepare.seq].phase, pre_prepare.seq));
+    log[pre_prepare.seq].phase = PbftPhase::prepare;
+    broadcast(assembleMsg(PbftPhase::prepare, pre_prepare.seq));
+    log[pre_prepare.seq].prepareCount++; // add one since the node iteself send prepare.
+    
+    
     return true;
 }
 
@@ -113,15 +119,16 @@ bool CPbft::onReceivePrepare(const CPbftMessage& prepare){
     
     
     //-----------add to log (currently use placeholder)
-//    log[prepare.seq].prepareArray.push_back(prepare);
+    //    log[prepare.seq].prepareArray.push_back(prepare);
     // count the number of prepare msg. enter commit if greater than 2f
-//    if(log[prepare.seq].phase == PbftPhase::prepare && log[prepare.seq].prepareArray.size() >= (nFaulty << 1) ){
+    //    if(log[prepare.seq].phase == PbftPhase::prepare && log[prepare.seq].prepareArray.size() >= (nFaulty << 1) ){
     log[prepare.seq].prepareCount++;
     if(log[prepare.seq].phase == PbftPhase::prepare && log[prepare.seq].prepareCount == (nFaulty << 1) ){
 	// enter commit phase
 	std::cout << "enter commit phase" << std::endl;
 	log[prepare.seq].phase = PbftPhase::commit;
-	broadcast(assembleMsg(log[prepare.seq].phase, prepare.seq));
+	broadcast(assembleMsg(PbftPhase::commit, prepare.seq));
+	log[prepare.seq].commitCount++;// add one since the node iteself send prepare.
 	return true;
     }
     return true;
@@ -132,10 +139,10 @@ bool CPbft::onReceiveCommit(const CPbftMessage& commit){
     //verify sig. if wrong, return false.
     
     //-----------add to log (currently use placeholder)
-//    log[commit.seq].commitArray.push_back(commit);
+    //    log[commit.seq].commitArray.push_back(commit);
     // count the number of prepare msg. enter reply if greater than 2f+1
-//    if(log[commit.seq].phase == PbftPhase::commit && log[commit.seq].commitArray.size() >= (nFaulty << 1 ) + 1 ){
-	 log[commit.seq].commitCount++;
+    //    if(log[commit.seq].phase == PbftPhase::commit && log[commit.seq].commitArray.size() >= (nFaulty << 1 ) + 1 ){
+    log[commit.seq].commitCount++;
     if(log[commit.seq].phase == PbftPhase::commit && log[commit.seq].commitCount >= (nFaulty << 1 ) + 1 ){
 	// enter commit phase
 	std::cout << "enter reply phase" << std::endl;
