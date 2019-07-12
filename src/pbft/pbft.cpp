@@ -9,6 +9,7 @@
 
 
 #include <locale>
+#include<string.h>
 
 #include "pbft/pbft.h"
 #include "init.h"
@@ -22,6 +23,7 @@ CPbft::CPbft(int serverPort): localView(0), globalView(0), log(std::vector<CPbft
     privateKey.MakeNewKey(false);
     publicKey = privateKey.GetPubKey();
     pRecvBuf = new char[CPbftMessage::messageSizeBytes];
+    std::cout << "publicKey = " << publicKey.GetHash().ToString() << "valid ? " << publicKey.IsValid() <<std::endl;
 }
 
 
@@ -55,31 +57,40 @@ void interruptableReceive(CPbft& pbftObj){
     while(!ShutdownRequested()){
 	// timeout block on receving a new packet. Attention: timeout is in milliseconds. 
 	ssize_t recvBytes =  pbftObj.udpServer.timed_recv(pbftObj.pRecvBuf, CPbftMessage::messageSizeBytes, 500);
-	if(recvBytes < 3){
-	    // received msg is pubKeyReq. send pubKey
-	    pbftObj.broadcastPubKey(pbftObj.publicKey);
+	
+	if(recvBytes == -1 &&  pbftObj.peerPubKeys.empty()){
+	    // timeout or error occurs.
+	    pbftObj.broadcastPubKeyReq(); // request peer publickey
+	    continue; 
+	}
+	
+	if(recvBytes == -1){
+	    // timeout. but we have got peer publickey. do nothing.
 	    continue;
 	}
 	
-	std::string recvString(pbftObj.pRecvBuf, recvBytes);
-
-	if(pbftObj.pRecvBuf[0] == 'a'){
+	if(pbftObj.pRecvBuf[0] == CPbft::pubKeyReqHeader){
+	    // received msg is pubKeyReq. send pubKey
+	    std::cout << "receive pubKey req" << std::endl;
+	    pbftObj.broadcastPubKey(pbftObj);
+	    continue;
+	}
+	
+	if(pbftObj.pRecvBuf[0] == CPbft::pubKeyMsgHeader){
 	    // received msg is a public key of peers.
-	    std::istringstream iss(recvString.substr(2)); //construct a stream start from index 2, because the first two chars ('a' and ' ') are not part of  a public key. 
+	    std::string recvString(pbftObj.pRecvBuf, recvBytes);
+	    std::cout << "receive pubKey, string = " << recvString << ", string size = " << recvString.size() << ", deserializing..." << std::endl;
+	    std::istringstream iss(recvString.substr(2, recvBytes-2)); //construct a stream start from index 2, because the first two chars ('a' and ' ') are not part of  a public key. 
 	    CPubKey pk;
 	    pk.Unserialize(iss);
-	}
-	
-	// request peer publickey
-	if(pbftObj.peerPubKeys.empty()){
-	    pbftObj.broadcastPubKeyReq();
+	    std::cout << "received publicKey = " << pk.GetHash().ToString() <<std::endl;
+	    pbftObj.peerPubKeys.push_back(pk);
 	    continue;
 	}
-	
-	
 	
 	// recvBytes should be greater than 5 to fill all fields of a PbftMessage object.
 	if( recvBytes > 5){
+	    std::string recvString(pbftObj.pRecvBuf, recvBytes);
 	    std::istringstream iss(recvString);
 	    CPbftMessage recvMsg;
 	    recvMsg.deserialize(iss);
@@ -195,19 +206,19 @@ void CPbft::excuteTransactions(const uint256& digest){
     std::cout << "executing tx..." << std::endl;
 }
 
-void CPbft::broadcastPubKey(const CPubKey& pk){
+void CPbft::broadcastPubKey(const CPbft& pbftObj){
     std::ostringstream oss;
     oss << pubKeyMsgHeader;
     oss << " ";
     int pbftPeerPort = std::stoi(gArgs.GetArg("-pbftpeerport", "18340"));
-    pk.Serialize(oss); 
+    pbftObj.publicKey.Serialize(oss); 
     udpClient.sendto(oss, "127.0.0.1", pbftPeerPort);
 }
 
 
 void CPbft::broadcastPubKeyReq(){
     std::ostringstream oss;
-    oss << CPbft::pubKeyReqHeader;
+    oss << pubKeyReqHeader;
     int pbftPeerPort = std::stoi(gArgs.GetArg("-pbftpeerport", "18340"));
     udpClient.sendto(oss, "127.0.0.1", pbftPeerPort);
 }

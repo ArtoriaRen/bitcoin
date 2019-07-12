@@ -106,6 +106,7 @@ int UdpClient::sendto(std::ostringstream& oss, const std::string& addr, int port
     if(f_socket == -1)
     {
         freeaddrinfo(addrinfo);
+	strerror(errno);
         throw UdpClient_server_runtime_error(("could not create socket for: \"" + addr + ":" + decimal_port + "\"").c_str());
     }
     return ::sendto(f_socket, oss.str().c_str(), oss.str().size(), 0, addrinfo->ai_addr, addrinfo->ai_addrlen);

@@ -79,7 +79,8 @@ public:
     
     CPbftMessage assembleMsg(PbftPhase phase, uint32_t seq);
     void broadcast(const CPbftMessage& msg);
-    void broadcastPubKey(const CPubKey& pk);
+    // ------placeholder: may be used to send ip.
+    void broadcastPubKey(const CPbft& pbftObj);
     void broadcastPubKeyReq();
 
     // TODO: may block header hash can be used as digest?
