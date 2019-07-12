@@ -34,6 +34,7 @@ public:
     int localView;
     int globalView;
     static const size_t logSize = 200; 
+    static const size_t groupSize = 4;
     // pbft log. The index is sequence number.
     std::vector<CPbftLogEntry> log;
 
@@ -78,6 +79,8 @@ public:
     
     CPbftMessage assembleMsg(PbftPhase phase, uint32_t seq);
     void broadcast(const CPbftMessage& msg);
+    void broadcastPubKey(const CPubKey& pk);
+    void broadcastPubKeyReq();
 
     // TODO: may block header hash can be used as digest?
     void excuteTransactions(const uint256& digest);
@@ -92,7 +95,11 @@ private:
     CKey privateKey;
     CPubKey publicKey; // public key should be put on the blockchain so every can verify group members.
     std::thread receiver;
-
+public:
+    // ----placeholder: send public keys over udp instead of extract it from the blockchain.
+    std::vector<CPubKey> peerPubKeys;
+    static const char pubKeyMsgHeader = 'a'; // use to identify public key exchange message.
+    static const char pubKeyReqHeader = 'b'; // use to identify public key exchange message.
 };
 
 

@@ -16,7 +16,7 @@
 
 
 //----------placeholder:members is initialized as size-4.
-CPbft::CPbft(int serverPort): localView(0), globalView(0), log(std::vector<CPbftLogEntry>(CPbft::logSize)), members(std::vector<CService>(4)), nGroups(1), udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient()), privateKey(CKey()){
+CPbft::CPbft(int serverPort): localView(0), globalView(0), log(std::vector<CPbftLogEntry>(CPbft::logSize)), members(std::vector<CService>(groupSize)), nGroups(1), udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient()), privateKey(CKey()){
     nFaulty = (members.size() - 1)/3;
     std::cout << "CPbft constructor. faulty nodes in a group =  "<< nFaulty << std::endl;
     privateKey.MakeNewKey(false);
@@ -29,17 +29,57 @@ CPbft::~CPbft(){
     delete []pRecvBuf;
 }
 
-//------------------ func run in udp server thread-------------
+
+
+/**
+ * Go through the last nBlocks block, calculate membership of nGroups groups.
+ * @param random is the random number used to group nodes.
+ * @param nBlocks is number of blocks whose miner participate in the PBFT.
+ * @return 
+ */
+void CPbft::group(uint32_t randomNumber, uint32_t nBlocks, const CBlockIndex* pindexNew) {
+    const CBlockIndex* pindex = pindexNew; // make a copy so that we do not change the original argument passed in
+    LogPrintf("group number %d nBlock = %d, pindex->nHeight = %d \n", nGroups, nBlocks, pindex->nHeight);
+    for (uint i = 0; i < nBlocks && pindex != nullptr; i++) {
+        //TODO: get block miner IP addr and port, add them to the members
+        LogPrintf("pbft: block height = %d, ip&port = %s \n ", pindex->nHeight, pindex->netAddrPort.ToString());
+        pindex = pindex->pprev;
+    }
+    
+}
+
+
+//------------------ funcs run in udp server thread-------------
 
 void interruptableReceive(CPbft& pbftObj){
-    bool fShutdown = ShutdownRequested();
-    while(!fShutdown){
+    while(!ShutdownRequested()){
 	// timeout block on receving a new packet. Attention: timeout is in milliseconds. 
 	ssize_t recvBytes =  pbftObj.udpServer.timed_recv(pbftObj.pRecvBuf, CPbftMessage::messageSizeBytes, 500);
+	if(recvBytes < 3){
+	    // received msg is pubKeyReq. send pubKey
+	    pbftObj.broadcastPubKey(pbftObj.publicKey);
+	    continue;
+	}
+	
+	std::string recvString(pbftObj.pRecvBuf, recvBytes);
+
+	if(pbftObj.pRecvBuf[0] == 'a'){
+	    // received msg is a public key of peers.
+	    std::istringstream iss(recvString.substr(2)); //construct a stream start from index 2, because the first two chars ('a' and ' ') are not part of  a public key. 
+	    CPubKey pk;
+	    pk.Unserialize(iss);
+	}
+	
+	// request peer publickey
+	if(pbftObj.peerPubKeys.empty()){
+	    pbftObj.broadcastPubKeyReq();
+	    continue;
+	}
+	
+	
+	
 	// recvBytes should be greater than 5 to fill all fields of a PbftMessage object.
 	if( recvBytes > 5){
-	    //----------placeholder. should deserialize the receiveBuf.
-	    std::string recvString(pbftObj.pRecvBuf, recvBytes);
 	    std::istringstream iss(recvString);
 	    CPbftMessage recvMsg;
 	    recvMsg.deserialize(iss);
@@ -62,7 +102,6 @@ void interruptableReceive(CPbft& pbftObj){
 		    
 	    }
 	} 
-        fShutdown = ShutdownRequested();
     }
 }
 
@@ -72,23 +111,6 @@ void CPbft::start(){
     receiver.join();
 }
 
-
-/**
- * Go through the last nBlocks block, calculate membership of nGroups groups.
- * @param random is the random number used to group nodes.
- * @param nBlocks is number of blocks whose miner participate in the PBFT.
- * @return 
- */
-void CPbft::group(uint32_t randomNumber, uint32_t nBlocks, const CBlockIndex* pindexNew) {
-    const CBlockIndex* pindex = pindexNew; // make a copy so that we do not change the original argument passed in
-    LogPrintf("group number %d nBlock = %d, pindex->nHeight = %d \n", nGroups, nBlocks, pindex->nHeight);
-    for (uint i = 0; i < nBlocks && pindex != nullptr; i++) {
-        //TODO: get block miner IP addr and port, add them to the members
-        LogPrintf("pbft: block height = %d, ip&port = %s \n ", pindex->nHeight, pindex->netAddrPort.ToString());
-        pindex = pindex->pprev;
-    }
-    
-}
 
 
 
@@ -173,3 +195,19 @@ void CPbft::excuteTransactions(const uint256& digest){
     std::cout << "executing tx..." << std::endl;
 }
 
+void CPbft::broadcastPubKey(const CPubKey& pk){
+    std::ostringstream oss;
+    oss << pubKeyMsgHeader;
+    oss << " ";
+    int pbftPeerPort = std::stoi(gArgs.GetArg("-pbftpeerport", "18340"));
+    pk.Serialize(oss); 
+    udpClient.sendto(oss, "127.0.0.1", pbftPeerPort);
+}
+
+
+void CPbft::broadcastPubKeyReq(){
+    std::ostringstream oss;
+    oss << CPbft::pubKeyReqHeader;
+    int pbftPeerPort = std::stoi(gArgs.GetArg("-pbftpeerport", "18340"));
+    udpClient.sendto(oss, "127.0.0.1", pbftPeerPort);
+}
