@@ -33,7 +33,7 @@ class CPbft{
 public:
     int localView;
     int globalView;
-    static const size_t logSize = 200; 
+    static const size_t logSize = 128; 
     static const size_t groupSize = 4;
     // pbft log. The index is sequence number.
     std::vector<CPbftLogEntry> log;
@@ -65,7 +65,7 @@ public:
     
     
     // Check Pre-prepare message signature and send Prepare message
-    bool onReceivePrePrepare(const CPbftMessage& pre_prepare);
+    bool onReceivePrePrepare(CPbftMessage& pre_prepare);
     
     
     //TODO: find the key used to sign and verify messages 

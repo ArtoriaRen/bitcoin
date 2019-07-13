@@ -5,6 +5,7 @@
  */
 
 #include "pbft/pbft_msg.h"
+#include "hash.h"
 
 CPbftMessage::CPbftMessage():phase(PbftPhase::pre_prepare), view(0), seq(0), digest(), vchSig(){
 }
@@ -49,6 +50,18 @@ void CPbftMessage::deserialize(std::istringstream& s) {
     
     std::cout << "deserialize ends, phase = " << phase  << ", view = " << view << ", seq = " << seq << ", senderId = "<< senderId << std::endl;
     
+}
+
+
+
+void CPbftMessage::getHash(uint256& result){
+    
+    CHash256().Write((const unsigned char*)phase, sizeof(phase))
+	    .Write((const unsigned char*)view, sizeof(view))
+	    .Write((const unsigned char*)seq, sizeof(seq))
+	    .Write((const unsigned char*)senderId, sizeof(senderId))
+	    .Write(digest.begin(), sizeof(digest))
+	    .Finalize((unsigned char*)&result);
 }
 
 CPre_prepare::CPre_prepare(const CPbftMessage& msg){

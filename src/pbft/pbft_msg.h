@@ -40,6 +40,8 @@ public:
     void serialize(std::ostringstream& s) const;
     
     void deserialize(std::istringstream& s); 
+
+    void getHash(uint256& result);
 };
 
 class CPre_prepare : public CPbftMessage{

@@ -79,12 +79,16 @@ void interruptableReceive(CPbft& pbftObj){
 	if(pbftObj.pRecvBuf[0] == CPbft::pubKeyMsgHeader){
 	    // received msg is a public key of peers.
 	    std::string recvString(pbftObj.pRecvBuf, recvBytes);
-	    std::cout << "receive pubKey, string = " << recvString << ", string size = " << recvString.size() << ", deserializing..." << std::endl;
+//	    std::cout << "receive pubKey, string = " << recvString << ", string size = " << recvString.size() << ", deserializing..." << std::endl;
 	    std::istringstream iss(recvString.substr(2, recvBytes-2)); //construct a stream start from index 2, because the first two chars ('a' and ' ') are not part of  a public key. 
 	    CPubKey pk;
 	    pk.Unserialize(iss);
 	    std::cout << "received publicKey = " << pk.GetHash().ToString() <<std::endl;
 	    pbftObj.peerPubKeys.push_back(pk);
+
+	    // ----------- placeholder:send dummy preprepare
+
+	    pbftObj.broadcast(pbftObj.assembleMsg(PbftPhase::pre_prepare, 4));
 	    continue;
 	}
 	
@@ -122,17 +126,16 @@ void CPbft::start(){
     receiver.join();
 }
 
-
-
-
-
-bool CPbft::onReceivePrePrepare(const CPbftMessage& pre_prepare){
+bool CPbft::onReceivePrePrepare(CPbftMessage& pre_prepare){
     
     std::cout<< "received pre-prepare" << std::endl;
     // verify signature and return wrong if sig is wrong
-    //    if(! verify(sig)){
-    //	return false;
-    //    }
+    uint256 msgHash;
+    pre_prepare.getHash(msgHash);
+    if(!peerPubKeys[0].Verify(msgHash, pre_prepare.vchSig)){
+	std::cerr<< "verification fail" << std::endl;
+    	return false;
+    }
     
     // assume sigs are all good, so the protocol enters prepare phase.
     std::cout << "enter prepare phase. seq in pre-prepare = " << pre_prepare.seq << std::endl;
@@ -190,6 +193,9 @@ bool CPbft::onReceiveCommit(const CPbftMessage& commit){
 CPbftMessage CPbft::assembleMsg(PbftPhase phase, uint32_t seq){
     CPbftMessage toSent(log[seq].pre_prepare);
     toSent.phase = phase;
+    uint256 hash;
+    toSent.getHash(hash);
+    privateKey.Sign(hash, toSent.vchSig);
     return toSent;
 }
 
