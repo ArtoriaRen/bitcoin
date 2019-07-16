@@ -22,10 +22,10 @@ CPbft::CPbft(int serverPort): localView(0), globalView(0), log(std::vector<CPbft
     privateKey.MakeNewKey(false);
     publicKey = privateKey.GetPubKey();
     pRecvBuf = new char[CPbftMessage::messageSizeBytes];
-    std::cout << "publicKey = " << publicKey.GetHash().ToString() <<std::endl;
     srand(time(0));
     server_id = rand() % 100;
     peerPubKeys.insert(std::make_pair(server_id, publicKey));
+    std::cout << "my serverId = " << server_id << ", publicKey = " << publicKey.GetHash().ToString() <<std::endl;
 }
 
 
@@ -55,14 +55,14 @@ void CPbft::group(uint32_t randomNumber, uint32_t nBlocks, const CBlockIndex* pi
 
 //------------------ funcs run in udp server thread-------------
 void serializePubKeyMsg(std::ostringstream& oss, uint32_t senderId, const CPubKey& pk);
-void deSerializePubKeyMsg(std::unordered_map<uint32_t, CPubKey>& map, char* pRecvBuf, ssize_t recvBytes);
+uint32_t deSerializePubKeyMsg(std::unordered_map<uint32_t, CPubKey>& map, char* pRecvBuf, ssize_t recvBytes);
 
 void interruptableReceive(CPbft& pbftObj){
     while(!ShutdownRequested()){
 	// timeout block on receving a new packet. Attention: timeout is in milliseconds. 
 	ssize_t recvBytes =  pbftObj.udpServer.timed_recv(pbftObj.pRecvBuf, CPbftMessage::messageSizeBytes, 500);
 	
-	if(recvBytes == -1 &&  pbftObj.peerPubKeys.empty()){
+	if(recvBytes == -1 &&  pbftObj.peerPubKeys.size() == 1){
 	    // timeout or error occurs.
 	    pbftObj.broadcastPubKeyReq(); // request peer publickey
 	    continue; 
@@ -81,11 +81,13 @@ void interruptableReceive(CPbft& pbftObj){
 	}
 	
 	if(pbftObj.pRecvBuf[0] == CPbft::pubKeyMsgHeader){
-	    deSerializePubKeyMsg(pbftObj.peerPubKeys, pbftObj.pRecvBuf, recvBytes);
+	    uint32_t recvSenderId = deSerializePubKeyMsg(pbftObj.peerPubKeys, pbftObj.pRecvBuf, recvBytes);
 	    
 	    // ----------- placeholder:send dummy preprepare
-	    if(pbftObj.log[1].prepareCount == 0){
-		pbftObj.broadcast(pbftObj.assemblePre_prepare(1));
+	    if(pbftObj.server_id < recvSenderId){
+	    	pbftObj.broadcastPubKey(); // send public key again in case other peers do not know our publickey .
+		uint32_t seq = rand() % CPbft::logSize;
+		pbftObj.broadcast(pbftObj.assemblePre_prepare(seq));
 	    }
 	    continue;
 	}
@@ -127,16 +129,10 @@ void CPbft::start(){
 bool CPbft::onReceivePrePrepare(CPbftMessage& pre_prepare){
     
     std::cout<< "received pre-prepare" << std::endl;
-    // verify signature and return wrong if sig is wrong
-    uint256 msgHash;
-    pre_prepare.getHash(msgHash);
-    if(peerPubKeys.find(pre_prepare.senderId) != peerPubKeys.end() &&  !peerPubKeys[pre_prepare.senderId].Verify(msgHash, pre_prepare.vchSig)){
-	std::cerr<< "verification fail" << std::endl;
-    	return false;
-    } 
-    std::cout << "verify pre-prepare succeed" << std::endl;
-    
-    // assume sigs are all good, so the protocol enters prepare phase.
+    // sanity check for signature, seq, view.
+    if(!checkMsg(pre_prepare)){
+	return false;
+    }
     std::cout << "enter prepare phase. seq in pre-prepare = " << pre_prepare.seq << std::endl;
     // add to log
     log[pre_prepare.seq] = CPbftLogEntry(pre_prepare);
@@ -150,15 +146,10 @@ bool CPbft::onReceivePrePrepare(CPbftMessage& pre_prepare){
 
 bool CPbft::onReceivePrepare(CPbftMessage& prepare){
     std::cout << "received prepare." << std::endl;
-    //verify sig. if wrong, return false.
-    uint256 msgHash;
-    prepare.getHash(msgHash);
-    if(peerPubKeys.find(prepare.senderId) != peerPubKeys.end() &&  !peerPubKeys[prepare.senderId].Verify(msgHash, prepare.vchSig)){
-	std::cerr<< "prepare msg: verification fail" << std::endl;
-    	return false;
-    } 
-    std::cout << "verify prepare succeed" << std::endl;
-    // placeholder :also check if view number is the same
+    // sanity check for signature, seq, view.
+    if(!checkMsg(prepare)){
+	return false;
+    }
     
     //-----------add to log (currently use placeholder)
     //    log[prepare.seq].prepareArray.push_back(prepare);
@@ -176,21 +167,16 @@ bool CPbft::onReceivePrepare(CPbftMessage& prepare){
 
 bool CPbft::onReceiveCommit(CPbftMessage& commit){
     std::cout << "received commit" << std::endl;
-    //verify sig. if wrong, return false.
-    uint256 msgHash;
-    commit.getHash(msgHash);
-    if(peerPubKeys.find(commit.senderId) != peerPubKeys.end() &&  !peerPubKeys[commit.senderId].Verify(msgHash, commit.vchSig)){
-	std::cerr<< "commit msg: verification fail" << std::endl;
-    	return false;
-    } 
-    std::cout << "verify commit succeed" << std::endl;
-    // placeholder :also check if view number is the same
+    // sanity check for signature, seq, view.
+    if(!checkMsg(commit)){
+	return false;
+    }
     
     //-----------add to log (currently use placeholder)
     //    log[commit.seq].commitArray.push_back(commit);
     
     // count the number of prepare msg. enter reply if greater than 2f+1
-    log[commit.seq].prepareCount++;
+    log[commit.seq].commitCount++;
     if(log[commit.seq].phase == PbftPhase::commit && log[commit.seq].commitCount == 2 ){ //placeholder for (nFaulty << 1 ) + 1
 	// enter commit phase
 	std::cout << "enter reply phase" << std::endl;
@@ -201,16 +187,50 @@ bool CPbft::onReceiveCommit(CPbftMessage& commit){
     return true;
 }
 
+bool CPbft::checkMsg(CPbftMessage& msg){
+    // verify signature and return wrong if sig is wrong
+    if(peerPubKeys.find(msg.senderId) == peerPubKeys.end() ){
+	std::cerr<< "no pub key for the sender" << std::endl;
+	return false;
+    }
+    uint256 msgHash;
+    msg.getHash(msgHash);
+    if(!peerPubKeys[msg.senderId].Verify(msgHash, msg.vchSig)){
+	std::cerr<< "verification sig fail" << std::endl;
+    	return false;
+    } 
+
+    // if phase is prepare or commit, also need to check view  and digest value.
+    if(msg.phase == PbftPhase::prepare || msg.phase == PbftPhase::commit){
+	// server should be in the view
+	if(localView != msg.view){
+	std::cerr<< "server view = " << localView << ", but msg view = " << msg.view << std::endl;
+	return false;
+	}
+
+	if(log[msg.seq].pre_prepare.view != msg.view){
+	std::cerr<< "log entry view = " << log[msg.seq].pre_prepare.view << ", but msg view = " << msg.view << std::endl;
+	}
+
+	if(log[msg.seq].pre_prepare.digest != msg.digest){
+	std::cerr<< "digest do not match" << std::endl;
+	}
+    }
+    std::cout << "sanity check succeed" << std::endl;
+    return true;
+}
 
 CPbftMessage CPbft::assemblePre_prepare(uint32_t seq){
     std::cout << "assembling pre_prepare" << std::endl;
-    CPbftMessage toSent(server_id);
+    CPbftMessage toSent(server_id); // phase is set to Pre_prepare by default.
     toSent.seq = seq;
-    toSent.view = 5;
+    toSent.view = 0;
+    localView = 0; // also change the local view, or the sanity check would fail.
     // TODO: set the digest value as the hash of a block or a transaction.
     uint256 hash;
     toSent.getHash(hash);
     privateKey.Sign(hash, toSent.vchSig);
+    log[seq].pre_prepare = toSent;
     return toSent;
 }
 
@@ -266,7 +286,7 @@ void serializePubKeyMsg(std::ostringstream& oss, const uint32_t senderId, const 
     pk.Serialize(oss); 
 }
 
-void deSerializePubKeyMsg(std::unordered_map<uint32_t, CPubKey>& map, const char* pRecvBuf, const ssize_t recvBytes){
+uint32_t deSerializePubKeyMsg(std::unordered_map<uint32_t, CPubKey>& map, char* pRecvBuf, const ssize_t recvBytes){
     std::string recvString(pRecvBuf, recvBytes);
     //	    std::cout << "receive pubKey, string = " << recvString << ", string size = " << recvString.size() << ", deserializing..." << std::endl;
     std::istringstream iss(recvString); //construct a stream start from index 2, because the first two chars ('a' and ' ') are not part of  a public key. 
@@ -277,6 +297,7 @@ void deSerializePubKeyMsg(std::unordered_map<uint32_t, CPubKey>& map, const char
     iss >> senderId;
     iss.get();
     pk.Unserialize(iss);
-    std::cout << "received publicKey = " << pk.GetHash().ToString() <<std::endl;
+    std::cout << "received publicKey = (" << senderId << ", " << pk.GetHash().ToString() << ")"<<std::endl;
     map.insert(std::make_pair(senderId, pk));
+    return senderId;
 }

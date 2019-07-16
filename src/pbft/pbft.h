@@ -31,8 +31,8 @@
 
 class CPbft{
 public:
-    int localView;
-    int globalView;
+    uint32_t localView;
+    uint32_t globalView;
     static const size_t logSize = 128; 
     static const size_t groupSize = 4;
     // pbft log. The index is sequence number.
@@ -77,6 +77,7 @@ public:
     bool onReceiveCommit(CPbftMessage& commit);
     
     
+    bool checkMsg(CPbftMessage& msg);
     CPbftMessage assemblePre_prepare(uint32_t seq);
     CPbftMessage assembleMsg(PbftPhase phase, uint32_t seq);
     void broadcast(const CPbftMessage& msg);

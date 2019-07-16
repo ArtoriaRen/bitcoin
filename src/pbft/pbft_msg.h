@@ -31,6 +31,8 @@ public:
     std::vector<unsigned char> vchSig; //serilized ecdsa signature.
     const static uint32_t messageSizeBytes = 128; // the real size is 4*4 + 32 +72 = 120 bytes.
     
+    CPbftMessage();
+
     CPbftMessage(uint32_t senderId);
     
     CPbftMessage(PbftPhase p, uint32_t senderId);

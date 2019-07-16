@@ -8,6 +8,9 @@
 #include "hash.h"
 #include "pbft.h"
 
+CPbftMessage::CPbftMessage():phase(PbftPhase::pre_prepare), view(0), seq(0), senderId(0), digest(), vchSig(){
+}
+
 CPbftMessage::CPbftMessage(uint32_t senderId):phase(PbftPhase::pre_prepare), view(0), seq(0), senderId(senderId), digest(), vchSig(){
 }
 
