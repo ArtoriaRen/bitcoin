@@ -15,7 +15,6 @@
 #include "init.h"
 #include "pbft/pbft_msg.h"
 
-
 //----------placeholder:members is initialized as size-4.
 CPbft::CPbft(int serverPort): localView(0), globalView(0), log(std::vector<CPbftLogEntry>(CPbft::logSize)), members(std::vector<CService>(groupSize)), nGroups(1), udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient()), privateKey(CKey()){
     nFaulty = (members.size() - 1)/3;
@@ -23,7 +22,10 @@ CPbft::CPbft(int serverPort): localView(0), globalView(0), log(std::vector<CPbft
     privateKey.MakeNewKey(false);
     publicKey = privateKey.GetPubKey();
     pRecvBuf = new char[CPbftMessage::messageSizeBytes];
-    std::cout << "publicKey = " << publicKey.GetHash().ToString() << "valid ? " << publicKey.IsValid() <<std::endl;
+    std::cout << "publicKey = " << publicKey.GetHash().ToString() <<std::endl;
+    srand(time(0));
+    server_id = rand() % 100;
+    peerPubKeys.insert(std::make_pair(server_id, publicKey));
 }
 
 
@@ -52,6 +54,8 @@ void CPbft::group(uint32_t randomNumber, uint32_t nBlocks, const CBlockIndex* pi
 
 
 //------------------ funcs run in udp server thread-------------
+void serializePubKeyMsg(std::ostringstream& oss, uint32_t senderId, const CPubKey& pk);
+void deSerializePubKeyMsg(std::unordered_map<uint32_t, CPubKey>& map, char* pRecvBuf, ssize_t recvBytes);
 
 void interruptableReceive(CPbft& pbftObj){
     while(!ShutdownRequested()){
@@ -72,23 +76,17 @@ void interruptableReceive(CPbft& pbftObj){
 	if(pbftObj.pRecvBuf[0] == CPbft::pubKeyReqHeader){
 	    // received msg is pubKeyReq. send pubKey
 	    std::cout << "receive pubKey req" << std::endl;
-	    pbftObj.broadcastPubKey(pbftObj);
+	    pbftObj.broadcastPubKey();
 	    continue;
 	}
 	
 	if(pbftObj.pRecvBuf[0] == CPbft::pubKeyMsgHeader){
-	    // received msg is a public key of peers.
-	    std::string recvString(pbftObj.pRecvBuf, recvBytes);
-//	    std::cout << "receive pubKey, string = " << recvString << ", string size = " << recvString.size() << ", deserializing..." << std::endl;
-	    std::istringstream iss(recvString.substr(2, recvBytes-2)); //construct a stream start from index 2, because the first two chars ('a' and ' ') are not part of  a public key. 
-	    CPubKey pk;
-	    pk.Unserialize(iss);
-	    std::cout << "received publicKey = " << pk.GetHash().ToString() <<std::endl;
-	    pbftObj.peerPubKeys.push_back(pk);
-
+	    deSerializePubKeyMsg(pbftObj.peerPubKeys, pbftObj.pRecvBuf, recvBytes);
+	    
 	    // ----------- placeholder:send dummy preprepare
-
-	    pbftObj.broadcast(pbftObj.assembleMsg(PbftPhase::pre_prepare, 4));
+	    if(pbftObj.log[1].prepareCount == 0){
+		pbftObj.broadcast(pbftObj.assemblePre_prepare(1));
+	    }
 	    continue;
 	}
 	
@@ -96,7 +94,7 @@ void interruptableReceive(CPbft& pbftObj){
 	if( recvBytes > 5){
 	    std::string recvString(pbftObj.pRecvBuf, recvBytes);
 	    std::istringstream iss(recvString);
-	    CPbftMessage recvMsg;
+	    CPbftMessage recvMsg(pbftObj.server_id);
 	    recvMsg.deserialize(iss);
 	    switch(recvMsg.phase){
 		case pre_prepare:
@@ -132,10 +130,11 @@ bool CPbft::onReceivePrePrepare(CPbftMessage& pre_prepare){
     // verify signature and return wrong if sig is wrong
     uint256 msgHash;
     pre_prepare.getHash(msgHash);
-    if(!peerPubKeys[0].Verify(msgHash, pre_prepare.vchSig)){
+    if(peerPubKeys.find(pre_prepare.senderId) != peerPubKeys.end() &&  !peerPubKeys[pre_prepare.senderId].Verify(msgHash, pre_prepare.vchSig)){
 	std::cerr<< "verification fail" << std::endl;
     	return false;
-    }
+    } 
+    std::cout << "verify pre-prepare succeed" << std::endl;
     
     // assume sigs are all good, so the protocol enters prepare phase.
     std::cout << "enter prepare phase. seq in pre-prepare = " << pre_prepare.seq << std::endl;
@@ -143,43 +142,56 @@ bool CPbft::onReceivePrePrepare(CPbftMessage& pre_prepare){
     log[pre_prepare.seq] = CPbftLogEntry(pre_prepare);
     log[pre_prepare.seq].phase = PbftPhase::prepare;
     broadcast(assembleMsg(PbftPhase::prepare, pre_prepare.seq));
-    log[pre_prepare.seq].prepareCount++; // add one since the node iteself send prepare.
+    std::cout << " seq = " << pre_prepare.seq << ", prepareCount = " << log[pre_prepare.seq].prepareCount << std::endl;
     
     
     return true;
 }
 
-bool CPbft::onReceivePrepare(const CPbftMessage& prepare){
-    std::cout << "received prepare. seq in prepare = " << prepare.seq << ", Phase  = " << log[prepare.seq].phase << std::endl;
+bool CPbft::onReceivePrepare(CPbftMessage& prepare){
+    std::cout << "received prepare." << std::endl;
     //verify sig. if wrong, return false.
-    
+    uint256 msgHash;
+    prepare.getHash(msgHash);
+    if(peerPubKeys.find(prepare.senderId) != peerPubKeys.end() &&  !peerPubKeys[prepare.senderId].Verify(msgHash, prepare.vchSig)){
+	std::cerr<< "prepare msg: verification fail" << std::endl;
+    	return false;
+    } 
+    std::cout << "verify prepare succeed" << std::endl;
+    // placeholder :also check if view number is the same
     
     //-----------add to log (currently use placeholder)
     //    log[prepare.seq].prepareArray.push_back(prepare);
     // count the number of prepare msg. enter commit if greater than 2f
-    //    if(log[prepare.seq].phase == PbftPhase::prepare && log[prepare.seq].prepareArray.size() >= (nFaulty << 1) ){
     log[prepare.seq].prepareCount++;
-    if(log[prepare.seq].phase == PbftPhase::prepare && log[prepare.seq].prepareCount == (nFaulty << 1) ){
+    if(log[prepare.seq].phase == PbftPhase::prepare && log[prepare.seq].prepareCount == 1 ){ //placeholder for (nFaulty << 1)
 	// enter commit phase
 	std::cout << "enter commit phase" << std::endl;
 	log[prepare.seq].phase = PbftPhase::commit;
 	broadcast(assembleMsg(PbftPhase::commit, prepare.seq));
-	log[prepare.seq].commitCount++;// add one since the node iteself send prepare.
 	return true;
     }
     return true;
 }
 
-bool CPbft::onReceiveCommit(const CPbftMessage& commit){
+bool CPbft::onReceiveCommit(CPbftMessage& commit){
     std::cout << "received commit" << std::endl;
     //verify sig. if wrong, return false.
+    uint256 msgHash;
+    commit.getHash(msgHash);
+    if(peerPubKeys.find(commit.senderId) != peerPubKeys.end() &&  !peerPubKeys[commit.senderId].Verify(msgHash, commit.vchSig)){
+	std::cerr<< "commit msg: verification fail" << std::endl;
+    	return false;
+    } 
+    std::cout << "verify commit succeed" << std::endl;
+    // placeholder :also check if view number is the same
     
     //-----------add to log (currently use placeholder)
     //    log[commit.seq].commitArray.push_back(commit);
+    
     // count the number of prepare msg. enter reply if greater than 2f+1
-    //    if(log[commit.seq].phase == PbftPhase::commit && log[commit.seq].commitArray.size() >= (nFaulty << 1 ) + 1 ){
-    log[commit.seq].commitCount++;
-    if(log[commit.seq].phase == PbftPhase::commit && log[commit.seq].commitCount >= (nFaulty << 1 ) + 1 ){
+    log[commit.seq].prepareCount++;
+    if(log[commit.seq].phase == PbftPhase::commit && log[commit.seq].commitCount == 2 ){ //placeholder for (nFaulty << 1 ) + 1
 	// enter commit phase
 	std::cout << "enter reply phase" << std::endl;
 	log[commit.seq].phase = PbftPhase::reply;
@@ -189,9 +201,22 @@ bool CPbft::onReceiveCommit(const CPbftMessage& commit){
     return true;
 }
 
+
+CPbftMessage CPbft::assemblePre_prepare(uint32_t seq){
+    std::cout << "assembling pre_prepare" << std::endl;
+    CPbftMessage toSent(server_id);
+    toSent.seq = seq;
+    toSent.view = 5;
+    // TODO: set the digest value as the hash of a block or a transaction.
+    uint256 hash;
+    toSent.getHash(hash);
+    privateKey.Sign(hash, toSent.vchSig);
+    return toSent;
+}
+
 // TODO: the real param should include digest, i.e. the block header hash.----(currently use placeholder)
 CPbftMessage CPbft::assembleMsg(PbftPhase phase, uint32_t seq){
-    CPbftMessage toSent(log[seq].pre_prepare);
+    CPbftMessage toSent(log[seq].pre_prepare, server_id);
     toSent.phase = phase;
     uint256 hash;
     toSent.getHash(hash);
@@ -200,24 +225,27 @@ CPbftMessage CPbft::assembleMsg(PbftPhase phase, uint32_t seq){
 }
 
 void CPbft::broadcast(const CPbftMessage& msg){
-    // send prepare to all nodes in the members array.
-    std::cout << "sending phase =" << msg.phase << std::endl; 
     std::ostringstream oss;
     int pbftPeerPort = std::stoi(gArgs.GetArg("-pbftpeerport", "18340"));
     msg.serialize(oss); 
+    // placeholder: loop to  send prepare to all nodes in the members array.
     udpClient.sendto(oss, "127.0.0.1", pbftPeerPort);
+    // virtually send the message to this node itself if it is a prepare or commit msg.
+    if(msg.phase == PbftPhase::prepare){
+	onReceivePrepare(const_cast<CPbftMessage&>(msg));
+    } else if (msg.phase == PbftPhase::commit){
+	onReceiveCommit(const_cast<CPbftMessage&>(msg));
+    } 
 }
 
 void CPbft::excuteTransactions(const uint256& digest){
     std::cout << "executing tx..." << std::endl;
 }
 
-void CPbft::broadcastPubKey(const CPbft& pbftObj){
+void CPbft::broadcastPubKey(){
     std::ostringstream oss;
-    oss << pubKeyMsgHeader;
-    oss << " ";
+    serializePubKeyMsg(oss, server_id, publicKey);
     int pbftPeerPort = std::stoi(gArgs.GetArg("-pbftpeerport", "18340"));
-    pbftObj.publicKey.Serialize(oss); 
     udpClient.sendto(oss, "127.0.0.1", pbftPeerPort);
 }
 
@@ -227,4 +255,28 @@ void CPbft::broadcastPubKeyReq(){
     oss << pubKeyReqHeader;
     int pbftPeerPort = std::stoi(gArgs.GetArg("-pbftpeerport", "18340"));
     udpClient.sendto(oss, "127.0.0.1", pbftPeerPort);
+}
+
+
+void serializePubKeyMsg(std::ostringstream& oss, const uint32_t senderId, const CPubKey& pk){
+    oss << CPbft::pubKeyMsgHeader;
+    oss << " ";
+    oss << senderId;
+    oss << " ";
+    pk.Serialize(oss); 
+}
+
+void deSerializePubKeyMsg(std::unordered_map<uint32_t, CPubKey>& map, const char* pRecvBuf, const ssize_t recvBytes){
+    std::string recvString(pRecvBuf, recvBytes);
+    //	    std::cout << "receive pubKey, string = " << recvString << ", string size = " << recvString.size() << ", deserializing..." << std::endl;
+    std::istringstream iss(recvString); //construct a stream start from index 2, because the first two chars ('a' and ' ') are not part of  a public key. 
+    char msgHeader;
+    uint32_t senderId; 
+    CPubKey pk;
+    iss >> msgHeader;
+    iss >> senderId;
+    iss.get();
+    pk.Unserialize(iss);
+    std::cout << "received publicKey = " << pk.GetHash().ToString() <<std::endl;
+    map.insert(std::make_pair(senderId, pk));
 }

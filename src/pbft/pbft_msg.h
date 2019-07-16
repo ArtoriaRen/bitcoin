@@ -29,13 +29,13 @@ public:
     uint32_t senderId;
     uint256 digest; // use the block header hash as digest.
     std::vector<unsigned char> vchSig; //serilized ecdsa signature.
-    const static uint32_t messageSizeBytes = 128;
+    const static uint32_t messageSizeBytes = 128; // the real size is 4*4 + 32 +72 = 120 bytes.
     
-    CPbftMessage();
+    CPbftMessage(uint32_t senderId);
     
-    CPbftMessage(PbftPhase p);
+    CPbftMessage(PbftPhase p, uint32_t senderId);
     
-    CPbftMessage(CPre_prepare& pre_prepare);
+    CPbftMessage(CPre_prepare& pre_prepare, uint32_t senderId);
     
     void serialize(std::ostringstream& s) const;
     

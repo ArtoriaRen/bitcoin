@@ -6,14 +6,15 @@
 
 #include "pbft/pbft_msg.h"
 #include "hash.h"
+#include "pbft.h"
 
-CPbftMessage::CPbftMessage():phase(PbftPhase::pre_prepare), view(0), seq(0), digest(), vchSig(){
+CPbftMessage::CPbftMessage(uint32_t senderId):phase(PbftPhase::pre_prepare), view(0), seq(0), senderId(senderId), digest(), vchSig(){
 }
 
-CPbftMessage::CPbftMessage(PbftPhase p):phase(p), view(0), seq(0), digest(), vchSig(){
+CPbftMessage::CPbftMessage(PbftPhase p, uint32_t senderId):phase(p), view(0), seq(0), senderId(senderId), digest(), vchSig(){
 }
 
-CPbftMessage::CPbftMessage(CPre_prepare& pre_prepare):phase(pre_prepare.phase), view(pre_prepare.view), seq(pre_prepare.seq), digest(pre_prepare.digest), vchSig(pre_prepare.vchSig){
+CPbftMessage::CPbftMessage(CPre_prepare& pre_prepare, uint32_t senderId):phase(pre_prepare.phase), view(pre_prepare.view), seq(pre_prepare.seq), senderId(senderId), digest(pre_prepare.digest), vchSig(pre_prepare.vchSig){
 }
 
 void CPbftMessage::serialize(std::ostringstream& s) const {
@@ -44,7 +45,6 @@ void CPbftMessage::deserialize(std::istringstream& s) {
     char c;
     vchSig.clear();
     while (s.get(c)) { // TODO: check the ret val when no more data.
-	std::cout << "deserialize for sig, c=" << static_cast<unsigned char>(c) << std::endl;
 	vchSig.push_back(static_cast<unsigned char>(c));
     }
     
@@ -55,11 +55,10 @@ void CPbftMessage::deserialize(std::istringstream& s) {
 
 
 void CPbftMessage::getHash(uint256& result){
-    
-    CHash256().Write((const unsigned char*)phase, sizeof(phase))
-	    .Write((const unsigned char*)view, sizeof(view))
-	    .Write((const unsigned char*)seq, sizeof(seq))
-	    .Write((const unsigned char*)senderId, sizeof(senderId))
+    CHash256().Write((const unsigned char*)&phase, sizeof(phase))
+	    .Write((const unsigned char*)&view, sizeof(view))
+	    .Write((const unsigned char*)&seq, sizeof(seq))
+	    .Write((const unsigned char*)&senderId, sizeof(senderId))
 	    .Write(digest.begin(), sizeof(digest))
 	    .Finalize((unsigned char*)&result);
 }

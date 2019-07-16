@@ -87,7 +87,6 @@ int UdpClient::get_socket() const
  */
 int UdpClient::sendto(std::ostringstream& oss, const std::string& addr, int port)
 {
-    std::cout << "udp client: send to port " << port << std::endl;
     char decimal_port[16];
     snprintf(decimal_port, sizeof(decimal_port), "%d", port);
     decimal_port[sizeof(decimal_port) / sizeof(decimal_port[0]) - 1] = '\0';
