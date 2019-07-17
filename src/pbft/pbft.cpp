@@ -87,7 +87,7 @@ void interruptableReceive(CPbft& pbftObj){
 	    if(pbftObj.server_id < recvSenderId){
 	    	pbftObj.broadcastPubKey(); // send public key again in case other peers do not know our publickey .
 		uint32_t seq = rand() % CPbft::logSize;
-		pbftObj.broadcast(pbftObj.assemblePre_prepare(seq));
+		pbftObj.broadcast(pbftObj.assemblePre_prepare(seq, "test"));
 	    }
 	    continue;
 	}
@@ -189,7 +189,7 @@ bool CPbft::onReceiveCommit(CPbftMessage& commit){
 
 bool CPbft::checkMsg(CPbftMessage& msg){
     // verify signature and return wrong if sig is wrong
-    if(peerPubKeys.find(msg.senderId) == peerPubKeys.end() ){
+    if(peerPubKeys.find(msg.senderId) == peerPubKeys.end()){
 	std::cerr<< "no pub key for the sender" << std::endl;
 	return false;
     }
@@ -199,38 +199,49 @@ bool CPbft::checkMsg(CPbftMessage& msg){
 	std::cerr<< "verification sig fail" << std::endl;
     	return false;
     } 
-
-    // if phase is prepare or commit, also need to check view  and digest value.
-    if(msg.phase == PbftPhase::prepare || msg.phase == PbftPhase::commit){
-	// server should be in the view
-	if(localView != msg.view){
+    // server should be in the view
+    if(localView != msg.view){
 	std::cerr<< "server view = " << localView << ", but msg view = " << msg.view << std::endl;
 	return false;
-	}
-
+    }
+    
+    /* check if the seq is alreadly attached to another digest.
+     * Faulty followers may accept.
+     */
+    if(!log[msg.seq].pre_prepare.digest.IsNull() && log[msg.seq].pre_prepare.digest != msg.digest){
+	std::cerr<< "digest error. digest in log = " << log[msg.seq].pre_prepare.digest.GetHex() << ", but msg.digest = " << msg.digest.GetHex() << std::endl;
+	return false;
+    }
+    
+    // if phase is prepare or commit, also need to check view  and digest value.
+    if(msg.phase == PbftPhase::prepare || msg.phase == PbftPhase::commit){
+	
 	if(log[msg.seq].pre_prepare.view != msg.view){
-	std::cerr<< "log entry view = " << log[msg.seq].pre_prepare.view << ", but msg view = " << msg.view << std::endl;
+	    std::cerr<< "log entry view = " << log[msg.seq].pre_prepare.view << ", but msg view = " << msg.view << std::endl;
 	}
-
+	
 	if(log[msg.seq].pre_prepare.digest != msg.digest){
-	std::cerr<< "digest do not match" << std::endl;
+	    std::cerr<< "digest do not match" << std::endl;
 	}
     }
     std::cout << "sanity check succeed" << std::endl;
     return true;
 }
 
-CPbftMessage CPbft::assemblePre_prepare(uint32_t seq){
+CPbftMessage CPbft::assemblePre_prepare(uint32_t seq, std::string clientReq){
     std::cout << "assembling pre_prepare" << std::endl;
     CPbftMessage toSent(server_id); // phase is set to Pre_prepare by default.
     toSent.seq = seq;
     toSent.view = 0;
     localView = 0; // also change the local view, or the sanity check would fail.
-    // TODO: set the digest value as the hash of a block or a transaction.
+    toSent.digest = Hash(clientReq.begin(), clientReq.end());
     uint256 hash;
     toSent.getHash(hash);
     privateKey.Sign(hash, toSent.vchSig);
-    log[seq].pre_prepare = toSent;
+    /*Faulty leaders may change an existing log entry.*/
+    if(log[seq].pre_prepare.digest.IsNull()){
+	log[seq].pre_prepare = toSent;
+    }
     return toSent;
 }
 

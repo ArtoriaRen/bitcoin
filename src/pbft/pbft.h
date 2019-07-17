@@ -78,7 +78,7 @@ public:
     
     
     bool checkMsg(CPbftMessage& msg);
-    CPbftMessage assemblePre_prepare(uint32_t seq);
+    CPbftMessage assemblePre_prepare(uint32_t seq, std::string clientReq);
     CPbftMessage assembleMsg(PbftPhase phase, uint32_t seq);
     void broadcast(const CPbftMessage& msg);
     // ------placeholder: may be used to send ip.
