@@ -16,7 +16,7 @@
 #include "pbft/pbft_msg.h"
 
 //----------placeholder:members is initialized as size-4.
-CPbft::CPbft(int serverPort): localView(0), globalView(0), log(std::vector<CPbftLogEntry>(CPbft::logSize)), members(std::vector<CService>(groupSize)), nGroups(1), udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient()), privateKey(CKey()){
+CPbft::CPbft(int serverPort): localView(0), globalView(0), log(std::vector<CPbftLogEntry>(CPbft::logSize)), nextSeq(0), members(std::vector<CService>(groupSize)), nGroups(1), udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient()), privateKey(CKey()){
     nFaulty = (members.size() - 1)/3;
     std::cout << "CPbft constructor. faulty nodes in a group =  "<< nFaulty << std::endl;
     privateKey.MakeNewKey(false);
@@ -86,7 +86,7 @@ void interruptableReceive(CPbft& pbftObj){
 	    // ----------- placeholder:send dummy preprepare
 	    if(pbftObj.server_id < recvSenderId){
 	    	pbftObj.broadcastPubKey(); // send public key again in case other peers do not know our publickey .
-		uint32_t seq = rand() % CPbft::logSize;
+		uint32_t seq = rand() % CPbft::logSize; // placeholder : should use the next seq.
 		pbftObj.broadcast(pbftObj.assemblePre_prepare(seq, "test"));
 	    }
 	    continue;
@@ -136,11 +136,17 @@ bool CPbft::onReceivePrePrepare(CPbftMessage& pre_prepare){
     std::cout << "enter prepare phase. seq in pre-prepare = " << pre_prepare.seq << std::endl;
     // add to log
     log[pre_prepare.seq] = CPbftLogEntry(pre_prepare);
+    /* check if at least 2f prepare has been received. If so, enter commit phase directly; otherwise, enter prepare phase.(The goal of this operation is to tolerate network reordering.)
+     -----Placeholder: to tolerate faulty nodes, we must check if all prepare msg matches the pre-prepare.
+     */
+    if(log[pre_prepare.seq].prepareCount >= (nFaulty << 1)){
+    log[pre_prepare.seq].phase = PbftPhase::commit;
+    broadcast(assembleMsg(PbftPhase::prepare, pre_prepare.seq)); // also need to send prepare so that other servers can collect enough prepares.
+    broadcast(assembleMsg(PbftPhase::commit, pre_prepare.seq));
+    } else {
     log[pre_prepare.seq].phase = PbftPhase::prepare;
     broadcast(assembleMsg(PbftPhase::prepare, pre_prepare.seq));
-    std::cout << " seq = " << pre_prepare.seq << ", prepareCount = " << log[pre_prepare.seq].prepareCount << std::endl;
-    
-    
+    }
     return true;
 }
 
@@ -155,7 +161,8 @@ bool CPbft::onReceivePrepare(CPbftMessage& prepare){
     //    log[prepare.seq].prepareArray.push_back(prepare);
     // count the number of prepare msg. enter commit if greater than 2f
     log[prepare.seq].prepareCount++;
-    if(log[prepare.seq].phase == PbftPhase::prepare && log[prepare.seq].prepareCount == 1 ){ //placeholder for (nFaulty << 1)
+    //use == (nFaulty << 1) instead of >= (nFaulty << 1) so that we do not re-send commit msg every time another prepare msg is received.  
+    if(log[prepare.seq].phase == PbftPhase::prepare && log[prepare.seq].prepareCount == (nFaulty << 1)){
 	// enter commit phase
 	std::cout << "enter commit phase" << std::endl;
 	log[prepare.seq].phase = PbftPhase::commit;
@@ -177,7 +184,7 @@ bool CPbft::onReceiveCommit(CPbftMessage& commit){
     
     // count the number of prepare msg. enter reply if greater than 2f+1
     log[commit.seq].commitCount++;
-    if(log[commit.seq].phase == PbftPhase::commit && log[commit.seq].commitCount == 2 ){ //placeholder for (nFaulty << 1 ) + 1
+    if(log[commit.seq].phase == PbftPhase::commit && log[commit.seq].commitCount == (nFaulty << 1 ) + 1 ){ 
 	// enter commit phase
 	std::cout << "enter reply phase" << std::endl;
 	log[commit.seq].phase = PbftPhase::reply;

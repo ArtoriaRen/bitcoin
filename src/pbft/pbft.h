@@ -31,12 +31,13 @@
 
 class CPbft{
 public:
-    uint32_t localView;
-    uint32_t globalView;
     static const size_t logSize = 128; 
     static const size_t groupSize = 4;
+    uint32_t localView;
+    uint32_t globalView;
     // pbft log. The index is sequence number.
     std::vector<CPbftLogEntry> log;
+    uint32_t nextSeq; // next available seq that has not been attached to any client request.
     
     // TODO: parameters should be put in a higher layer class. They are not part of pbft.
     // group member list of the group where this node is in (use hard coded ip address first)
