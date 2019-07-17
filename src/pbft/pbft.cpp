@@ -14,15 +14,17 @@
 #include "pbft/pbft.h"
 #include "init.h"
 #include "pbft/pbft_msg.h"
+#include "crypto/aes.h"
 
 //----------placeholder:members is initialized as size-4.
-CPbft::CPbft(int serverPort): localView(0), globalView(0), log(std::vector<CPbftLogEntry>(CPbft::logSize)), nextSeq(0), members(std::vector<CService>(groupSize)), nGroups(1), udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient()), privateKey(CKey()){
+
+CPbft::CPbft(int serverPort, unsigned int randomSeed): localView(0), globalView(0), log(std::vector<CPbftLogEntry>(CPbft::logSize)), nextSeq(0), members(std::vector<CService>(groupSize)), nGroups(1), udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient()), privateKey(CKey()){
     nFaulty = (members.size() - 1)/3;
     std::cout << "CPbft constructor. faulty nodes in a group =  "<< nFaulty << std::endl;
     privateKey.MakeNewKey(false);
     publicKey = privateKey.GetPubKey();
     pRecvBuf = new char[CPbftMessage::messageSizeBytes];
-    srand(time(0));
+    srand(randomSeed);
     server_id = rand() % 100;
     peerPubKeys.insert(std::make_pair(server_id, publicKey));
     std::cout << "my serverId = " << server_id << ", publicKey = " << publicKey.GetHash().ToString() <<std::endl;
@@ -103,10 +105,10 @@ void interruptableReceive(CPbft& pbftObj){
 		    pbftObj.onReceivePrePrepare(recvMsg);
 		    break;
 		case prepare:
-		    pbftObj.onReceivePrepare(recvMsg);
+		    pbftObj.onReceivePrepare(recvMsg, true);
 		    break;
 		case commit:
-		    pbftObj.onReceiveCommit(recvMsg);
+		    pbftObj.onReceiveCommit(recvMsg, true);
 		    break;
 		case reply:
 		    // only the local leader need to handle the reply message?
@@ -129,35 +131,35 @@ void CPbft::start(){
 bool CPbft::onReceivePrePrepare(CPbftMessage& pre_prepare){
     
     std::cout<< "received pre-prepare" << std::endl;
-    // sanity check for signature, seq, view.
+    // sanity check for signature, seq, view, digest.
+    /*Faulty nodes may proceed even if the sanity check fails*/
     if(!checkMsg(pre_prepare)){
 	return false;
     }
-    std::cout << "enter prepare phase. seq in pre-prepare = " << pre_prepare.seq << std::endl;
     // add to log
-    log[pre_prepare.seq] = CPbftLogEntry(pre_prepare);
+    log[pre_prepare.seq].pre_prepare = pre_prepare;
     /* check if at least 2f prepare has been received. If so, enter commit phase directly; otherwise, enter prepare phase.(The goal of this operation is to tolerate network reordering.)
      -----Placeholder: to tolerate faulty nodes, we must check if all prepare msg matches the pre-prepare.
      */
+    broadcast(assembleMsg(PbftPhase::prepare, pre_prepare.seq)); 
     if(log[pre_prepare.seq].prepareCount >= (nFaulty << 1)){
-    log[pre_prepare.seq].phase = PbftPhase::commit;
-    broadcast(assembleMsg(PbftPhase::prepare, pre_prepare.seq)); // also need to send prepare so that other servers can collect enough prepares.
-    broadcast(assembleMsg(PbftPhase::commit, pre_prepare.seq));
+	log[pre_prepare.seq].phase = PbftPhase::commit;
+	broadcast(assembleMsg(PbftPhase::commit, pre_prepare.seq));
     } else {
-    log[pre_prepare.seq].phase = PbftPhase::prepare;
-    broadcast(assembleMsg(PbftPhase::prepare, pre_prepare.seq));
+        std::cout << "enter prepare phase. seq in pre-prepare = " << pre_prepare.seq << std::endl;
+	log[pre_prepare.seq].phase = PbftPhase::prepare;
     }
     return true;
 }
 
-bool CPbft::onReceivePrepare(CPbftMessage& prepare){
+bool CPbft::onReceivePrepare(CPbftMessage& prepare, bool sanityCheck){
     std::cout << "received prepare." << std::endl;
     // sanity check for signature, seq, view.
-    if(!checkMsg(prepare)){
+    if(sanityCheck && !checkMsg(prepare)){
 	return false;
     }
     
-    //-----------add to log (currently use placeholder)
+    //-----------add to log (currently use placeholder: should add the entire message to log and not increase re-count if the sender is the same. Also, if prepares are received earlier than pre-prepare, different prepare may have different digest. Should categorize buffered prepares based on digest.)
     //    log[prepare.seq].prepareArray.push_back(prepare);
     // count the number of prepare msg. enter commit if greater than 2f
     log[prepare.seq].prepareCount++;
@@ -172,10 +174,10 @@ bool CPbft::onReceivePrepare(CPbftMessage& prepare){
     return true;
 }
 
-bool CPbft::onReceiveCommit(CPbftMessage& commit){
+bool CPbft::onReceiveCommit(CPbftMessage& commit, bool sanityCheck){
     std::cout << "received commit" << std::endl;
     // sanity check for signature, seq, view.
-    if(!checkMsg(commit)){
+    if(sanityCheck && !checkMsg(commit)){
 	return false;
     }
     
@@ -212,8 +214,8 @@ bool CPbft::checkMsg(CPbftMessage& msg){
 	return false;
     }
     
-    /* check if the seq is alreadly attached to another digest.
-     * Faulty followers may accept.
+    /* check if the seq is alreadly attached to another digest. Checking if log entry is null is necessary b/c prepare msgs may arrive earlier than pre-prepare.
+     * Placeholder: Faulty followers may accept.
      */
     if(!log[msg.seq].pre_prepare.digest.IsNull() && log[msg.seq].pre_prepare.digest != msg.digest){
 	std::cerr<< "digest error. digest in log = " << log[msg.seq].pre_prepare.digest.GetHex() << ", but msg.digest = " << msg.digest.GetHex() << std::endl;
@@ -225,10 +227,7 @@ bool CPbft::checkMsg(CPbftMessage& msg){
 	
 	if(log[msg.seq].pre_prepare.view != msg.view){
 	    std::cerr<< "log entry view = " << log[msg.seq].pre_prepare.view << ", but msg view = " << msg.view << std::endl;
-	}
-	
-	if(log[msg.seq].pre_prepare.digest != msg.digest){
-	    std::cerr<< "digest do not match" << std::endl;
+	    return false;
 	}
     }
     std::cout << "sanity check succeed" << std::endl;
@@ -245,10 +244,6 @@ CPbftMessage CPbft::assemblePre_prepare(uint32_t seq, std::string clientReq){
     uint256 hash;
     toSent.getHash(hash);
     privateKey.Sign(hash, toSent.vchSig);
-    /*Faulty leaders may change an existing log entry.*/
-    if(log[seq].pre_prepare.digest.IsNull()){
-	log[seq].pre_prepare = toSent;
-    }
     return toSent;
 }
 
@@ -269,11 +264,25 @@ void CPbft::broadcast(const CPbftMessage& msg){
     // placeholder: loop to  send prepare to all nodes in the members array.
     udpClient.sendto(oss, "127.0.0.1", pbftPeerPort);
     // virtually send the message to this node itself if it is a prepare or commit msg.
-    if(msg.phase == PbftPhase::prepare){
-	onReceivePrepare(const_cast<CPbftMessage&>(msg));
-    } else if (msg.phase == PbftPhase::commit){
-	onReceiveCommit(const_cast<CPbftMessage&>(msg));
-    } 
+    switch(msg.phase){
+	case PbftPhase::pre_prepare:
+	    // do call onReceivePrePrepare, because the leader do not send prepare.
+	    if(log[msg.seq].pre_prepare.digest.IsNull()){
+		// add to log
+		log[msg.seq] = CPbftLogEntry(msg);
+		log[msg.seq].phase = PbftPhase::prepare;
+	    }
+	    
+	    break;
+	case PbftPhase::prepare:
+	    onReceivePrepare(const_cast<CPbftMessage&>(msg), false);
+	    break;
+	case PbftPhase::commit:
+	    onReceiveCommit(const_cast<CPbftMessage&>(msg), false);
+	    break;
+	default:
+	    break;
+    }
 }
 
 void CPbft::excuteTransactions(const uint256& digest){
@@ -318,4 +327,10 @@ uint32_t deSerializePubKeyMsg(std::unordered_map<uint32_t, CPubKey>& map, char* 
     std::cout << "received publicKey = (" << senderId << ", " << pk.GetHash().ToString() << ")"<<std::endl;
     map.insert(std::make_pair(senderId, pk));
     return senderId;
+}
+
+
+
+CPubKey CPbft::getPublicKey(){
+    return publicKey;
 }

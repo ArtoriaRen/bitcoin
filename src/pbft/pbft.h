@@ -53,7 +53,7 @@ public:
     std::deque<CPbftMessage> receiveQue;
     
     
-    explicit CPbft(int serverPort);    
+    explicit CPbft(int serverPort, unsigned int randomSeed = 0);    
     ~CPbft();
     
     // There are two  threads: 1. receive udp packets 2. process packet according to the protocol (the current thread). 
@@ -71,11 +71,11 @@ public:
     
     //TODO: find the key used to sign and verify messages 
     // Check Prepare message signature, add to corresponding log, check if we have accumulated 2f Prepare message. If so, send Commit message
-    bool onReceivePrepare(CPbftMessage& prepare);
+    bool onReceivePrepare(CPbftMessage& prepare, bool sanityCheck);
     
     
     // Check Prepare message signature, add to corresponding log, check if we have accumulated 2f+1 Commit message. If so, execute transactions and reply. 
-    bool onReceiveCommit(CPbftMessage& commit);
+    bool onReceiveCommit(CPbftMessage& commit, bool sanityCheck);
     
     
     bool checkMsg(CPbftMessage& msg);
@@ -100,6 +100,7 @@ private:
     CPubKey publicKey; // public key should be put on the blockchain so every can verify group members.
     std::thread receiver;
 public:
+    CPubKey getPublicKey();
     // ----placeholder: send public keys over udp instead of extract it from the blockchain.
     std::unordered_map<uint32_t, CPubKey> peerPubKeys;
     static const char pubKeyMsgHeader = 'a'; // use to identify public key exchange message.

@@ -29,7 +29,7 @@ public:
     
 
     //---placeholder. default phase should be pre-prepare.
-    CPbftLogEntry(): prepareCount(0), commitCount(0), phase(PbftPhase::prepare){}
+    CPbftLogEntry(): prepareCount(0), commitCount(0), phase(PbftPhase::pre_prepare){}
     
     CPbftLogEntry(const CPre_prepare& pp):prepareCount(0), commitCount(0){
 	pre_prepare = pp;
