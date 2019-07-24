@@ -18,14 +18,12 @@
 
 //----------placeholder:members is initialized as size-4.
 
-CPbft::CPbft(int serverPort, unsigned int randomSeed): localView(0), globalView(0), log(std::vector<CPbftLogEntry>(CPbft::logSize)), nextSeq(0), members(std::vector<CService>(groupSize)), nGroups(1), udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient()), privateKey(CKey()){
+CPbft::CPbft(int serverPort, unsigned int id): localView(0), globalView(0), log(std::vector<CPbftLogEntry>(CPbft::logSize)), nextSeq(0), members(std::vector<CService>(groupSize)), server_id(id), nGroups(1), udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient()), privateKey(CKey()), x(-1){
     nFaulty = (members.size() - 1)/3;
     std::cout << "CPbft constructor. faulty nodes in a group =  "<< nFaulty << std::endl;
     privateKey.MakeNewKey(false);
     publicKey = privateKey.GetPubKey();
     pRecvBuf = new char[CPbftMessage::messageSizeBytes];
-    srand(randomSeed);
-    server_id = rand() % 100;
     peerPubKeys.insert(std::make_pair(server_id, publicKey));
     std::cout << "my serverId = " << server_id << ", publicKey = " << publicKey.GetHash().ToString() <<std::endl;
 }
@@ -60,56 +58,71 @@ void serializePubKeyMsg(std::ostringstream& oss, uint32_t senderId, const CPubKe
 uint32_t deSerializePubKeyMsg(std::unordered_map<uint32_t, CPubKey>& map, char* pRecvBuf, ssize_t recvBytes);
 
 void interruptableReceive(CPbft& pbftObj){
+    // Placeholder: broadcast myself pubkey, and request others' pubkey.
+    pbftObj.broadcastPubKey();
+    pbftObj.broadcastPubKeyReq(); // request peer publickey
+    
     while(!ShutdownRequested()){
 	// timeout block on receving a new packet. Attention: timeout is in milliseconds. 
 	ssize_t recvBytes =  pbftObj.udpServer.timed_recv(pbftObj.pRecvBuf, CPbftMessage::messageSizeBytes, 500);
 	
-	if(recvBytes == -1 &&  pbftObj.peerPubKeys.size() == 1){
-	    // timeout or error occurs.
-	    pbftObj.broadcastPubKeyReq(); // request peer publickey
-	    continue; 
-	}
+	//	if(recvBytes == -1 &&  pbftObj.peerPubKeys.size() == 1){
+	//	    // timeout or error occurs.
+	//	    pbftObj.broadcastPubKeyReq(); // request peer publickey
+	//	    continue; 
+	//	}
 	
 	if(recvBytes == -1){
 	    // timeout. but we have got peer publickey. do nothing.
 	    continue;
 	}
 	
-	if(pbftObj.pRecvBuf[0] == CPbft::pubKeyReqHeader){
-	    // received msg is pubKeyReq. send pubKey
-	    std::cout << "receive pubKey req" << std::endl;
-	    pbftObj.broadcastPubKey();
-	    continue;
+	switch(pbftObj.pRecvBuf[0]){
+	    case CPbft::pubKeyReqHeader:
+		// received msg is pubKeyReq. send pubKey
+		std::cout << "receive pubKey req" << std::endl;
+		pbftObj.broadcastPubKey();
+		continue;
+	    case CPbft::pubKeyMsgHeader:
+		deSerializePubKeyMsg(pbftObj.peerPubKeys, pbftObj.pRecvBuf, recvBytes);
+		continue;
+	    case CPbft::clientReqHeader:
+		// received client request, send preprepare
+		uint32_t seq = pbftObj.nextSeq++; // placeholder : should use the next seq.
+		pbftObj.broadcast(pbftObj.assemblePre_prepare(seq, std::string(pbftObj.pRecvBuf[2], recvBytes - 2)));
+		continue;
 	}
 	
-	if(pbftObj.pRecvBuf[0] == CPbft::pubKeyMsgHeader){
-	    uint32_t recvSenderId = deSerializePubKeyMsg(pbftObj.peerPubKeys, pbftObj.pRecvBuf, recvBytes);
-	    
-	    // ----------- placeholder:send dummy preprepare
-	    if(pbftObj.server_id < recvSenderId){
-	    	pbftObj.broadcastPubKey(); // send public key again in case other peers do not know our publickey .
-		uint32_t seq = rand() % CPbft::logSize; // placeholder : should use the next seq.
-		pbftObj.broadcast(pbftObj.assemblePre_prepare(seq, "test"));
-	    }
-	    continue;
-	}
+	
 	
 	// recvBytes should be greater than 5 to fill all fields of a PbftMessage object.
 	if( recvBytes > 5){
 	    std::string recvString(pbftObj.pRecvBuf, recvBytes);
 	    std::istringstream iss(recvString);
-	    CPbftMessage recvMsg(pbftObj.server_id);
-	    recvMsg.deserialize(iss);
-	    switch(recvMsg.phase){
+	    int phaseNum = -1;
+	    iss >> phaseNum;
+	    switch(static_cast<PbftPhase>(phaseNum)){
 		case pre_prepare:
-		    pbftObj.onReceivePrePrepare(recvMsg);
+		{
+		    CPre_prepare ppMsg(pbftObj.server_id);
+		    ppMsg.deserialize(iss);
+		    pbftObj.onReceivePrePrepare(ppMsg);
 		    break;
+		}
 		case prepare:
-		    pbftObj.onReceivePrepare(recvMsg, true);
+		{
+		    CPbftMessage pMsg(pbftObj.server_id);
+		    pMsg.deserialize(iss);
+		    pbftObj.onReceivePrepare(pMsg, true);
 		    break;
+		} 
 		case commit:
-		    pbftObj.onReceiveCommit(recvMsg, true);
+		{
+		    CPbftMessage cMsg(pbftObj.server_id);
+		    cMsg.deserialize(iss);
+		    pbftObj.onReceiveCommit(cMsg, true);
 		    break;
+		}
 		case reply:
 		    // only the local leader need to handle the reply message?
 		    std::cout << "received reply msg" << std::endl;
@@ -146,7 +159,7 @@ bool CPbft::onReceivePrePrepare(CPbftMessage& pre_prepare){
 	log[pre_prepare.seq].phase = PbftPhase::commit;
 	broadcast(assembleMsg(PbftPhase::commit, pre_prepare.seq));
     } else {
-        std::cout << "enter prepare phase. seq in pre-prepare = " << pre_prepare.seq << std::endl;
+	std::cout << "enter prepare phase. seq in pre-prepare = " << pre_prepare.seq << std::endl;
 	log[pre_prepare.seq].phase = PbftPhase::prepare;
     }
     return true;
@@ -206,7 +219,7 @@ bool CPbft::checkMsg(CPbftMessage& msg){
     msg.getHash(msgHash);
     if(!peerPubKeys[msg.senderId].Verify(msgHash, msg.vchSig)){
 	std::cerr<< "verification sig fail" << std::endl;
-    	return false;
+	return false;
     } 
     // server should be in the view
     if(localView != msg.view){
@@ -234,9 +247,9 @@ bool CPbft::checkMsg(CPbftMessage& msg){
     return true;
 }
 
-CPbftMessage CPbft::assemblePre_prepare(uint32_t seq, std::string clientReq){
+CPre_prepare CPbft::assemblePre_prepare(uint32_t seq, std::string clientReq){
     std::cout << "assembling pre_prepare" << std::endl;
-    CPbftMessage toSent(server_id); // phase is set to Pre_prepare by default.
+    CPre_prepare toSent(server_id); // phase is set to Pre_prepare by default.
     toSent.seq = seq;
     toSent.view = 0;
     localView = 0; // also change the local view, or the sanity check would fail.
@@ -244,6 +257,7 @@ CPbftMessage CPbft::assemblePre_prepare(uint32_t seq, std::string clientReq){
     uint256 hash;
     toSent.getHash(hash);
     privateKey.Sign(hash, toSent.vchSig);
+    toSent.clientReq = clientReq;
     return toSent;
 }
 

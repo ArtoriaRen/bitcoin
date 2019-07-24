@@ -20,8 +20,9 @@ BOOST_FIXTURE_TEST_SUITE(pbft_tests, TestingSetup)
 BOOST_AUTO_TEST_CASE(conflict_digest)
 {
     // a server should not be able to accept conflicting pre-prepare
-    CPbft pbftObj(18322); // 18322 can be an arbitrary port because we do not start UDP server in this test.
+    CPbft pbftObj(18322, 0); // 18322 can be an arbitrary port because we do not start UDP server in this test.
     CPbftMessage msg0 = pbftObj.assemblePre_prepare(64, "test");
+    pbftObj.broadcast(msg0);
     BOOST_CHECK(pbftObj.checkMsg(msg0));
     CPbftMessage msg1 = pbftObj.assemblePre_prepare(64, "test1");
     BOOST_CHECK(!pbftObj.checkMsg(msg1));

@@ -48,6 +48,8 @@ void CPbftMessage::deserialize(std::istringstream& s) {
     char c;
     vchSig.clear();
     while (s.get(c)) { // TODO: check the ret val when no more data.
+	if(c == ' ')
+	    break;
 	vchSig.push_back(static_cast<unsigned char>(c));
     }
     
@@ -73,4 +75,16 @@ CPre_prepare::CPre_prepare(const CPbftMessage& msg){
     senderId = msg.senderId;
     digest = msg.digest;
     vchSig = msg.vchSig;
+}
+
+void CPre_prepare::serialize(std::ostringstream& s) const{
+    CPbftMessage::serialize(s);
+    s << " ";
+    s << clientReq; 
+}
+
+void CPre_prepare::deserialize(std::istringstream& s){
+    CPbftMessage::deserialize(s);
+    s >> clientReq;
+    std::cout << "client req : " << clientReq << std::endl;
 }
