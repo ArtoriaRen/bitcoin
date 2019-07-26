@@ -6,10 +6,13 @@
 
 #include <string>
 #include <vector>
+#include <chrono>
+#include <thread>
 
 #include <boost/algorithm/string.hpp>
 #include <boost/test/unit_test.hpp>
 
+#include "init.h"
 #include "pbft/pbft.h"
 #include "pbft/pbft_log_entry.h"
 #include "pbft/pbft_msg.h"
@@ -22,7 +25,7 @@ BOOST_AUTO_TEST_CASE(conflict_digest)
     // a server should not be able to accept conflicting pre-prepare
     CPbft pbftObj(18322, 0); // 18322 can be an arbitrary port because we do not start UDP server in this test.
     CPbftMessage msg0 = pbftObj.assemblePre_prepare(64, "test");
-    pbftObj.broadcast(msg0);
+    pbftObj.broadcast(&msg0);
     BOOST_CHECK(pbftObj.checkMsg(msg0));
     CPbftMessage msg1 = pbftObj.assemblePre_prepare(64, "test1");
     BOOST_CHECK(!pbftObj.checkMsg(msg1));
@@ -47,9 +50,9 @@ BOOST_AUTO_TEST_CASE(message_order){
     CPbftMessage pp = pbftObj0.assemblePre_prepare(64, "test");
     BOOST_CHECK_EQUAL(pbftObj0.log[pp.seq].prepareCount,  0);
     BOOST_CHECK_EQUAL(pbftObj0.log[pp.seq].phase, PbftPhase::pre_prepare);
-    pbftObj0.broadcast(pp);
+    pbftObj0.broadcast(&pp);
     BOOST_CHECK_EQUAL(pbftObj0.log[pp.seq].phase, PbftPhase::prepare);
-
+    
     // let pbftObj1 and pbftObj2 store pp in their log.
     pbftObj1.onReceivePrePrepare(pp);
     BOOST_CHECK_EQUAL(pbftObj1.log[pp.seq].prepareCount,  1);
@@ -75,5 +78,28 @@ BOOST_AUTO_TEST_CASE(message_order){
     // all three objects have collected 1 pre-prepare and 2 prepares, so they all have entered commit phase. 
     
 }
+
+BOOST_AUTO_TEST_CASE(udp_server){
+    //This test case start a new thread to run udp server for each pbft object.
+    int port0 = 18322, port1 = 18323; 
+    char pRecvBuf[CPbftMessage::messageSizeBytes]; // buf to receive msg from pbft servers.
+    int clientUdpPort = 18500; // the port of udp server at the pbft client side.
+    UdpServer udpServer("localhost", clientUdpPort);
+    
+    CPbft pbftObj0(port0, 0); 
+    std::thread t(interruptableReceive, std::ref(pbftObj0));
+    
+    // To emulate a pbft client, we use a udp client to send request to the pbft leader.
+    UdpClient pbftClient;
+    std::string reqString = "r x=8"; // the format of a request is r followed by the real request
+
+    std::ostringstream oss;
+    oss << reqString; // do not put space here as space is used delimiter in stringstream.
+    pbftClient.sendto(oss, "localhost", port0);
+    ssize_t recvBytes =  udpServer.recv(pRecvBuf, CPbftMessage::messageSizeBytes);
+    std::string recv(pRecvBuf, 0, recvBytes);
+    BOOST_CHECK_EQUAL(recv, reqString.substr(2));
+}
+
 
 BOOST_AUTO_TEST_SUITE_END()

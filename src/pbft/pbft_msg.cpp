@@ -81,6 +81,7 @@ void CPre_prepare::serialize(std::ostringstream& s) const{
     CPbftMessage::serialize(s);
     s << " ";
     s << clientReq; 
+    std::cout << "pre_prepare serialize, add clientReq: " << clientReq << std::endl;
 }
 
 void CPre_prepare::deserialize(std::istringstream& s){

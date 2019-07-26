@@ -81,7 +81,7 @@ public:
     bool checkMsg(CPbftMessage& msg);
     CPre_prepare assemblePre_prepare(uint32_t seq, std::string clientReq);
     CPbftMessage assembleMsg(PbftPhase phase, uint32_t seq);
-    void broadcast(const CPbftMessage& msg);
+    void broadcast(CPbftMessage* msg);
     // ------placeholder: may be used to send ip.
     void broadcastPubKey();
     void broadcastPubKeyReq();
@@ -109,6 +109,8 @@ public:
     static const char clientReqHeader = 'r'; // use to identify client request message.
 };
 
+
+void interruptableReceive(CPbft& pbftObj);
 
 #endif /* PBFT_H */
 
