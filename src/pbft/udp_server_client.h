@@ -56,7 +56,7 @@ public:
     std::string         get_addr() const;
 
     int                 recv(char *msg, size_t max_size);
-    int                 timed_recv(char *msg, size_t max_size, int max_wait_ms);
+    int                 timed_recv(char *msg, size_t max_size, int max_wait_ms, sockaddr_in* p_src_addr, size_t* p_len);
 
 private:
     int                 f_socket;

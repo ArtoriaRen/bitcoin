@@ -269,11 +269,11 @@ int UdpServer::recv(char *msg, size_t max_size)
  *
  * \return -1 if an error occurs or the function timed out, the number of bytes received otherwise.
  */
-int UdpServer::timed_recv(char *msg, size_t max_size, int max_wait_ms)
+int UdpServer::timed_recv(char *msg, size_t max_size, int max_wait_ms, sockaddr_in* p_src_addr, size_t* p_len)
 {
     struct timeval tv;
     tv.tv_sec = max_wait_ms / 1000;
     tv.tv_usec = (max_wait_ms % 1000) * 1000;
     setsockopt(f_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
-    return ::recv(f_socket, msg, max_size, 0);
+    return ::recvfrom(f_socket, msg, max_size, 0, (struct sockaddr *) p_src_addr, (socklen_t*) p_len);
 }

@@ -37,15 +37,16 @@ BOOST_AUTO_TEST_CASE(message_order){
     /* This test does not start udp server thread.
      */
     // If no failure occurs, 3 nodes are enough for normal operation.
-    CPbft pbftObj0(18322, 0); // 18322 can be an arbitrary port because we do not start UDP server in this test.
-    CPbft pbftObj1(18323, 100); 
-    CPbft pbftObj2(18324, 200);
-    pbftObj0.peerPubKeys.insert(std::make_pair(pbftObj1.server_id, pbftObj1.getPublicKey()));
-    pbftObj0.peerPubKeys.insert(std::make_pair(pbftObj2.server_id, pbftObj2.getPublicKey()));
-    pbftObj1.peerPubKeys.insert(std::make_pair(pbftObj0.server_id, pbftObj0.getPublicKey()));
-    pbftObj1.peerPubKeys.insert(std::make_pair(pbftObj2.server_id, pbftObj2.getPublicKey()));
-    pbftObj2.peerPubKeys.insert(std::make_pair(pbftObj0.server_id, pbftObj0.getPublicKey()));
-    pbftObj2.peerPubKeys.insert(std::make_pair(pbftObj1.server_id, pbftObj1.getPublicKey()));
+    int port0 = 8350, port1 = 8342, port2 = 8343; 
+    CPbft pbftObj0(port0, 0); // 18322 can be an arbitrary port because we do not start UDP server in this test.
+    CPbft pbftObj1(port1, 100); 
+    CPbft pbftObj2(port2, 200);
+    pbftObj0.peers.insert(std::make_pair(pbftObj1.server_id, CPbftPeer("localhost", port1, pbftObj1.getPublicKey())));
+    pbftObj0.peers.insert(std::make_pair(pbftObj2.server_id, CPbftPeer("localhost", port2, pbftObj2.getPublicKey())));
+    pbftObj1.peers.insert(std::make_pair(pbftObj0.server_id, CPbftPeer("localhost", port0, pbftObj0.getPublicKey())));
+    pbftObj1.peers.insert(std::make_pair(pbftObj2.server_id, CPbftPeer("localhost", port2, pbftObj2.getPublicKey())));
+    pbftObj2.peers.insert(std::make_pair(pbftObj0.server_id, CPbftPeer("localhost", port0, pbftObj0.getPublicKey())));
+    pbftObj2.peers.insert(std::make_pair(pbftObj1.server_id, CPbftPeer("localhost", port1, pbftObj1.getPublicKey())));
     // pbftObj1 receives pre-prepare first; pbftObj2 receives prepare first.
     CPbftMessage pp = pbftObj0.assemblePre_prepare(64, "test");
     BOOST_CHECK_EQUAL(pbftObj0.log[pp.seq].prepareCount,  0);
@@ -80,14 +81,18 @@ BOOST_AUTO_TEST_CASE(message_order){
 }
 
 BOOST_AUTO_TEST_CASE(udp_server){
-    //This test case start a new thread to run udp server for each pbft object.
-    int port0 = 18322, port1 = 18323; 
+    //This test case start a new thread to run udp server for each pbft object. Must use Ctrl-C to terminate this test.
+    int port0 = 8350, port1 = 8342; 
     char pRecvBuf[CPbftMessage::messageSizeBytes]; // buf to receive msg from pbft servers.
     int clientUdpPort = 18500; // the port of udp server at the pbft client side.
     UdpServer udpServer("localhost", clientUdpPort);
     
     CPbft pbftObj0(port0, 0); 
-    std::thread t(interruptableReceive, std::ref(pbftObj0));
+    CPbft pbftObj1(port1, 1); 
+    pbftObj0.peers.insert(std::make_pair(pbftObj1.server_id, CPbftPeer("localhost", port1, pbftObj1.getPublicKey())));
+    pbftObj1.peers.insert(std::make_pair(pbftObj0.server_id, CPbftPeer("localhost", port0, pbftObj0.getPublicKey())));
+    std::thread t0(interruptableReceive, std::ref(pbftObj0));
+    std::thread t1(interruptableReceive, std::ref(pbftObj1));
     
     // To emulate a pbft client, we use a udp client to send request to the pbft leader.
     UdpClient pbftClient;
@@ -99,6 +104,8 @@ BOOST_AUTO_TEST_CASE(udp_server){
     ssize_t recvBytes =  udpServer.recv(pRecvBuf, CPbftMessage::messageSizeBytes);
     std::string recv(pRecvBuf, 0, recvBytes);
     BOOST_CHECK_EQUAL(recv, reqString.substr(2));
+    t0.join();
+    t1.join();
 }
 
 

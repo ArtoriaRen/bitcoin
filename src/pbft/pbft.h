@@ -27,6 +27,7 @@
 #include "pubkey.h"
 #include "pbft/pbft_msg.h"
 #include "pbft/pbft_log_entry.h"
+#include "pbft/peer.h"
 
 
 class CPbft{
@@ -40,9 +41,8 @@ public:
     uint32_t nextSeq; // next available seq that has not been attached to any client request.
     
     // TODO: parameters should be put in a higher layer class. They are not part of pbft.
-    // group member list of the group where this node is in (use hard coded ip address first)
-    std::vector<CService> members;
     CService leader;
+    std::vector<uint32_t> members; // the sever_ids of peers who is a member of this group.
     uint32_t server_id;
     uint32_t nFaulty; // number of faulty nodes in this group.
     uint32_t nGroups; // total number of groups.
@@ -103,7 +103,7 @@ private:
 public:
     CPubKey getPublicKey();
     // ----placeholder: send public keys over udp instead of extract it from the blockchain.
-    std::unordered_map<uint32_t, CPubKey> peerPubKeys;
+    std::unordered_map<uint32_t, CPbftPeer> peers;
     static const char pubKeyMsgHeader = 'a'; // use to identify public key exchange message.
     static const char pubKeyReqHeader = 'b'; // use to identify public key exchange message.
     static const char clientReqHeader = 'r'; // use to identify client request message.

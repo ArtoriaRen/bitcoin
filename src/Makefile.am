@@ -178,6 +178,7 @@ BITCOIN_CORE_H = \
   pbft/pbft.h \
   pbft/udp_server_client.h \
   pbft/pbft_msg.h \
+  pbft/peer.h \
   pbft/pbft_log_entry.h
 
 
@@ -233,6 +234,7 @@ libbitcoin_server_a_SOURCES = \
   pbft/udp_server_client.cpp \
   pbft/pbft_msg.cpp \
   pbft/pbft_log_entry.cpp \
+  pbft/peer.cpp \
   $(BITCOIN_CORE_H)
 
 if ENABLE_ZMQ
