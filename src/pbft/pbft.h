@@ -84,6 +84,7 @@ public:
     void broadcast(CPbftMessage* msg);
     // ------placeholder: may be used to send ip.
     void broadcastPubKey();
+    void sendPubKey(const struct sockaddr_in& src_addr);
     void broadcastPubKeyReq();
     
     // TODO: may block header hash can be used as digest?

@@ -24,10 +24,10 @@ BOOST_AUTO_TEST_CASE(conflict_digest)
 {
     // a server should not be able to accept conflicting pre-prepare
     CPbft pbftObj(18322, 0); // 18322 can be an arbitrary port because we do not start UDP server in this test.
-    CPbftMessage msg0 = pbftObj.assemblePre_prepare(64, "test");
+    CPre_prepare msg0 = pbftObj.assemblePre_prepare(64, "test");
     pbftObj.broadcast(&msg0);
     BOOST_CHECK(pbftObj.checkMsg(msg0));
-    CPbftMessage msg1 = pbftObj.assemblePre_prepare(64, "test1");
+    CPre_prepare msg1 = pbftObj.assemblePre_prepare(64, "test1");
     BOOST_CHECK(!pbftObj.checkMsg(msg1));
     
 }
@@ -89,6 +89,8 @@ BOOST_AUTO_TEST_CASE(udp_server){
     
     CPbft pbftObj0(port0, 0); 
     CPbft pbftObj1(port1, 1); 
+    std::cout << "peer 0 pk = " << pbftObj0.getPublicKey().GetHash().ToString() << std::endl;
+    std::cout << "peer 1 pk = " << pbftObj1.getPublicKey().GetHash().ToString() << std::endl;
     pbftObj0.peers.insert(std::make_pair(pbftObj1.server_id, CPbftPeer("localhost", port1, pbftObj1.getPublicKey())));
     pbftObj1.peers.insert(std::make_pair(pbftObj0.server_id, CPbftPeer("localhost", port0, pbftObj0.getPublicKey())));
     std::thread t0(interruptableReceive, std::ref(pbftObj0));

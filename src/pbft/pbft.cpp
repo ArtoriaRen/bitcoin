@@ -19,14 +19,14 @@
 
 //----------placeholder:members is initialized as size-4.
 
-CPbft::CPbft(int serverPort, unsigned int id): localView(0), globalView(0), log(std::vector<CPbftLogEntry>(CPbft::logSize)), nextSeq(0), members(std::vector<uint32_t>(groupSize)), server_id(id), nGroups(1), udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient()), privateKey(CKey()), x(-1){
+CPbft::CPbft(int serverPort, unsigned int id): localView(0), globalView(0), log(std::vector<CPbftLogEntry>(CPbft::logSize)), nextSeq(8), members(std::vector<uint32_t>(groupSize)), server_id(id), nGroups(1), udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient()), privateKey(CKey()), x(-1){
     nFaulty = (members.size() - 1)/3;
     std::cout << "CPbft constructor. faulty nodes in a group =  "<< nFaulty << std::endl;
     privateKey.MakeNewKey(false);
     publicKey = privateKey.GetPubKey();
     pRecvBuf = new char[CPbftMessage::messageSizeBytes];
     CPbftPeer myself("localhost", serverPort, publicKey); 
-    peers.insert(std::make_pair(server_id, myself));
+    //    peers.insert(std::make_pair(server_id, myself));
     std::cout << "my serverId = " << server_id << ", publicKey = " << publicKey.GetHash().ToString() <<std::endl;
 }
 
@@ -85,7 +85,7 @@ void interruptableReceive(CPbft& pbftObj){
 	    case CPbft::pubKeyReqHeader:
 		// received msg is pubKeyReq. send pubKey
 		std::cout << "receive pubKey req" << std::endl;
-		pbftObj.broadcastPubKey();
+		pbftObj.sendPubKey(src_addr);
 		continue;
 	    case CPbft::pubKeyMsgHeader:
 		deSerializePubKeyMsg(pbftObj.peers, pbftObj.pRecvBuf, recvBytes, src_addr);
@@ -98,8 +98,8 @@ void interruptableReceive(CPbft& pbftObj){
 		pbftObj.broadcast(&pp);
 		// placeholder : send msg back to client
 		std::ostringstream oss;
-		oss << pbftObj.log[0].pre_prepare.clientReq;
-		std::cout<< "send back to client: " <<pbftObj.log[0].pre_prepare.clientReq << std::endl;
+		oss << pbftObj.log[pbftObj.nextSeq -1].pre_prepare.clientReq;
+		std::cout<< "send back to client: " <<pbftObj.log[pbftObj.nextSeq -1].pre_prepare.clientReq << std::endl;
 		pbftObj.udpClient.sendto(oss, "localhost", 18500);
 		continue;
 	}
@@ -114,20 +114,21 @@ void interruptableReceive(CPbft& pbftObj){
 	    case pre_prepare:
 	    {
 		CPre_prepare ppMsg(pbftObj.server_id);
+		std::cout << "recvBytes = " << recvBytes << std::endl;
 		ppMsg.deserialize(iss);
 		pbftObj.onReceivePrePrepare(ppMsg);
 		break;
 	    }
 	    case prepare:
 	    {
-		CPbftMessage pMsg(pbftObj.server_id);
+		CPbftMessage pMsg(PbftPhase::prepare, pbftObj.server_id);
 		pMsg.deserialize(iss);
 		pbftObj.onReceivePrepare(pMsg, true);
 		break;
 	    } 
 	    case commit:
 	    {
-		CPbftMessage cMsg(pbftObj.server_id);
+		CPbftMessage cMsg(PbftPhase::commit, pbftObj.server_id);
 		cMsg.deserialize(iss);
 		pbftObj.onReceiveCommit(cMsg, true);
 		break;
@@ -265,10 +266,10 @@ CPre_prepare CPbft::assemblePre_prepare(uint32_t seq, std::string clientReq){
     toSent.view = 0;
     localView = 0; // also change the local view, or the sanity check would fail.
     toSent.digest = Hash(clientReq.begin(), clientReq.end());
-    uint256 hash;
-    toSent.getHash(hash);
-    privateKey.Sign(hash, toSent.vchSig);
     toSent.clientReq = clientReq;
+    uint256 hash;
+    toSent.getHash(hash); // this hash is used for signature, so clientReq is not included in this hash.
+    privateKey.Sign(hash, toSent.vchSig);
     return toSent;
 }
 
@@ -284,10 +285,15 @@ CPbftMessage CPbft::assembleMsg(PbftPhase phase, uint32_t seq){
 
 void CPbft::broadcast(CPbftMessage* msg){
     std::ostringstream oss;
-    int pbftPeerPort = std::stoi(gArgs.GetArg("-pbftpeerport", "18340"));
-    msg->serialize(oss); 
-    // placeholder: loop to  send prepare to all nodes in the members array.
-    udpClient.sendto(oss, "127.0.0.1", pbftPeerPort);
+    if(msg->phase == PbftPhase::pre_prepare){
+	(static_cast<CPre_prepare*>(msg))->serialize(oss); 
+    } else {
+	msg->serialize(oss); 
+    }
+    // loop to  send prepare to all nodes in the peers map.
+    for(auto p: peers){
+	udpClient.sendto(oss, p.second.ip, p.second.port);
+    }
     // virtually send the message to this node itself if it is a prepare or commit msg.
     switch(msg->phase){
 	case PbftPhase::pre_prepare:
@@ -317,9 +323,17 @@ void CPbft::excuteTransactions(const uint256& digest){
 
 void CPbft::broadcastPubKey(){
     std::ostringstream oss;
+    // opti: serialized version can be stored.
     serializePubKeyMsg(oss, server_id, publicKey);
     int pbftPeerPort = std::stoi(gArgs.GetArg("-pbftpeerport", "18340"));
     udpClient.sendto(oss, "127.0.0.1", pbftPeerPort);
+}
+
+
+void CPbft::sendPubKey(const struct sockaddr_in& src_addr){
+    std::ostringstream oss;
+    serializePubKeyMsg(oss, server_id, publicKey);
+    udpClient.sendto(oss, inet_ntoa(src_addr.sin_addr), src_addr.sin_port);
 }
 
 
