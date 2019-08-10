@@ -16,24 +16,28 @@
 #include "pbft/pbft_msg.h"
 #include "crypto/aes.h"
 #include "pbft/peer.h"
+#include "pbft/util.h"
 
 //----------placeholder:members is initialized as size-4.
 
-CPbft::CPbft(int serverPort, unsigned int id): localView(0), globalView(0), log(std::vector<CPbftLogEntry>(CPbft::logSize)), nextSeq(8), members(std::vector<uint32_t>(groupSize)), server_id(id), nGroups(1), udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient()), privateKey(CKey()), x(-1){
+CPbft::CPbft(int serverPort, unsigned int id): localView(0), globalView(0), log(std::vector<CPbftLogEntry>(CPbft::logSize)), nextSeq(8), members(std::vector<uint32_t>(groupSize)), server_id(id), nGroups(1), udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient()), pRecvBuf(new char[CPbftMessage::messageSizeBytes], std::default_delete<char[]>()), privateKey(CKey()), x(-1){
     nFaulty = (members.size() - 1)/3;
     std::cout << "CPbft constructor. faulty nodes in a group =  "<< nFaulty << std::endl;
     privateKey.MakeNewKey(false);
     publicKey = privateKey.GetPubKey();
-    pRecvBuf = new char[CPbftMessage::messageSizeBytes];
     CPbftPeer myself("localhost", serverPort, publicKey); 
     //    peers.insert(std::make_pair(server_id, myself));
     std::cout << "my serverId = " << server_id << ", publicKey = " << publicKey.GetHash().ToString() <<std::endl;
 }
 
+CPbft::CPbft(){}
+//CPbft& CPbft::operator = (CPbft& right){
+//    // copy all fields
+//    this-> localView =  
+//    return right;
+//}
 
-CPbft::~CPbft(){
-    delete []pRecvBuf;
-}
+
 
 
 
@@ -55,9 +59,6 @@ void CPbft::group(uint32_t randomNumber, uint32_t nBlocks, const CBlockIndex* pi
 }
 
 
-//------------------ funcs run in udp server thread-------------
-void serializePubKeyMsg(std::ostringstream& oss, uint32_t senderId, const CPubKey& pk);
-uint32_t deSerializePubKeyMsg(std::unordered_map<uint32_t, CPbftPeer>& map, char* pRecvBuf, ssize_t recvBytes, const struct sockaddr_in& src_addr);
 
 void interruptableReceive(CPbft& pbftObj){
     // Placeholder: broadcast myself pubkey, and request others' pubkey.
@@ -68,32 +69,27 @@ void interruptableReceive(CPbft& pbftObj){
     
     while(!ShutdownRequested()){
 	// timeout block on receving a new packet. Attention: timeout is in milliseconds. 
-	ssize_t recvBytes =  pbftObj.udpServer.timed_recv(pbftObj.pRecvBuf, CPbftMessage::messageSizeBytes, 500, &src_addr, &len);
-	
-	//	if(recvBytes == -1 &&  pbftObj.peerPubKeys.size() == 1){
-	//	    // timeout or error occurs.
-	//	    pbftObj.broadcastPubKeyReq(); // request peer publickey
-	//	    continue; 
-	//	}
+	ssize_t recvBytes =  pbftObj.udpServer.timed_recv(pbftObj.pRecvBuf.get(), CPbftMessage::messageSizeBytes, 500, &src_addr, &len);
 	
 	if(recvBytes == -1){
 	    // timeout. but we have got peer publickey. do nothing.
 	    continue;
 	}
 	
-	switch(pbftObj.pRecvBuf[0]){
+	switch(pbftObj.pRecvBuf.get()[0]){
 	    case CPbft::pubKeyReqHeader:
 		// received msg is pubKeyReq. send pubKey
 		std::cout << "receive pubKey req" << std::endl;
-		pbftObj.sendPubKey(src_addr);
+		// send public key to the peer.
+		pbftObj.sendPubKey(src_addr, deserializePublicKeyReq(pbftObj.pRecvBuf.get(), recvBytes));
 		continue;
 	    case CPbft::pubKeyMsgHeader:
-		deSerializePubKeyMsg(pbftObj.peers, pbftObj.pRecvBuf, recvBytes, src_addr);
+		deSerializePubKeyMsg(pbftObj.peers, pbftObj.pRecvBuf.get(), recvBytes, src_addr);
 		continue;
 	    case CPbft::clientReqHeader:
 		// received client request, send preprepare
 		uint32_t seq = pbftObj.nextSeq++; 
-		std::string clientReq(&pbftObj.pRecvBuf[2], recvBytes - 2);
+		std::string clientReq(&pbftObj.pRecvBuf.get()[2], recvBytes - 2);
 		CPre_prepare pp = pbftObj.assemblePre_prepare(seq, clientReq);
 		pbftObj.broadcast(&pp);
 		// placeholder : send msg back to client
@@ -106,7 +102,7 @@ void interruptableReceive(CPbft& pbftObj){
 	
 	
 	// received msg is either a client req or a PbftMessage.	
-	std::string recvString(pbftObj.pRecvBuf, recvBytes);
+	std::string recvString(pbftObj.pRecvBuf.get(), recvBytes);
 	std::istringstream iss(recvString);
 	int phaseNum = -1;
 	iss >> phaseNum;
@@ -324,54 +320,27 @@ void CPbft::excuteTransactions(const uint256& digest){
 void CPbft::broadcastPubKey(){
     std::ostringstream oss;
     // opti: serialized version can be stored.
-    serializePubKeyMsg(oss, server_id, publicKey);
+    serializePubKeyMsg(oss, server_id, udpServer.get_port(), publicKey);
     int pbftPeerPort = std::stoi(gArgs.GetArg("-pbftpeerport", "18340"));
     udpClient.sendto(oss, "127.0.0.1", pbftPeerPort);
 }
 
 
-void CPbft::sendPubKey(const struct sockaddr_in& src_addr){
+void CPbft::sendPubKey(const struct sockaddr_in& src_addr, uint32_t recver_id){
     std::ostringstream oss;
-    serializePubKeyMsg(oss, server_id, publicKey);
-    udpClient.sendto(oss, inet_ntoa(src_addr.sin_addr), src_addr.sin_port);
+    serializePubKeyMsg(oss, server_id, udpServer.get_port(), publicKey);
+    udpClient.sendto(oss, inet_ntoa(src_addr.sin_addr), peers.at(recver_id).port);
 }
 
 
 void CPbft::broadcastPubKeyReq(){
     std::ostringstream oss;
     oss << pubKeyReqHeader;
+    oss << " ";
+    oss << server_id;
     int pbftPeerPort = std::stoi(gArgs.GetArg("-pbftpeerport", "18340"));
     udpClient.sendto(oss, "127.0.0.1", pbftPeerPort);
 }
-
-
-void serializePubKeyMsg(std::ostringstream& oss, const uint32_t senderId, const CPubKey& pk){
-    oss << CPbft::pubKeyMsgHeader;
-    oss << " ";
-    oss << senderId;
-    oss << " ";
-    pk.Serialize(oss); 
-}
-
-uint32_t deSerializePubKeyMsg(std::unordered_map<uint32_t, CPbftPeer>& map, char* pRecvBuf, const ssize_t recvBytes, const struct sockaddr_in& src_addr){
-    std::string recvString(pRecvBuf, recvBytes);
-    std::istringstream iss(recvString); //construct a stream start from index 2, because the first two chars ('a' and ' ') are not part of  a public key. 
-    char msgHeader;
-    uint32_t senderId; 
-    CPubKey pk;
-    iss >> msgHeader;
-    iss >> senderId;
-    iss.get();
-    pk.Unserialize(iss);
-    std::cout << "received publicKey = (" << senderId << ", " << pk.GetHash().ToString() << ")"<<std::endl;
-    // extract peer ip and port
-    std::string ip(inet_ntoa(src_addr.sin_addr));
-    CPbftPeer peer(ip, src_addr.sin_port, pk);
-    map.insert(std::make_pair(senderId, peer));
-    return senderId;
-}
-
-
 
 CPubKey CPbft::getPublicKey(){
     return publicKey;

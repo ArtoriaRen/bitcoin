@@ -48,13 +48,14 @@ public:
     uint32_t nGroups; // total number of groups.
     
     // udp server convert received char array into CPbftMessage and put them in a queue.(May not be used if we process msg in the udp server thread.) 
-    std::mutex mtxMsg;
-    std::condition_variable ready;
+//    std::mutex mtxMsg;
+//    std::condition_variable ready;
     std::deque<CPbftMessage> receiveQue;
     
     
     explicit CPbft(int serverPort, unsigned int id);    
-    ~CPbft();
+    CPbft();    
+//    CPbft& operator = (CPbft&);
     
     // start a thread to receive udp packets and process packet according to the protocol . 
     void start();
@@ -84,7 +85,7 @@ public:
     void broadcast(CPbftMessage* msg);
     // ------placeholder: may be used to send ip.
     void broadcastPubKey();
-    void sendPubKey(const struct sockaddr_in& src_addr);
+    void sendPubKey(const struct sockaddr_in& src_addr, uint32_t recver_id);
     void broadcastPubKeyReq();
     
     // TODO: may block header hash can be used as digest?
@@ -95,7 +96,7 @@ public:
 private:
     UdpServer udpServer;
     UdpClient udpClient;
-    char* pRecvBuf;
+    std::shared_ptr<char> pRecvBuf;
     // private ECDSA key used to sign messages
     CKey privateKey;
     CPubKey publicKey; // public key should be put on the blockchain so every can verify group members.

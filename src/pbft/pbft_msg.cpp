@@ -37,7 +37,7 @@ void CPbftMessage::serialize(std::ostringstream& s, const char* clientReq) const
     }
     digest.Serialize(s);
     for (uint i = 0; i < vchSig.size(); i++) {
-	std::cout  << "i = " << i << "sig char = " << vchSig[i] << std::endl;
+//	std::cout  << "i = " << i << "sig char = " << vchSig[i] << std::endl;
 	s << vchSig[i];
     }
 }
@@ -55,11 +55,11 @@ void CPbftMessage::deserialize(std::istringstream& s, char* clientReq) {
     char c;
     vchSig.clear();
     while (s.get(c)) { // TODO: check the ret val when no more data.
-	std::cout  << "sig char = " << c << std::endl;
+//	std::cout  << "sig char = " << c << std::endl;
 	vchSig.push_back(static_cast<unsigned char>(c));
     }
     
-    std::cout << "deserialize ends, phase = " << phase  << ", view = " << view << ", seq = " << seq << ", senderId = "<< senderId << ", digest = " << digest.GetHex() << ", sig[0] = " << vchSig[0] << std::endl;
+//    std::cout << "deserialize ends, phase = " << phase  << ", view = " << view << ", seq = " << seq << ", senderId = "<< senderId << ", digest = " << digest.GetHex() << ", sig[0] = " << vchSig[0] << std::endl;
     
 }
 

@@ -13,7 +13,6 @@
 
 #ifndef PEER_H
 #define PEER_H
-#include "util.h"
 #include "pubkey.h"
 
 class CPbftPeer{

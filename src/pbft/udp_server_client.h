@@ -48,6 +48,7 @@ private:
 class UdpServer
 {
 public:
+    UdpServer();
                         UdpServer(const std::string& addr, int port);
                         ~UdpServer();
 

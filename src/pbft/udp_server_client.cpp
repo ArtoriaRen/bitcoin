@@ -7,6 +7,8 @@
 #include "pbft/udp_server_client.h"
 #include <string.h>
 #include <unistd.h>
+#include <iostream>
+#include <sstream>
 
 
 
@@ -95,7 +97,7 @@ int UdpClient::sendto(std::ostringstream& oss, const std::string& addr, int port
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_DGRAM;
     hints.ai_protocol = IPPROTO_UDP;
-    struct addrinfo *   addrinfo;
+    struct addrinfo *  addrinfo;
     int r(getaddrinfo(addr.c_str(), decimal_port, &hints, &addrinfo));
     if(r != 0 || addrinfo == NULL)
     {
@@ -179,6 +181,11 @@ UdpServer::UdpServer(const std::string& addr, int port)
         throw UdpClient_server_runtime_error(("could not bind UDP socket with: \"" + addr + ":" + decimal_port + "\"").c_str());
     }
 }
+
+// empty constructor
+UdpServer::UdpServer(){
+}
+
 
 /** \brief Clean up the UDP server.
  *
