@@ -16,7 +16,6 @@ uint32_t deserializePublicKeyReq(char* buf, size_t recvBytes){
 //    iss.get(); // discard the header char
 //    iss.get(); // discard the space following header char
     iss >> sender_id; 
-    std::cout << "recvString  = " << recvString << std::endl;
     return sender_id;
 }
 
@@ -48,7 +47,7 @@ uint32_t deSerializePubKeyMsg(std::unordered_map<uint32_t, CPbftPeer>& map, char
     std::cout << "received publicKey = (" << senderId << ", " << port << ", " << pk.GetHash().ToString() << ")"<<std::endl;
     // extract peer ip and port
     std::string ip(inet_ntoa(src_addr.sin_addr));
-    CPbftPeer peer(ip, src_addr.sin_port, pk);
+    CPbftPeer peer(ip, port, pk);
     map.insert(std::make_pair(senderId, peer));
     return senderId;
 }
