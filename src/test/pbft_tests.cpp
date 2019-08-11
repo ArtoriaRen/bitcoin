@@ -85,40 +85,37 @@ BOOST_AUTO_TEST_CASE(udp_server){
     //This test case start a new thread to run udp server for each pbft object. Must use Ctrl-C to terminate this test.
     char pRecvBuf[CPbftMessage::messageSizeBytes]; // buf to receive msg from pbft servers.
     int clientUdpPort = 18500; // the port of udp server at the pbft client side.
-    UdpServer udpServer("localhost", clientUdpPort);
+    UdpServer udpServer("127.0.0.1", clientUdpPort);
     
-    const int numServers = 3;
-    int ports[numServers] = {8350, 8342, 8343}; 
-    CPbft pbftObjs[numServers];
-    for(int i = 0; i < numServers; i++){
-	pbftObjs[i] = CPbft(ports[i], i);
-	std::cout << "peer " << i << " pk = " << pbftObjs[i].getPublicKey().GetHash().ToString() << std::endl;
-    }
+    // We cannot use a for loop to create CPbft objects and store them in an array or vector b/c no copy constructor is implemented. Even with pointers, objects created within a loop go out of scope once the control exits the loop and pointers become dangling.
+    int port0 = 8350, port1 = 8342, port2 = 8343; 
+    CPbft pbftObj0(port0, 0); 
+    CPbft pbftObj1(port1, 1); 
+    CPbft pbftObj2(port2, 2); 
+    pbftObj0.peers.insert(std::make_pair(pbftObj1.server_id, CPbftPeer("localhost", port1, pbftObj1.getPublicKey())));
+    pbftObj0.peers.insert(std::make_pair(pbftObj2.server_id, CPbftPeer("localhost", port2, pbftObj2.getPublicKey())));
+    pbftObj1.peers.insert(std::make_pair(pbftObj0.server_id, CPbftPeer("localhost", port0, pbftObj0.getPublicKey())));
+    pbftObj1.peers.insert(std::make_pair(pbftObj2.server_id, CPbftPeer("localhost", port2, pbftObj2.getPublicKey())));
+    pbftObj2.peers.insert(std::make_pair(pbftObj0.server_id, CPbftPeer("localhost", port0, pbftObj0.getPublicKey())));
+    pbftObj2.peers.insert(std::make_pair(pbftObj1.server_id, CPbftPeer("localhost", port1, pbftObj1.getPublicKey())));
+    std::thread t0(interruptableReceive, std::ref(pbftObj0));
+    std::thread t1(interruptableReceive, std::ref(pbftObj1));
+    std::thread t2(interruptableReceive, std::ref(pbftObj2));
 
-    std::vector<std::thread> pbftRecvThrds;
-    pbftRecvThrds.reserve(3);
-    for(int i = 0; i < numServers; i++){
-	for(int j = 0; j < numServers && j!= i; j++){
-    pbftObjs[i].peers.insert(std::make_pair(pbftObjs[j].server_id, CPbftPeer("localhost", ports[j], pbftObjs[j].getPublicKey())));
-	}
-	pbftRecvThrds.push_back(std::thread(interruptableReceive, std::ref(pbftObjs[i])));
-    }
-    
     // To emulate a pbft client, we use a udp client to send request to the pbft leader.
     UdpClient pbftClient;
     std::string reqString = "r x=8"; // the format of a request is r followed by the real request
     
     std::ostringstream oss;
     oss << reqString; // do not put space here as space is used delimiter in stringstream.
-    pbftClient.sendto(oss, "localhost", ports[0]);
+    pbftClient.sendto(oss, "localhost", port0);
     ssize_t recvBytes =  udpServer.recv(pRecvBuf, CPbftMessage::messageSizeBytes);
     std::string recv(pRecvBuf, 0, recvBytes);
     BOOST_CHECK_EQUAL(recv, reqString.substr(2));
-    for(int i = 0; i < numServers; i++ ){
-	pbftRecvThrds[i].join();
-    }
+    t0.join();
+    t1.join();
+    t2.join();
 
-//    t1.join();
 }
 
 
