@@ -49,7 +49,7 @@ BOOST_AUTO_TEST_CASE(message_order){
     pbftObj2.peers.insert(std::make_pair(pbftObj0.server_id, CPbftPeer("localhost", port0, pbftObj0.getPublicKey())));
     pbftObj2.peers.insert(std::make_pair(pbftObj1.server_id, CPbftPeer("localhost", port1, pbftObj1.getPublicKey())));
     // pbftObj1 receives pre-prepare first; pbftObj2 receives prepare first.
-    CPbftMessage pp = pbftObj0.assemblePre_prepare(64, "test");
+    CPre_prepare pp = pbftObj0.assemblePre_prepare(64, "test");
     BOOST_CHECK_EQUAL(pbftObj0.log[pp.seq].prepareCount,  0);
     BOOST_CHECK_EQUAL(pbftObj0.log[pp.seq].phase, PbftPhase::pre_prepare);
     pbftObj0.broadcast(&pp);
@@ -101,7 +101,7 @@ BOOST_AUTO_TEST_CASE(udp_server){
     std::thread t0(interruptableReceive, std::ref(pbftObj0));
     std::thread t1(interruptableReceive, std::ref(pbftObj1));
     std::thread t2(interruptableReceive, std::ref(pbftObj2));
-
+    
     // To emulate a pbft client, we use a udp client to send request to the pbft leader.
     UdpClient pbftClient;
     std::string reqString = "r x=8"; // the format of a request is r followed by the real request
@@ -109,13 +109,23 @@ BOOST_AUTO_TEST_CASE(udp_server){
     std::ostringstream oss;
     oss << reqString; // do not put space here as space is used delimiter in stringstream.
     pbftClient.sendto(oss, "localhost", port0);
-    ssize_t recvBytes =  udpServer.recv(pRecvBuf, CPbftMessage::messageSizeBytes);
-    std::string recv(pRecvBuf, 0, recvBytes);
-    BOOST_CHECK_EQUAL(recv, reqString.substr(2));
+    for(int i = 0; i < pbftObj0.nFaulty +1; i++){
+	ssize_t recvBytes =  udpServer.recv(pRecvBuf, CPbftMessage::messageSizeBytes);
+	std::string recv(pRecvBuf, 0, recvBytes);
+	std::cout << "receive = " << recv << std::endl;
+	BOOST_CHECK_EQUAL(recv, reqString.substr(2));
+	if (reqString.compare(2, reqString.size(), recv) != 0){
+	    // received invalid reponse, do not increment counter.
+	    i--;
+	}
+    }
+	std::cout << "received f+1 responses." << std::endl;
+    
     t0.join();
     t1.join();
     t2.join();
-
+    // TODO: test if all CPbft instance has set x to 8
+    
 }
 
 

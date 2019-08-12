@@ -67,7 +67,7 @@ public:
     
     
     // Check Pre-prepare message signature and send Prepare message
-    bool onReceivePrePrepare(CPbftMessage& pre_prepare);
+    bool onReceivePrePrepare(CPre_prepare& pre_prepare);
     
     
     //TODO: find the key used to sign and verify messages 
@@ -79,7 +79,7 @@ public:
     bool onReceiveCommit(CPbftMessage& commit, bool sanityCheck);
     
     
-    bool checkMsg(CPbftMessage& msg);
+    bool checkMsg(CPbftMessage* msg);
     CPre_prepare assemblePre_prepare(uint32_t seq, std::string clientReq);
     CPbftMessage assembleMsg(PbftPhase phase, uint32_t seq);
     void broadcast(CPbftMessage* msg);
@@ -88,8 +88,7 @@ public:
     void sendPubKey(const struct sockaddr_in& src_addr, uint32_t recver_id);
     void broadcastPubKeyReq();
     
-    // TODO: may block header hash can be used as digest?
-    void excuteTransactions(const uint256& digest);
+    void executeTransaction(const int seq);
     
     friend void interruptableReceive(CPbft& pbftObj);
     

@@ -31,13 +31,6 @@ CPbft::CPbft(int serverPort, unsigned int id): localView(0), globalView(0), log(
 }
 
 CPbft::CPbft(){}
-//CPbft& CPbft::operator = (CPbft& right){
-//    // copy all fields
-//    this-> localView =  
-//    return right;
-//}
-
-
 
 
 
@@ -92,11 +85,6 @@ void interruptableReceive(CPbft& pbftObj){
 		std::string clientReq(&pbftObj.pRecvBuf.get()[2], recvBytes - 2);
 		CPre_prepare pp = pbftObj.assemblePre_prepare(seq, clientReq);
 		pbftObj.broadcast(&pp);
-		// placeholder : send msg back to client
-		std::ostringstream oss;
-		oss << pbftObj.log[pbftObj.nextSeq -1].pre_prepare.clientReq;
-		std::cout<< "send back to client: " <<pbftObj.log[pbftObj.nextSeq -1].pre_prepare.clientReq << std::endl;
-		pbftObj.udpClient.sendto(oss, "localhost", 18500);
 		continue;
 	}
 	
@@ -146,12 +134,12 @@ void CPbft::start(){
     receiver.join();
 }
 
-bool CPbft::onReceivePrePrepare(CPbftMessage& pre_prepare){
+bool CPbft::onReceivePrePrepare(CPre_prepare& pre_prepare){
     
     std::cout<< "received pre-prepare" << std::endl;
     // sanity check for signature, seq, view, digest.
     /*Faulty nodes may proceed even if the sanity check fails*/
-    if(!checkMsg(pre_prepare)){
+    if(!checkMsg(&pre_prepare)){
 	return false;
     }
     // add to log
@@ -175,7 +163,7 @@ bool CPbft::onReceivePrePrepare(CPbftMessage& pre_prepare){
 bool CPbft::onReceivePrepare(CPbftMessage& prepare, bool sanityCheck){
     std::cout << "received prepare." << std::endl;
     // sanity check for signature, seq, view.
-    if(sanityCheck && !checkMsg(prepare)){
+    if(sanityCheck && !checkMsg(&prepare)){
 	return false;
     }
     
@@ -198,7 +186,7 @@ bool CPbft::onReceivePrepare(CPbftMessage& prepare, bool sanityCheck){
 bool CPbft::onReceiveCommit(CPbftMessage& commit, bool sanityCheck){
     std::cout << "received commit" << std::endl;
     // sanity check for signature, seq, view.
-    if(sanityCheck && !checkMsg(commit)){
+    if(sanityCheck && !checkMsg(&commit)){
 	return false;
     }
     
@@ -211,43 +199,54 @@ bool CPbft::onReceiveCommit(CPbftMessage& commit, bool sanityCheck){
 	// enter commit phase
 	std::cout << "enter reply phase" << std::endl;
 	log[commit.seq].phase = PbftPhase::reply;
-	excuteTransactions(commit.digest);
+	executeTransaction(commit.seq);
 	return true;
     }
     return true;
 }
 
-bool CPbft::checkMsg(CPbftMessage& msg){
+bool CPbft::checkMsg(CPbftMessage* msg){
     // verify signature and return wrong if sig is wrong
-    if(peers.find(msg.senderId) == peers.end()){
+    if(peers.find(msg->senderId) == peers.end()){
 	std::cerr<< "no pub key for the sender" << std::endl;
 	return false;
     }
     uint256 msgHash;
-    msg.getHash(msgHash);
-    if(!peers[msg.senderId].pk.Verify(msgHash, msg.vchSig)){
+    msg->getHash(msgHash);
+    if(!peers[msg->senderId].pk.Verify(msgHash, msg->vchSig)){
 	std::cerr<< "verification sig fail" << std::endl;
 	return false;
     } 
     // server should be in the view
-    if(localView != msg.view){
-	std::cerr<< "server view = " << localView << ", but msg view = " << msg.view << std::endl;
+    if(localView != msg->view){
+	std::cerr<< "server view = " << localView << ", but msg view = " << msg->view << std::endl;
 	return false;
     }
     
     /* check if the seq is alreadly attached to another digest. Checking if log entry is null is necessary b/c prepare msgs may arrive earlier than pre-prepare.
      * Placeholder: Faulty followers may accept.
      */
-    if(!log[msg.seq].pre_prepare.digest.IsNull() && log[msg.seq].pre_prepare.digest != msg.digest){
-	std::cerr<< "digest error. digest in log = " << log[msg.seq].pre_prepare.digest.GetHex() << ", but msg.digest = " << msg.digest.GetHex() << std::endl;
+    if(!log[msg->seq].pre_prepare.digest.IsNull() && log[msg->seq].pre_prepare.digest != msg->digest){
+	std::cerr<< "digest error. digest in log = " << log[msg->seq].pre_prepare.digest.GetHex() << ", but msg->digest = " << msg->digest.GetHex() << std::endl;
 	return false;
+    }
+
+    // if phase is pre-prepare, check if the digest matches client req
+    if(msg->phase == PbftPhase::pre_prepare){
+	std::string req = ((CPre_prepare*)msg)->clientReq;
+	
+	if(msg->digest != Hash(req.begin(), req.end())){
+	    std::cerr<< "digest does not match client request. Client req = " << req << ", but digest = " << msg->digest.GetHex() << std::endl;
+	    return false;
+	    
+	}
     }
     
     // if phase is prepare or commit, also need to check view  and digest value.
-    if(msg.phase == PbftPhase::prepare || msg.phase == PbftPhase::commit){
+    if(msg->phase == PbftPhase::prepare || msg->phase == PbftPhase::commit){
 	
-	if(log[msg.seq].pre_prepare.view != msg.view){
-	    std::cerr<< "log entry view = " << log[msg.seq].pre_prepare.view << ", but msg view = " << msg.view << std::endl;
+	if(log[msg->seq].pre_prepare.view != msg->view){
+	    std::cerr<< "log entry view = " << log[msg->seq].pre_prepare.view << ", but msg view = " << msg->view << std::endl;
 	    return false;
 	}
     }
@@ -312,8 +311,14 @@ void CPbft::broadcast(CPbftMessage* msg){
     }
 }
 
-void CPbft::excuteTransactions(const uint256& digest){
+void CPbft::executeTransaction(const int seq){
+    // TODO: check if lower-seq tx are all executed. add a phase.
     std::cout << "executing tx..." << std::endl;
+    // send msg back to client. The client will wait for f+1 consistent responses.
+    std::ostringstream oss;
+    oss <<log[seq].pre_prepare.clientReq;
+    std::cout<< "send back to client: " <<log[seq].pre_prepare.clientReq << std::endl;
+    udpClient.sendto(oss, "localhost", 18500);
     
 }
 
