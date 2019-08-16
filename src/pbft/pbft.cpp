@@ -20,7 +20,7 @@
 
 //----------placeholder:members is initialized as size-4.
 
-CPbft::CPbft(int serverPort, unsigned int id): localView(0), globalView(0), log(std::vector<CPbftLogEntry>(CPbft::logSize)), nextSeq(8), members(std::vector<uint32_t>(groupSize)), server_id(id), nGroups(1), udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient()), pRecvBuf(new char[CPbftMessage::messageSizeBytes], std::default_delete<char[]>()), privateKey(CKey()), x(-1){
+CPbft::CPbft(int serverPort, unsigned int id): localView(0), globalView(0), log(std::vector<CPbftLogEntry>(CPbft::logSize)), nextSeq(0), lastExecutedIndex(-1), members(std::vector<uint32_t>(groupSize)), server_id(id), nGroups(1), udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient()), pRecvBuf(new char[CPbftMessage::messageSizeBytes], std::default_delete<char[]>()), privateKey(CKey()), x(-1){
     nFaulty = (members.size() - 1)/3;
     std::cout << "CPbft constructor. faulty nodes in a group =  "<< nFaulty << std::endl;
     privateKey.MakeNewKey(false);
@@ -30,7 +30,6 @@ CPbft::CPbft(int serverPort, unsigned int id): localView(0), globalView(0), log(
     std::cout << "my serverId = " << server_id << ", publicKey = " << publicKey.GetHash().ToString() <<std::endl;
 }
 
-CPbft::CPbft(){}
 
 
 
@@ -117,9 +116,9 @@ void interruptableReceive(CPbft& pbftObj){
 		pbftObj.onReceiveCommit(cMsg, true);
 		break;
 	    }
-	    case reply:
-		// only the local leader need to handle the reply message?
-		std::cout << "received reply msg" << std::endl;
+	    case execute:
+		// only the local leader need to handle the execute message?
+		std::cout << "received execute msg" << std::endl;
 		break;
 	    default:
 		std::cout << "received invalid msg" << std::endl;
@@ -193,12 +192,12 @@ bool CPbft::onReceiveCommit(CPbftMessage& commit, bool sanityCheck){
     //-----------add to log (currently use placeholder)
     //    log[commit.seq].commitArray.push_back(commit);
     
-    // count the number of prepare msg. enter reply if greater than 2f+1
+    // count the number of prepare msg. enter execute if greater than 2f+1
     log[commit.seq].commitCount++;
     if(log[commit.seq].phase == PbftPhase::commit && log[commit.seq].commitCount == (nFaulty << 1 ) + 1 ){ 
 	// enter commit phase
-	std::cout << "enter reply phase" << std::endl;
-	log[commit.seq].phase = PbftPhase::reply;
+	std::cout << "enter execute phase" << std::endl;
+	log[commit.seq].phase = PbftPhase::execute;
 	executeTransaction(commit.seq);
 	return true;
     }
@@ -312,13 +311,20 @@ void CPbft::broadcast(CPbftMessage* msg){
 }
 
 void CPbft::executeTransaction(const int seq){
-    // TODO: check if lower-seq tx are all executed. add a phase.
-    std::cout << "executing tx..." << std::endl;
-    // send msg back to client. The client will wait for f+1 consistent responses.
-    std::ostringstream oss;
-    oss <<log[seq].pre_prepare.clientReq;
-    std::cout<< "send back to client: " <<log[seq].pre_prepare.clientReq << std::endl;
-    udpClient.sendto(oss, "localhost", 18500);
+    // execute all lower-seq tx until this one if possible.
+    int i = lastExecutedIndex + 1;
+    for(; i < seq + 1; i++){
+	if(log[seq].phase == PbftPhase::execute){
+	    // send msg back to client. The client will wait for f+1 consistent responses.
+	    std::ostringstream oss;
+	    oss <<log[seq].pre_prepare.clientReq;
+	    std::cout<< "executing and send back to client: " <<log[seq].pre_prepare.clientReq << std::endl;
+	    udpClient.sendto(oss, "localhost", 18500);
+	} else {
+	    break;
+	}
+    }
+    lastExecutedIndex = i-1;
     
 }
 

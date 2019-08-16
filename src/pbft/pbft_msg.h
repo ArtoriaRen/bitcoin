@@ -17,7 +17,7 @@
 #include "uint256.h"
 //global view number
 
-enum PbftPhase {pre_prepare, prepare, commit, reply};
+enum PbftPhase {pre_prepare, prepare, commit, execute};
 
 class CPre_prepare;
 

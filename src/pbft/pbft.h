@@ -39,6 +39,7 @@ public:
     // pbft log. The index is sequence number.
     std::vector<CPbftLogEntry> log;
     uint32_t nextSeq; // next available seq that has not been attached to any client request.
+    int lastExecutedIndex;
     
     // TODO: parameters should be put in a higher layer class. They are not part of pbft.
     CService leader;
@@ -54,7 +55,6 @@ public:
     
     
     explicit CPbft(int serverPort, unsigned int id);    
-    CPbft();    
 //    CPbft& operator = (CPbft&);
     
     // start a thread to receive udp packets and process packet according to the protocol . 
