@@ -76,7 +76,7 @@ public:
     
     
     // Check Prepare message signature, add to corresponding log, check if we have accumulated 2f+1 Commit message. If so, execute transactions and reply. 
-    bool onReceiveCommit(CPbftMessage& commit, bool sanityCheck);
+    virtual bool onReceiveCommit(CPbftMessage& commit, bool sanityCheck);
     
     
     bool checkMsg(CPbftMessage* msg);
@@ -88,7 +88,7 @@ public:
     void sendPubKey(const struct sockaddr_in& src_addr, uint32_t recver_id);
     void broadcastPubKeyReq();
     
-    void executeTransaction(const int seq);
+    virtual void executeTransaction(const int seq);
     
     friend void interruptableReceive(CPbft& pbftObj);
     

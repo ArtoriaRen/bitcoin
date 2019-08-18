@@ -36,6 +36,8 @@ void CPbftMessage::serialize(std::ostringstream& s, const char* clientReq) const
 	    s << " ";
     }
     digest.Serialize(s);
+    s << vchSig.size();
+    s << " ";
     for (uint i = 0; i < vchSig.size(); i++) {
 //	std::cout  << "i = " << i << "sig char = " << vchSig[i] << std::endl;
 	s << vchSig[i];
@@ -52,9 +54,13 @@ void CPbftMessage::deserialize(std::istringstream& s, char* clientReq) {
     }
     s.get(); // discard the delimiter after senderId.
     digest.Unserialize(s); // 256 bits = 32 bytes
+    size_t sigSize;
+    s >> sigSize; 
+    s.get(); // discard the delimiter after sigSize.
     char c;
     vchSig.clear();
-    while (s.get(c)) { // TODO: check the ret val when no more data.
+    for(int i = 0; i < sigSize; i++) { 
+	c = s.get();
 //	std::cout  << "sig char = " << c << std::endl;
 	vchSig.push_back(static_cast<unsigned char>(c));
     }

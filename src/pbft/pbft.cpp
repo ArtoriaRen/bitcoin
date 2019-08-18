@@ -189,9 +189,6 @@ bool CPbft::onReceiveCommit(CPbftMessage& commit, bool sanityCheck){
 	return false;
     }
     
-    //-----------add to log (currently use placeholder)
-    //    log[commit.seq].commitArray.push_back(commit);
-    
     // count the number of prepare msg. enter execute if greater than 2f+1
     log[commit.seq].commitCount++;
     if(log[commit.seq].phase == PbftPhase::commit && log[commit.seq].commitCount == (nFaulty << 1 ) + 1 ){ 
