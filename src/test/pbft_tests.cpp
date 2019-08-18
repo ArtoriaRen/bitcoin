@@ -20,7 +20,7 @@
 
 BOOST_FIXTURE_TEST_SUITE(pbft_tests, TestingSetup)
 	
-	void sendReq(std::string reqString, int port, UdpClient& pbftClient);
+void sendReq(std::string reqString, int port, UdpClient& pbftClient);
 
 BOOST_AUTO_TEST_CASE(conflict_digest)
 {
@@ -112,15 +112,15 @@ BOOST_AUTO_TEST_CASE(udp_server){
 	sendReq(reqString, port0, pbftClient);
     }
     
-    for(int i = 0; i < pbftObj0.nFaulty +1; i++){
+    for(unsigned int i = 0; i < pbftObj0.nFaulty +1; i++){
 	ssize_t recvBytes =  udpServer.recv(pRecvBuf, CPbftMessage::messageSizeBytes);
 	std::string recv(pRecvBuf, 0, recvBytes);
 	std::cout << "receive = " << recv << std::endl;
-//	BOOST_CHECK_EQUAL(recv, reqString.substr(2));
-//	if (reqString.compare(2, reqString.size(), recv) != 0){
-//	    // received invalid reponse, do not increment counter.
-//	    i--;
-//	}
+	//	BOOST_CHECK_EQUAL(recv, reqString.substr(2));
+	//	if (reqString.compare(2, reqString.size(), recv) != 0){
+	//	    // received invalid reponse, do not increment counter.
+	//	    i--;
+	//	}
     }
     std::cout << "received f+1 responses." << std::endl;
     
@@ -128,7 +128,6 @@ BOOST_AUTO_TEST_CASE(udp_server){
     t1.join();
     t2.join();
     // TODO: test if all CPbft instance has set x to 8
-    
 }
 
 void sendReq(std::string reqString, int port, UdpClient& pbftClient){

@@ -173,7 +173,7 @@ bool CPbft::onReceivePrepare(CPbftMessage& prepare, bool sanityCheck){
     //use == (nFaulty << 1) instead of >= (nFaulty << 1) so that we do not re-send commit msg every time another prepare msg is received.  
     if(log[prepare.seq].phase == PbftPhase::prepare && log[prepare.seq].prepareCount == (nFaulty << 1)){
 	// enter commit phase
-	std::cout << "enter commit phase" << std::endl;
+	std::cout << "server " << server_id << " enter commit phase" << std::endl;
 	log[prepare.seq].phase = PbftPhase::commit;
 	CPbftMessage c = assembleMsg(PbftPhase::commit, prepare.seq); 
 	broadcast(&c);
@@ -195,7 +195,7 @@ bool CPbft::onReceiveCommit(CPbftMessage& commit, bool sanityCheck){
     // count the number of prepare msg. enter execute if greater than 2f+1
     log[commit.seq].commitCount++;
     if(log[commit.seq].phase == PbftPhase::commit && log[commit.seq].commitCount == (nFaulty << 1 ) + 1 ){ 
-	// enter commit phase
+	// enter execute phase
 	std::cout << "enter execute phase" << std::endl;
 	log[commit.seq].phase = PbftPhase::execute;
 	executeTransaction(commit.seq);

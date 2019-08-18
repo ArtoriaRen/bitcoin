@@ -72,7 +72,7 @@ public:
     
     //TODO: find the key used to sign and verify messages 
     // Check Prepare message signature, add to corresponding log, check if we have accumulated 2f Prepare message. If so, send Commit message
-    bool onReceivePrepare(CPbftMessage& prepare, bool sanityCheck);
+    virtual bool onReceivePrepare(CPbftMessage& prepare, bool sanityCheck);
     
     
     // Check Prepare message signature, add to corresponding log, check if we have accumulated 2f+1 Commit message. If so, execute transactions and reply. 
@@ -92,7 +92,7 @@ public:
     
     friend void interruptableReceive(CPbft& pbftObj);
     
-private:
+protected:
     UdpServer udpServer;
     UdpClient udpClient;
     std::shared_ptr<char> pRecvBuf;
