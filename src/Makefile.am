@@ -182,7 +182,8 @@ BITCOIN_CORE_H = \
   pbft/pbft_log_entry.h \
   pbft/util.h \
   pbft-dl/pbft-dl.h \
-  pbft-dl/pbft2_5.h
+  pbft-dl/pbft2_5.h \
+  pbft-dl/dl_msg.h
 
 obj/build.h: FORCE
 	@$(MKDIR_P) $(builddir)/obj
@@ -240,6 +241,7 @@ libbitcoin_server_a_SOURCES = \
   pbft/util.cpp \
   pbft-dl/pbft-dl.cpp \
   pbft-dl/pbft2_5.cpp \
+  pbft-dl/dl_msg.cpp \
   $(BITCOIN_CORE_H)
 
 if ENABLE_ZMQ
