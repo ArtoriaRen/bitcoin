@@ -106,27 +106,27 @@ BOOST_AUTO_TEST_CASE(udp_server){
     
     // To emulate a pbft client, we use a udp client to send request to the pbft leader.
     UdpClient pbftClient;
-    
-    for(int i = 0; i < 3; i++){
+    const int numReq = 3;
+    for(int i = 0; i < numReq; i++){
     	std::string reqString = "r x=" + std::to_string(i); // the format of a request is r followed by the real request
 	sendReq(reqString, port0, pbftClient);
     }
     
-    for(unsigned int i = 0; i < pbftObj0.nFaulty +1; i++){
+    int response[numReq] = {0};
+    for(int i = 0; i < numReq * 3; i++){ // should receive numReq * 3 messages since 3 server exist.
 	ssize_t recvBytes =  udpServer.recv(pRecvBuf, CPbftMessage::messageSizeBytes);
-	std::string recv(pRecvBuf, 0, recvBytes);
-	std::cout << "receive = " << recv << std::endl;
-	//	BOOST_CHECK_EQUAL(recv, reqString.substr(2));
-	//	if (reqString.compare(2, reqString.size(), recv) != 0){
-	//	    // received invalid reponse, do not increment counter.
-	//	    i--;
-	//	}
+	std::string recv(pRecvBuf, 0, recvBytes); // recv should have the format of "x=<number>".
+	std::cout << "receive = " << recv.at(2) << std::endl;
+
+	response[recv.at(2) - '0']++; // increment the counter for the response
     }
-    std::cout << "received f+1 responses." << std::endl;
+
+    for(int i = 0; i < numReq; i++){
+	BOOST_CHECK_EQUAL(response[i], 3); // every server should have responsed.
+    }
+    std::cout << "received responses from 3 servers for all req.\nThis test succeeded. \nPress Ctrl-C to kill all threads." << std::endl; 
     
     t0.join();
-    t1.join();
-    t2.join();
     // TODO: test if all CPbft instance has set x to 8
 }
 

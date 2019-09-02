@@ -6,11 +6,12 @@
 
 #include "pbft-dl/dl_msg.h"
 #include "hash.h"
+#include "pbft/pbft_msg.h"
 
-DL_Message::DL_Message():phase(DL_Phase::DLPP_LPP), localView(0), globalView(0), seq(0), senderId(0), digest(), vchSig(){
+DL_Message::DL_Message():phase(PbftPhase::pre_prepare), localView(0), globalView(0), seq(0), senderId(0), digest(), vchSig(){
 }
 
-DL_Message::DL_Message(uint32_t senderId):phase(DL_Phase::DLPP_LPP), localView(0), globalView(0), seq(0), senderId(senderId), digest(), vchSig(){
+DL_Message::DL_Message(uint32_t senderId):phase(PbftPhase::pre_prepare), localView(0), globalView(0), seq(0), senderId(senderId), digest(), vchSig(){
 }
 
 DL_Message::DL_Message(DL_Phase p, uint32_t senderId):phase(p), localView(0), globalView(0), seq(0), senderId(senderId), digest(), vchSig(){

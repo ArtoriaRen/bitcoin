@@ -57,17 +57,16 @@ public:
     explicit CPbft(int serverPort, unsigned int id);    
 //    CPbft& operator = (CPbft&);
     
+    virtual ~CPbft();
     // start a thread to receive udp packets and process packet according to the protocol . 
-    void start();
-    // Stop udp server.
-    void stop();
+    virtual void start();
     
     // calculate the leader and group members based on the random number and the blockchain.
     void group(uint32_t randomNumber, uint32_t nBlocks, const CBlockIndex* pindex);
     
     
     // Check Pre-prepare message signature and send Prepare message
-    bool onReceivePrePrepare(CPre_prepare& pre_prepare);
+    virtual bool onReceivePrePrepare(CPre_prepare& pre_prepare);
     
     
     //TODO: find the key used to sign and verify messages 

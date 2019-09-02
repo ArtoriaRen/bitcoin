@@ -17,12 +17,18 @@
 #include <stdint.h>
 #include "uint256.h"
 #include "util.h"
+#include "pbft/pbft_msg.h"
 
-enum DL_Phase {DLPP_LPP, DLPP_LP, DLPP_LC, DLPP_GPP, DLP_LPP, DLP_LP, DLP_LC, DLP_GP, DLP_GPCD, DLC_GPLC, DLC_GC, DLC_GCCD, DLR_LR, DLR_GR};
+//enum DL_Phase {DLPP_LPP, DLPP_LP, DLPP_LC, DLPP_GPP, DLP_LPP, DLP_LP, DLP_LC, DLP_GP, DLP_GPCD, DLC_GPLC, DLC_GC, DLC_GCCD, DLR_LR, DLR_GR};
 
+enum DL_Phase {DLPP_GPP = PbftPhase::end, DLP_GP, DLP_GPCD, DLC_GPLC, DLC_GC, DLC_GCCD, DLR_LR, DLR_GR};
+
+
+/* similar to CPbftMesssage but with dl-pbft phases
+ */
 class DL_Message {
 public:
-    DL_Phase phase;
+    uint32_t phase;
     uint32_t localView;
     uint32_t globalView;
     uint32_t seq;

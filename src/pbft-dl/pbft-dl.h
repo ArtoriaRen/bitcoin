@@ -17,7 +17,8 @@
 #include "pbft/pbft.h"
 #include "pbft-dl/dl_msg.h"
 
-
+/* handle communication with other groups.
+ */
 class DL_pbft{
 public:
     std::unordered_map<uint32_t, CPbftPeer> peerGroupLeaders; // leaders of other groups.
@@ -30,9 +31,18 @@ public:
     void deserializeMultiCommits(std::istringstream iss);
 
 
+    // Check leader group Local-CC.
+    bool checkGPP(DL_Message& msg);
+
+    // Check Local-CC from 2f non-leader groups.
+    bool checkGP(DL_Message& msg);
     
-    
-    
+    // Check GPCLC from 2f + 1 groups.
+    bool checkGC(DL_Message& msg);
+
+    // send msg to other group leaders.
+    void sendMsg2Leaders(DL_Message msg);
+
 };
 
 

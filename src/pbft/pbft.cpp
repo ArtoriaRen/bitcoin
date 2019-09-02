@@ -31,6 +31,9 @@ CPbft::CPbft(int serverPort, unsigned int id): localView(0), globalView(0), log(
 }
 
 
+CPbft::~CPbft(){
+    
+}
 
 
 /**
@@ -88,7 +91,7 @@ void interruptableReceive(CPbft& pbftObj){
 	}
 	
 	
-	// received msg is either a client req or a PbftMessage.	
+	// received msg is a PbftMessage.	
 	std::string recvString(pbftObj.pRecvBuf.get(), recvBytes);
 	std::istringstream iss(recvString);
 	int phaseNum = -1;
@@ -134,7 +137,6 @@ void CPbft::start(){
 }
 
 bool CPbft::onReceivePrePrepare(CPre_prepare& pre_prepare){
-    
     std::cout<< "received pre-prepare" << std::endl;
     // sanity check for signature, seq, view, digest.
     /*Faulty nodes may proceed even if the sanity check fails*/

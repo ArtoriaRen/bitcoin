@@ -59,7 +59,7 @@ void CPbftMessage::deserialize(std::istringstream& s, char* clientReq) {
     s.get(); // discard the delimiter after sigSize.
     char c;
     vchSig.clear();
-    for(int i = 0; i < sigSize; i++) { 
+    for(uint i = 0; i < sigSize; i++) { 
 	c = s.get();
 //	std::cout  << "sig char = " << c << std::endl;
 	vchSig.push_back(static_cast<unsigned char>(c));
