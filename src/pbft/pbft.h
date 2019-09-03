@@ -49,33 +49,33 @@ public:
     uint32_t nGroups; // total number of groups.
     
     // udp server convert received char array into CPbftMessage and put them in a queue.(May not be used if we process msg in the udp server thread.) 
-//    std::mutex mtxMsg;
-//    std::condition_variable ready;
+    //    std::mutex mtxMsg;
+    //    std::condition_variable ready;
     std::deque<CPbftMessage> receiveQue;
     
     
     explicit CPbft(int serverPort, unsigned int id);    
-//    CPbft& operator = (CPbft&);
+    //    CPbft& operator = (CPbft&);
     
-    virtual ~CPbft();
+    ~CPbft();
     // start a thread to receive udp packets and process packet according to the protocol . 
-    virtual void start();
+    void start();
     
     // calculate the leader and group members based on the random number and the blockchain.
     void group(uint32_t randomNumber, uint32_t nBlocks, const CBlockIndex* pindex);
     
     
     // Check Pre-prepare message signature and send Prepare message
-    virtual bool onReceivePrePrepare(CPre_prepare& pre_prepare);
+    bool onReceivePrePrepare(CPre_prepare& pre_prepare);
     
     
     //TODO: find the key used to sign and verify messages 
     // Check Prepare message signature, add to corresponding log, check if we have accumulated 2f Prepare message. If so, send Commit message
-    virtual bool onReceivePrepare(CPbftMessage& prepare, bool sanityCheck);
+    bool onReceivePrepare(CPbftMessage& prepare, bool sanityCheck);
     
     
     // Check Prepare message signature, add to corresponding log, check if we have accumulated 2f+1 Commit message. If so, execute transactions and reply. 
-    virtual bool onReceiveCommit(CPbftMessage& commit, bool sanityCheck);
+    bool onReceiveCommit(CPbftMessage& commit, bool sanityCheck);
     
     
     bool checkMsg(CPbftMessage* msg);
@@ -87,7 +87,7 @@ public:
     void sendPubKey(const struct sockaddr_in& src_addr, uint32_t recver_id);
     void broadcastPubKeyReq();
     
-    virtual void executeTransaction(const int seq);
+    void executeTransaction(const int seq);
     
     friend void interruptableReceive(CPbft& pbftObj);
     

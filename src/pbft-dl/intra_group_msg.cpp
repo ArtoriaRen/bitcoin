@@ -4,23 +4,22 @@
  * and open the template in the editor.
  */
 
-#include "pbft-dl/dl_msg.h"
+#include "pbft-dl/intra_group_msg.h"
 #include "hash.h"
-#include "pbft/pbft_msg.h"
 
-DL_Message::DL_Message():phase(PbftPhase::pre_prepare), localView(0), globalView(0), seq(0), senderId(0), digest(), vchSig(){
+CIntraGroupMsg::CIntraGroupMsg():phase(DL_pre_prepare), localView(0), globalView(0), seq(0), senderId(0), digest(), vchSig(){
 }
 
-DL_Message::DL_Message(uint32_t senderId):phase(PbftPhase::pre_prepare), localView(0), globalView(0), seq(0), senderId(senderId), digest(), vchSig(){
+CIntraGroupMsg::CIntraGroupMsg(uint32_t senderId):phase(DL_pre_prepare), localView(0), globalView(0), seq(0), senderId(senderId), digest(), vchSig(){
 }
 
-DL_Message::DL_Message(DL_Phase p, uint32_t senderId):phase(p), localView(0), globalView(0), seq(0), senderId(senderId), digest(), vchSig(){
+CIntraGroupMsg::CIntraGroupMsg(DL_Phase p, uint32_t senderId):phase(p), localView(0), globalView(0), seq(0), senderId(senderId), digest(), vchSig(){
 }
 
-// DL_Message::DL_Message(CPre_prepare& pre_prepare, uint32_t senderId):phase(pre_prepare.phase), view(pre_prepare.view), seq(pre_prepare.seq), senderId(senderId), digest(pre_prepare.digest), vchSig(pre_prepare.vchSig){
-//}
+CIntraGroupMsg::CIntraGroupMsg(CLocalPP& pre_prepare, uint32_t senderId):phase(pre_prepare.phase), localView(pre_prepare.localView), globalView(pre_prepare.globalView), seq(pre_prepare.seq), senderId(senderId), digest(pre_prepare.digest), vchSig(pre_prepare.vchSig){
+}
 
-void DL_Message::serialize(std::ostringstream& s, const char* clientReq) const {
+void CIntraGroupMsg::serialize(std::ostringstream& s, const char* clientReq) const {
     std::cout << "dl serialize start, phase = " << phase  << ", localView = " << localView  << ", globalView = " << globalView << ", seq = " << seq << ", senderId = "<< senderId << ", digest = " << digest.GetHex() << ", sig[0] = " << vchSig[0] << std::endl;
     s << static_cast<int> (phase);
     s << " ";
@@ -46,7 +45,7 @@ void DL_Message::serialize(std::ostringstream& s, const char* clientReq) const {
     }
 }
 
-void DL_Message::deserialize(std::istringstream& s, char* clientReq) {
+void CIntraGroupMsg::deserialize(std::istringstream& s, char* clientReq) {
     s >> localView;
     s >> globalView;
     s >> seq;
@@ -62,7 +61,7 @@ void DL_Message::deserialize(std::istringstream& s, char* clientReq) {
     s.get(); // discard the delimiter after sigSize.
     char c;
     vchSig.clear();
-    for(int i = 0; i < sigSize; i++) { 
+    for(unsigned int i = 0; i < sigSize; i++) { 
 	c = s.get();
 //	std::cout  << "sig char = " << c << std::endl;
 	vchSig.push_back(static_cast<unsigned char>(c));
@@ -74,7 +73,7 @@ void DL_Message::deserialize(std::istringstream& s, char* clientReq) {
 
 
 
-void DL_Message::getHash(uint256& result){
+void CIntraGroupMsg::getHash(uint256& result){
     CHash256().Write((const unsigned char*)&phase, sizeof(phase))
 	    .Write((const unsigned char*)&localView, sizeof(localView))
 	    .Write((const unsigned char*)&globalView, sizeof(globalView))
@@ -82,4 +81,27 @@ void DL_Message::getHash(uint256& result){
 	    .Write((const unsigned char*)&senderId, sizeof(senderId))
 	    .Write(digest.begin(), sizeof(digest))
 	    .Finalize((unsigned char*)&result);
+}
+
+CLocalPP::CLocalPP(const CIntraGroupMsg& msg){
+    phase = DL_pre_prepare;
+    localView = msg.localView;
+    globalView = msg.globalView;
+    seq = msg.seq;
+    senderId = msg.senderId;
+    digest = msg.digest;
+    vchSig = msg.vchSig;
+}
+
+void CLocalPP::serialize(std::ostringstream& s) const{
+    std::cout << "LocalPP serialize, add clientReq: " << clientReq << std::endl;
+    // we must serialize clientReq before vchSig because we are not sure the size of vchSig and it can contain space.
+    CIntraGroupMsg::serialize(s, clientReq.c_str());
+}
+
+void CLocalPP::deserialize(std::istringstream& s){
+    char reqCharArr[128] = {'\0'};
+    CIntraGroupMsg::deserialize(s, reqCharArr);
+    clientReq = std::string(reqCharArr);
+    std::cout << "client req : " << clientReq << std::endl;
 }

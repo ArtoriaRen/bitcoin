@@ -17,16 +17,16 @@
 #include <stdint.h>
 #include "uint256.h"
 #include "util.h"
-#include "pbft/pbft_msg.h"
 
-//enum DL_Phase {DLPP_LPP, DLPP_LP, DLPP_LC, DLPP_GPP, DLP_LPP, DLP_LP, DLP_LC, DLP_GP, DLP_GPCD, DLC_GPLC, DLC_GC, DLC_GCCD, DLR_LR, DLR_GR};
+enum DL_Phase {DL_pre_prepare, DL_prepare, DL_commit, DLPP_GPP, DLP_GP, DLP_GPCD, DLC_GPLC, DLC_GC, DLC_GCCD, DLR_LR, DLR_GR};
 
-enum DL_Phase {DLPP_GPP = PbftPhase::end, DLP_GP, DLP_GPCD, DLC_GPLC, DLC_GC, DLC_GCCD, DLR_LR, DLR_GR};
+//enum DL_Phase {DLPP_GPP = PbftPhase::end, DLP_GP, DLP_GPCD, DLC_GPLC, DLC_GC, DLC_GCCD, DLR_LR, DLR_GR};
 
+class CLocalPP;
 
-/* similar to CPbftMesssage but with dl-pbft phases
+/* similar to CPbftMesssage but with dl-pbft phases.
  */
-class DL_Message {
+class CIntraGroupMsg {
 public:
     uint32_t phase;
     uint32_t localView;
@@ -37,13 +37,13 @@ public:
     std::vector<unsigned char> vchSig; //serilized ecdsa signature.
     const static uint32_t messageSizeBytes = 128; // the real size is 4*4 + 32 +72 = 120 bytes.
     
-    DL_Message();
+    CIntraGroupMsg();
 
-    DL_Message(uint32_t senderId);
+    CIntraGroupMsg(uint32_t senderId);
     
-    DL_Message(DL_Phase p, uint32_t senderId);
+    CIntraGroupMsg(DL_Phase p, uint32_t senderId);
     
-//    DL_Message(CPre_prepare& pre_prepare, uint32_t senderId);
+    CIntraGroupMsg(CLocalPP& pre_prepare, uint32_t senderId);
     
     virtual void serialize(std::ostringstream& s, const char* clientReq = nullptr) const;
     
@@ -52,6 +52,20 @@ public:
     void getHash(uint256& result);
 };
 
+/*Local pre-prepare message*/
+class CLocalPP : public CIntraGroupMsg{
+public:
+    CLocalPP():CIntraGroupMsg(){
+    }
+    
+    CLocalPP(const CIntraGroupMsg& msg);
+
+    void serialize(std::ostringstream& s) const;
+    
+    void deserialize(std::istringstream& s); 
+
+    std::string clientReq;
+};
 
 
 #endif /* DL_MSG_H */
