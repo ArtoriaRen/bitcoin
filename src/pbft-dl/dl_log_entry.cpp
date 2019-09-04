@@ -3,6 +3,7 @@
  * To change this template file, choose Tools | Templates
  * and open the template in the editor.
  */
+#include "pbft-dl/debug_flags.h"
 #include "pbft-dl/dl_log_entry.h"
 
 DL_LogEntry::DL_LogEntry():phase(DL_pre_prepare), prepareCount(0){

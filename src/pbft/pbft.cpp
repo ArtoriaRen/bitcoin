@@ -240,7 +240,7 @@ bool CPbft::checkMsg(CPbftMessage* msg){
 	}
     }
     
-    // if phase is prepare or commit, also need to check view  and digest value.
+    // if phase is prepare or commit, also need to check view 
     if(msg->phase == PbftPhase::prepare || msg->phase == PbftPhase::commit){
 	
 	if(log[msg->seq].pre_prepare.view != msg->view){

@@ -4,6 +4,7 @@
  * and open the template in the editor.
  */
 
+#include "pbft-dl/debug_flags.h"
 #include "pbft-dl/intra_group_msg.h"
 #include "hash.h"
 
@@ -20,7 +21,9 @@ CIntraGroupMsg::CIntraGroupMsg(CLocalPP& pre_prepare, uint32_t senderId):phase(p
 }
 
 void CIntraGroupMsg::serialize(std::ostringstream& s, const char* clientReq) const {
-    std::cout << "dl serialize start, phase = " << phase  << ", localView = " << localView  << ", globalView = " << globalView << ", seq = " << seq << ", senderId = "<< senderId << ", digest = " << digest.GetHex() << ", sig[0] = " << vchSig[0] << std::endl;
+#ifdef INTRA_GROUP_DEBUG
+    std::cout << "intra-group msg serialize start, phase = " << phase  << ", localView = " << localView  << ", globalView = " << globalView << ", seq = " << seq << ", senderId = "<< senderId << ", digest = " << digest.GetHex() << ", sig[0] = " << vchSig[0] << std::endl;
+#endif
     s << static_cast<int> (phase);
     s << " ";
     s << localView;
@@ -67,7 +70,9 @@ void CIntraGroupMsg::deserialize(std::istringstream& s, char* clientReq) {
 	vchSig.push_back(static_cast<unsigned char>(c));
     }
     
+#ifdef INTRA_GROUP_DEBUG
     std::cout << "deserialize ends, phase = " << phase  << " local view = " << localView << ", global view = " << globalView << ", seq = " << seq << ", senderId = "<< senderId << ", digest = " << digest.GetHex() << ", sig[0] = " << vchSig[0] << std::endl;
+#endif
 }
 
 
@@ -93,7 +98,9 @@ CLocalPP::CLocalPP(const CIntraGroupMsg& msg){
 }
 
 void CLocalPP::serialize(std::ostringstream& s) const{
+#ifdef INTRA_GROUP_DEBUG
     std::cout << "LocalPP serialize, add clientReq: " << clientReq << std::endl;
+#endif
     // we must serialize clientReq before vchSig because we are not sure the size of vchSig and it can contain space.
     CIntraGroupMsg::serialize(s, clientReq.c_str());
 }
@@ -102,5 +109,7 @@ void CLocalPP::deserialize(std::istringstream& s){
     char reqCharArr[128] = {'\0'};
     CIntraGroupMsg::deserialize(s, reqCharArr);
     clientReq = std::string(reqCharArr);
+#ifdef INTRA_GROUP_DEBUG
     std::cout << "client req : " << clientReq << std::endl;
+#endif
 }

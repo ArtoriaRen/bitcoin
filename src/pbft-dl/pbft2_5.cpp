@@ -1,3 +1,4 @@
+#include "pbft-dl/debug_flags.h"
 #include "pbft-dl/pbft2_5.h"
 #include "pbft-dl/pbft-dl.h"
 #include "init.h"
@@ -8,12 +9,15 @@
 
 // pRecvBuf must be set large enough to receive cross group msg.
 CPbft2_5::CPbft2_5(int serverPort, unsigned int id, uint32_t l_leader): nFaulty(1), nGroups(1), localLeader(l_leader), localView(0), globalView(0), log(std::vector<DL_LogEntry>(CPbft::logSize, DL_LogEntry(nFaulty))), nextSeq(0), lastExecutedIndex(-1), server_id(id), udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient()), pRecvBuf(new char[(2 * nFaulty + 1) * CIntraGroupMsg::messageSizeBytes], std::default_delete<char[]>()), privateKey(CKey()), x(-1){
+#ifdef BASIC_PBFT 
     std::cout << "CPbft2_5 constructor. faulty nodes in a group =  "<< nFaulty << std::endl;
+#endif
     privateKey.MakeNewKey(false);
     publicKey = privateKey.GetPubKey();
     CPbftPeer myself("localhost", serverPort, publicKey); 
-    //    peers.insert(std::make_pair(server_id, myself));
+#ifdef BASIC_PBFT 
     std::cout << "my serverId = " << server_id << ", publicKey = " << publicKey.GetHash().ToString() <<std::endl;
+#endif
 }    
 
 CPbft2_5::~CPbft2_5(){
@@ -40,11 +44,15 @@ void DL_Receive(CPbft2_5& pbft2_5Obj){
 	    continue;
 	}
 
+#ifdef BASIC_PBFT 
 	std::cout << "recvBytes = " << recvBytes << std::endl;
+#endif
 	switch(pbft2_5Obj.pRecvBuf.get()[0]){
 	    case CPbft::pubKeyReqHeader:
 		// received msg is pubKeyReq. send pubKey
+#ifdef BASIC_PBFT 
 		std::cout << "receive pubKey req" << std::endl;
+#endif
 		// send public key to the peer.
 		pbft2_5Obj.sendPubKey(src_addr, deserializePublicKeyReq(pbft2_5Obj.pRecvBuf.get(), recvBytes));
 		continue;
@@ -90,10 +98,10 @@ void DL_Receive(CPbft2_5& pbft2_5Obj){
 	    }
 	    case static_cast<int>(DL_GPP):
 	    {
-		std::cout << "server " << pbft2_5Obj.server_id << "received GPP" << std::endl;
 		CCrossGroupMsg gppMsg(DL_Phase::DL_GPP);
 		gppMsg.deserialize(iss);
 		pbft2_5Obj.onReceiveGPP(gppMsg);
+		break;
 	    }
 //	    case static_cast<int>(DLP_GP):
 //	    {
@@ -153,7 +161,9 @@ void CPbft2_5::start(){
 }
 
 bool CPbft2_5::onReceivePrePrepare(CLocalPP& pre_prepare){
+#ifdef INTRA_GROUP_DEBUG
     std::cout<< "server " << server_id << " received pre-prepare" << std::endl;
+#endif
     // sanity check for signature, seq, view, digest.
     /*Faulty nodes may proceed even if the sanity check fails*/
     if(!checkMsg(&pre_prepare)){
@@ -171,14 +181,18 @@ bool CPbft2_5::onReceivePrePrepare(CLocalPP& pre_prepare){
 	CIntraGroupMsg c = assembleMsg(DL_commit, pre_prepare.seq);
 	broadcast(&c);
     } else {
+#ifdef INTRA_GROUP_DEBUG
 	std::cout << "server " << server_id << "enter prepare phase. seq in pre-prepare = " << pre_prepare.seq << std::endl;
+#endif
 	log[pre_prepare.seq].phase = DL_prepare;
     }
     return true;
 }
 
 bool CPbft2_5::onReceivePrepare(CIntraGroupMsg& prepare, bool sanityCheck){
+#ifdef INTRA_GROUP_DEBUG
     std::cout << "2_5 received prepare." << std::endl;
+#endif
     // sanity check for signature, seq, view.
     if(sanityCheck && !checkMsg(&prepare)){
 	return false;
@@ -189,7 +203,9 @@ bool CPbft2_5::onReceivePrepare(CIntraGroupMsg& prepare, bool sanityCheck){
     //use == (nFaulty << 1) instead of >= (nFaulty << 1) so that we do not re-send commit msg every time another prepare msg is received.  
     if(log[prepare.seq].phase ==DL_prepare && log[prepare.seq].prepareCount == (nFaulty << 1)){
 	// enter commit phase
+#ifdef INTRA_GROUP_DEBUG
 	std::cout << "server " << server_id << " enter commit phase" << std::endl;
+#endif
 	log[prepare.seq].phase = DL_commit;
 	CIntraGroupMsg c = assembleMsg(DL_commit, prepare.seq); 
 	if(server_id != localLeader){
@@ -205,7 +221,9 @@ bool CPbft2_5::onReceivePrepare(CIntraGroupMsg& prepare, bool sanityCheck){
 }
 
 bool CPbft2_5::onReceiveCommit(CIntraGroupMsg& commit, bool sanityCheck){
+#ifdef INTRA_GROUP_DEBUG
     std::cout << "received commit" << std::endl;
+#endif
     // sanity check for signature, seq, view.
     if(sanityCheck && !checkMsg(&commit)){
 	return false;
@@ -214,16 +232,22 @@ bool CPbft2_5::onReceiveCommit(CIntraGroupMsg& commit, bool sanityCheck){
     // count the number of prepare msg. 
     log[commit.seq].localCC.push_back(commit);
     if(log[commit.seq].phase == DL_commit && log[commit.seq].localCC.size() == (nFaulty << 1 ) + 1 ){ 
+#ifdef CROSS_GROUP_DEBUG
 	std::cout << "global leader = " << dlHandler.globalLeader << std::endl;
+#endif
 	if(server_id == dlHandler.globalLeader){
 	    // if this node is the global leader, send GPP to other group leaders.
+#ifdef CROSS_GROUP_DEBUG
 	    std::cout << "server " << server_id << " multicast GPP " << log[commit.seq].pre_prepare.clientReq << std::endl;
+#endif
 	    CCrossGroupMsg gpp = assembleGPP(commit.seq);
 	    log[commit.seq].globalPC.push_back(gpp);
 	    dlHandler.sendGPP2Leaders(gpp, udpClient);
 	} else {
 	    //this node is a local leader, send GP to other group leaders.
+#ifdef CROSS_GROUP_DEBUG
 	    std::cout << "server " << server_id << " multicast GP " << log[commit.seq].pre_prepare.clientReq << std::endl;
+#endif
 	    CCrossGroupMsg gp = assembleGP(commit.seq);
 	    dlHandler.sendMsg2Leaders(gp);
 	}
@@ -233,9 +257,13 @@ bool CPbft2_5::onReceiveCommit(CIntraGroupMsg& commit, bool sanityCheck){
 }
 
 bool CPbft2_5::onReceiveGPP(CCrossGroupMsg& gpp){
+#ifdef CROSS_GROUP_DEBUG
     std::cout << "server " << server_id << " receieved GPP, req = " << gpp.clientReq << std::endl;
+#endif
     // TODO: check all commits in the localCC
-    return true;
+    if(dlHandler.checkGPP(gpp, globalView, log))
+	    return true;
+    return false;
 }
 
 bool CPbft2_5::onReceiveGP(CCrossGroupMsg& commit){
@@ -318,7 +346,7 @@ bool CPbft2_5::checkMsg(CIntraGroupMsg* msg){
 	}
     }
     
-    // if phase is prepare or commit, also need to check view  and digest value.
+    // if phase is prepare or commit, also need to check view and global view.
     if(msg->phase == DL_prepare || msg->phase == DL_commit){
 	if(log[msg->seq].pre_prepare.localView != msg->localView){
 	    std::cerr<< "log entry local view = " << log[msg->seq].pre_prepare.localView << ", but msg local view = " << msg->localView << std::endl;
@@ -329,14 +357,18 @@ bool CPbft2_5::checkMsg(CIntraGroupMsg* msg){
 	    return false;
 	}
     }
+#ifdef INTRA_GROUP_DEBUG
     std::cout << "sanity check succeed" << std::endl;
+#endif
     return true;
 }
 
 
 
 CLocalPP CPbft2_5::assemblePre_prepare(uint32_t seq, std::string clientReq){
+#ifdef INTRA_GROUP_DEBUG
     std::cout << "assembling pre_prepare, client req = " << clientReq << std::endl;
+#endif
     CLocalPP toSent(server_id); // phase is set to Pre_prepare by default.
     toSent.seq = seq;
     toSent.localView = localView;
@@ -379,7 +411,9 @@ void CPbft2_5::broadcast(CIntraGroupMsg* msg){
 	    if(log[msg->seq].pre_prepare.digest.IsNull()){
 		// add to log, phase is  auto-set to prepare
 		log[msg->seq] = DL_LogEntry(*(static_cast<CLocalPP*>(msg)), nFaulty);
+#ifdef INTRA_GROUP_DEBUG
 		std::cout<< "add to log, clientReq =" << (static_cast<CLocalPP*>(msg))->clientReq << std::endl;
+#endif
 	    }
 	    
 	    break;

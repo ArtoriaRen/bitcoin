@@ -39,9 +39,9 @@ public:
     
     CPbftMessage(CPre_prepare& pre_prepare, uint32_t senderId);
     
-    virtual void serialize(std::ostringstream& s, const char* clientReq = nullptr) const;
+    void serialize(std::ostringstream& s, const char* clientReq = nullptr) const;
     
-    virtual void deserialize(std::istringstream& s, char* clientReq = nullptr); 
+    void deserialize(std::istringstream& s, char* clientReq = nullptr); 
 
     void getHash(uint256& result);
 };

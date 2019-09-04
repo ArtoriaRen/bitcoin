@@ -23,6 +23,7 @@ BOOST_FIXTURE_TEST_SUITE(pbft_dl_tests, TestingSetup)
 void sendReq(std::string reqString, int port, UdpClient& pbftClient);
 
 BOOST_AUTO_TEST_CASE(send_commit_list){
+
     char pRecvBuf[CPbftMessage::messageSizeBytes]; // buf to receive msg from pbft servers.
     int clientUdpPort = 18500; // the port of udp server at the pbft client side.
     UdpServer udpServer("127.0.0.1", clientUdpPort);
@@ -40,12 +41,16 @@ BOOST_AUTO_TEST_CASE(send_commit_list){
     pbftObj1.peers.insert(std::make_pair(pbftObj2.server_id, CPbftPeer("localhost", port2, pbftObj2.getPublicKey())));
     pbftObj2.peers.insert(std::make_pair(pbftObj0.server_id, CPbftPeer("localhost", port0, pbftObj0.getPublicKey())));
     pbftObj2.peers.insert(std::make_pair(pbftObj1.server_id, CPbftPeer("localhost", port1, pbftObj1.getPublicKey())));
-    std::thread t0(DL_Receive, std::ref(pbftObj0));
-    std::thread t1(DL_Receive, std::ref(pbftObj1));
-    std::thread t2(DL_Receive, std::ref(pbftObj2));
     // add other group leader info to the leader of the above group
     pbftObj0.dlHandler.peerGroupLeaders.insert({pbftObj3.server_id, CPbftPeer("localhost", port3, pbftObj3.getPublicKey())});
     
+    pbftObj3.dlHandler.pkMap.insert(std::make_pair(pbftObj0.server_id, pbftObj0.getPublicKey()));
+    pbftObj3.dlHandler.pkMap.insert(std::make_pair(pbftObj1.server_id, pbftObj1.getPublicKey()));
+    pbftObj3.dlHandler.pkMap.insert(std::make_pair(pbftObj2.server_id, pbftObj2.getPublicKey()));
+
+    std::thread t0(DL_Receive, std::ref(pbftObj0));
+    std::thread t1(DL_Receive, std::ref(pbftObj1));
+    std::thread t2(DL_Receive, std::ref(pbftObj2));
     // TODO: test if t3 can deserialize all commits.
     std::thread t3(DL_Receive, std::ref(pbftObj3));
 

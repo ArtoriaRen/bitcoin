@@ -14,9 +14,11 @@
 #ifndef PBFT_DL_H
 #define PBFT_DL_H
 
+#include "pubkey.h"
 #include "pbft/pbft.h"
 #include "pbft-dl/intra_group_msg.h"
 #include "pbft-dl/cross_group_msg.h"
+#include "pbft-dl/dl_log_entry.h"
 #include "pbft/udp_server_client.h"
 
 /* handle communication with other groups.
@@ -24,13 +26,16 @@
 class DL_pbft{
 public:
     static const int FAUTY_GROUPS = 1;
-    std::unordered_map<uint32_t, CPbftPeer> peerGroupLeaders; // leaders of other groups. key is server id.
+    // All leaders of other groups (posibbly including the global leader). key is server id. 
+    std::unordered_map<uint32_t, CPbftPeer> peerGroupLeaders;
     uint32_t globalLeader; // peer id of global leader
+    // public keys of all members of other groups. Used to verify localCC from other groups.
+    std::unordered_map<uint32_t, CPubKey> pkMap;
 
     DL_pbft();
     
     // Check leader group Local-CC.
-    bool checkGPP(CCrossGroupMsg& msg);
+    bool checkGPP(CCrossGroupMsg& msg, uint32_t currentGV, const std::vector<DL_LogEntry>& log);
 
     // Check Local-CC from 2f non-leader groups.
     bool checkGP(CCrossGroupMsg& msg);
@@ -38,6 +43,7 @@ public:
     // Check GPCLC from 2f + 1 groups.
     bool checkGC(CCrossGroupMsg& msg);
 
+    // send GPP to other local leaders. This is only called by the global leader.
     void sendGPP2Leaders(const CCrossGroupMsg& msg, UdpClient& udpClient);
 
     // send msg to other group leaders.
