@@ -245,7 +245,7 @@ libbitcoin_server_a_SOURCES = \
   pbft-dl/pbft2_5.cpp \
   pbft-dl/intra_group_msg.cpp \
   pbft-dl/cross_group_msg.cpp \
-  pbft-dl/dl_log_entry.h \
+  pbft-dl/dl_log_entry.cpp \
   $(BITCOIN_CORE_H)
 
 if ENABLE_ZMQ

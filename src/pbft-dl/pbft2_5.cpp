@@ -6,8 +6,8 @@
 #include "pbft/peer.h"
 #include "pbft/util.h"
 
-CPbft2_5::CPbft2_5(int serverPort, unsigned int id, uint32_t l_leader): localLeader(l_leader), localView(0), globalView(0), log(std::vector<DL_LogEntry>(CPbft::logSize)), nextSeq(0), lastExecutedIndex(-1), members(std::vector<uint32_t>(groupSize)), server_id(id), nGroups(1), udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient()), pRecvBuf(new char[CPbftMessage::messageSizeBytes], std::default_delete<char[]>()), privateKey(CKey()), x(-1){
-    nFaulty = (members.size() - 1)/3;
+// pRecvBuf must be set large enough to receive cross group msg.
+CPbft2_5::CPbft2_5(int serverPort, unsigned int id, uint32_t l_leader): nFaulty(1), nGroups(1), localLeader(l_leader), localView(0), globalView(0), log(std::vector<DL_LogEntry>(CPbft::logSize, DL_LogEntry(nFaulty))), nextSeq(0), lastExecutedIndex(-1), server_id(id), udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient()), pRecvBuf(new char[(2 * nFaulty + 1) * CIntraGroupMsg::messageSizeBytes], std::default_delete<char[]>()), privateKey(CKey()), x(-1){
     std::cout << "CPbft2_5 constructor. faulty nodes in a group =  "<< nFaulty << std::endl;
     privateKey.MakeNewKey(false);
     publicKey = privateKey.GetPubKey();
@@ -28,14 +28,19 @@ void DL_Receive(CPbft2_5& pbft2_5Obj){
     size_t len = sizeof(src_addr);
     
     while(!ShutdownRequested()){
-	// timeout block on receving a new packet. Attention: timeout is in milliseconds. 
-	ssize_t recvBytes =  pbft2_5Obj.udpServer.timed_recv(pbft2_5Obj.pRecvBuf.get(), CIntraGroupMsg::messageSizeBytes, 500, &src_addr, &len);
+	/* timeout block on receving a new packet. Attention: timeout is in milliseconds. 
+	 * Max recv bytes is set to 2(f+1) * intra_group_message so that a pbft2_5Obj can
+	 * receive cross_group_msg.
+	 */
+
+	ssize_t recvBytes =  pbft2_5Obj.udpServer.timed_recv(pbft2_5Obj.pRecvBuf.get(), (2 * pbft2_5Obj.nFaulty + 1) * CIntraGroupMsg::messageSizeBytes, 500, &src_addr, &len);
 	
 	if(recvBytes == -1){
 	    // timeout. but we have got peer publickey. do nothing.
 	    continue;
 	}
-	
+
+	std::cout << "recvBytes = " << recvBytes << std::endl;
 	switch(pbft2_5Obj.pRecvBuf.get()[0]){
 	    case CPbft::pubKeyReqHeader:
 		// received msg is pubKeyReq. send pubKey
@@ -65,7 +70,6 @@ void DL_Receive(CPbft2_5& pbft2_5Obj){
 	    case static_cast<int>(pre_prepare):
 	    {
 		CLocalPP ppMsg(pbft2_5Obj.server_id);
-		std::cout << "recvBytes = " << recvBytes << std::endl;
 		ppMsg.deserialize(iss);
 		pbft2_5Obj.onReceivePrePrepare(ppMsg);
 		break;
@@ -84,12 +88,13 @@ void DL_Receive(CPbft2_5& pbft2_5Obj){
 		pbft2_5Obj.onReceiveCommit(cMsg, true);
 		break;
 	    }
-//	    case static_cast<int>(DLPP_GPP):
-//	    {
-//		CCrossGroupMsg gppMsg(DL_Phase::DLPP_GPP, pbft2_5Obj.server_id);
-//		gppMsg.deserialize(iss);
-//		pbft2_5Obj.onReceiveGPP(gppMsg);
-//	    }
+	    case static_cast<int>(DL_GPP):
+	    {
+		std::cout << "server " << pbft2_5Obj.server_id << "received GPP" << std::endl;
+		CCrossGroupMsg gppMsg(DL_Phase::DL_GPP);
+		gppMsg.deserialize(iss);
+		pbft2_5Obj.onReceiveGPP(gppMsg);
+	    }
 //	    case static_cast<int>(DLP_GP):
 //	    {
 //		CCrossGroupMsg gpMsg(DL_Phase::DLP_GP, pbft2_5Obj.server_id);
@@ -191,7 +196,7 @@ bool CPbft2_5::onReceivePrepare(CIntraGroupMsg& prepare, bool sanityCheck){
 	    // send commit only to local leader
 	    send2Peer(localLeader, &c);
 	} else {
-	    log[prepare.seq].commitCount++;
+	    log[prepare.seq].localCC.push_back(c);
 	}
 	
 	return true;
@@ -207,19 +212,19 @@ bool CPbft2_5::onReceiveCommit(CIntraGroupMsg& commit, bool sanityCheck){
     }
     
     // count the number of prepare msg. 
-    log[commit.seq].commitCount++;
-    commitList[commit.seq].push_back(commit);
-    if(log[commit.seq].phase ==DL_commit && log[commit.seq].commitCount == (nFaulty << 1 ) + 1 ){ 
+    log[commit.seq].localCC.push_back(commit);
+    if(log[commit.seq].phase == DL_commit && log[commit.seq].localCC.size() == (nFaulty << 1 ) + 1 ){ 
 	std::cout << "global leader = " << dlHandler.globalLeader << std::endl;
 	if(server_id == dlHandler.globalLeader){
 	    // if this node is the global leader, send GPP to other group leaders.
 	    std::cout << "server " << server_id << " multicast GPP " << log[commit.seq].pre_prepare.clientReq << std::endl;
-	    CCrossGroupMsg gpp = assembleGPP();
-	    dlHandler.sendMsg2Leaders(gpp);
+	    CCrossGroupMsg gpp = assembleGPP(commit.seq);
+	    log[commit.seq].globalPC.push_back(gpp);
+	    dlHandler.sendGPP2Leaders(gpp, udpClient);
 	} else {
 	    //this node is a local leader, send GP to other group leaders.
 	    std::cout << "server " << server_id << " multicast GP " << log[commit.seq].pre_prepare.clientReq << std::endl;
-	    CCrossGroupMsg gp = assembleGP();
+	    CCrossGroupMsg gp = assembleGP(commit.seq);
 	    dlHandler.sendMsg2Leaders(gp);
 	}
 	return true;
@@ -227,7 +232,9 @@ bool CPbft2_5::onReceiveCommit(CIntraGroupMsg& commit, bool sanityCheck){
     return true;
 }
 
-bool CPbft2_5::onReceiveGPP(CCrossGroupMsg& commit){
+bool CPbft2_5::onReceiveGPP(CCrossGroupMsg& gpp){
+    std::cout << "server " << server_id << " receieved GPP, req = " << gpp.clientReq << std::endl;
+    // TODO: check all commits in the localCC
     return true;
 }
 
@@ -253,11 +260,11 @@ void CPbft2_5::executeTransaction(const int seq){
 }
 
 
-CCrossGroupMsg CPbft2_5::assembleGPP(){
-    return CCrossGroupMsg();
+CCrossGroupMsg CPbft2_5::assembleGPP(uint32_t seq){
+    return CCrossGroupMsg(DL_GPP, log[seq].localCC, log[seq].pre_prepare.clientReq);
 }
 
-CCrossGroupMsg CPbft2_5::assembleGP(){
+CCrossGroupMsg CPbft2_5::assembleGP(uint32_t seq){
     return CCrossGroupMsg();
 }
 
@@ -368,10 +375,10 @@ void CPbft2_5::broadcast(CIntraGroupMsg* msg){
     // virtually send the message to this node itself if it is a prepare or commit msg.
     switch(msg->phase){
 	case DL_pre_prepare:
-	    // do call onReceivePrePrepare, because the leader do not send prepare.
+	    // do not call onReceivePrePrepare, because the leader do not send prepare.
 	    if(log[msg->seq].pre_prepare.digest.IsNull()){
 		// add to log, phase is  auto-set to prepare
-		log[msg->seq] = DL_LogEntry(*(static_cast<CLocalPP*>(msg)));
+		log[msg->seq] = DL_LogEntry(*(static_cast<CLocalPP*>(msg)), nFaulty);
 		std::cout<< "add to log, clientReq =" << (static_cast<CLocalPP*>(msg))->clientReq << std::endl;
 	    }
 	    

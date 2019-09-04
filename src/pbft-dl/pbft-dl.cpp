@@ -1,15 +1,10 @@
-#include <pbft-dl/pbft-dl.h>
 #include <sstream> 
 #include <stdint.h>
+#include "pbft-dl/pbft-dl.h"
 
-void DL_pbft::deserializeMultiCommits(std::istringstream iss){
-    std::list<CPbftMessage> groupCommits;
-    while(!iss.eof()){
-	CPbftMessage cMsg(PbftPhase::commit, 0);
-	cMsg.deserialize(iss);
-    }
-    
+DL_pbft::DL_pbft():globalLeader(0){
 }
+
 
 bool DL_pbft::checkGPP(CCrossGroupMsg& gppMsg){
     // check all sig in the leader group local-CC 
@@ -28,6 +23,16 @@ bool DL_pbft::checkGC(CCrossGroupMsg& msg){
     
 }
 
-void DL_pbft::sendMsg2Leaders(CCrossGroupMsg msg){
-    
+void DL_pbft::sendGPP2Leaders(const CCrossGroupMsg& msg, UdpClient& udpClient){
+    std::ostringstream oss;
+    msg.serialize(oss);
+    for(auto p : peerGroupLeaders){
+	std::cout << "send GPP to peer " << p.first << std::endl;
+	
+	udpClient.sendto(oss, p.second.ip, p.second.port);
+    }
+}
+
+
+void DL_pbft::sendMsg2Leaders(const CCrossGroupMsg& msg){
 }

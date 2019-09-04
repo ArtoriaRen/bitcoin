@@ -34,13 +34,12 @@
 
 class CPbft2_5{
 public:
+    uint32_t nFaulty; // number of faulty nodes in this group. group size should be 3 * nFaulty + 1;
+    uint32_t nGroups; // total number of groups. 
     uint32_t localLeader; // peer id of local leader
-    // store the commit messages from group members for every seq. (key is seq) 
-    std::unordered_map<uint32_t, std::list<CIntraGroupMsg>> commitList; 
     DL_pbft dlHandler;
 
     static const size_t logSize = 128; 
-    static const size_t groupSize = 4;
     uint32_t localView;
     uint32_t globalView;
     // pbft log. The index is sequence number.
@@ -51,11 +50,9 @@ public:
     CService leader;
     std::vector<uint32_t> members; // the sever_ids of peers who is a member of this group.
     uint32_t server_id;
-    uint32_t nFaulty; // number of faulty nodes in this group.
-    uint32_t nGroups; // total number of groups.
     // peers member variable defined in the CPbft class must be nodes in the same group.
     // ----placeholder: send public keys over udp instead of extract it from the blockchain.
-    std::unordered_map<uint32_t, CPbftPeer> peers;
+    std::unordered_map<uint32_t, CPbftPeer> peers; // number of peers should be 3 * Faulty + 1.
 
 
 private:
@@ -83,8 +80,8 @@ public:
     // only the local leader can receive local commit messages, and it store all commits in a list.
     bool onReceiveCommit(CIntraGroupMsg& commit, bool sanityCheck) ;
 
-    // only the local leader can receive GPP.
-    bool onReceiveGPP(CCrossGroupMsg& commit);
+    // only the local leader can receive GPP. GPP = {phase=GPP, localCC, req}
+    bool onReceiveGPP(CCrossGroupMsg& gpp);
 
     // only the local leader can receive GP.
     bool onReceiveGP(CCrossGroupMsg& commit);
@@ -93,9 +90,9 @@ public:
        This function will only be called by a local leader, because only local leaders can receive commits.*/
     void executeTransaction(const int seq) ;
 
-    CCrossGroupMsg assembleGPP();
+    CCrossGroupMsg assembleGPP(uint32_t seq);
 
-    CCrossGroupMsg assembleGP();
+    CCrossGroupMsg assembleGP(uint32_t seq);
 
     bool checkMsg(CIntraGroupMsg* msg);
     CLocalPP assemblePre_prepare(uint32_t seq, std::string clientReq);

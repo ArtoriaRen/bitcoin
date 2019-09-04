@@ -18,7 +18,7 @@
 #include "uint256.h"
 #include "util.h"
 
-enum DL_Phase {DL_pre_prepare, DL_prepare, DL_commit, DLPP_GPP, DLP_GP, DLP_GPCD, DLC_GPLC, DLC_GC, DLC_GCCD, DLR_LR, DLR_GR};
+enum DL_Phase {DL_pre_prepare, DL_prepare, DL_commit, DL_GPP, DL_GP, DL_GPCD, DL_GPLC, DL_GC, DL_GCCD, DL_LR, DL_GR};
 
 //enum DL_Phase {DLPP_GPP = PbftPhase::end, DLP_GP, DLP_GPCD, DLC_GPLC, DLC_GC, DLC_GCCD, DLR_LR, DLR_GR};
 
@@ -45,9 +45,9 @@ public:
     
     CIntraGroupMsg(CLocalPP& pre_prepare, uint32_t senderId);
     
-    virtual void serialize(std::ostringstream& s, const char* clientReq = nullptr) const;
+    void serialize(std::ostringstream& s, const char* clientReq = nullptr) const;
     
-    virtual void deserialize(std::istringstream& s, char* clientReq = nullptr); 
+    void deserialize(std::istringstream& s, char* clientReq = nullptr); 
 
     void getHash(uint256& result);
 };

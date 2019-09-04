@@ -13,10 +13,25 @@
 
 #ifndef CROSSGROUPMSG_H
 #define CROSSGROUPMSG_H
+#include "util.h"
+#include "pbft-dl/intra_group_msg.h"
 
 //TODO: cross group message should include a commit list.
 class CCrossGroupMsg{
+public:
+    DL_Phase phase;
+    std::vector<CIntraGroupMsg> localCC;
+    std::string clientReq;
     
+    CCrossGroupMsg(); 
+    CCrossGroupMsg(DL_Phase p); // this constructor is need for deserialization.
+    CCrossGroupMsg(DL_Phase p, std::vector<CIntraGroupMsg>& commits);
+    // This constructor should be called only for GPP construction.
+    CCrossGroupMsg(DL_Phase p, std::vector<CIntraGroupMsg>& commits, std::string& req);
+    
+    void serialize(std::ostringstream& s) const;
+    
+    void deserialize(std::istringstream& s); 
 };
 
 

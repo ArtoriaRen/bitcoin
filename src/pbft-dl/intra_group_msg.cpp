@@ -67,8 +67,7 @@ void CIntraGroupMsg::deserialize(std::istringstream& s, char* clientReq) {
 	vchSig.push_back(static_cast<unsigned char>(c));
     }
     
-//    std::cout << "deserialize ends, phase = " << phase  << ", view = " << view << ", seq = " << seq << ", senderId = "<< senderId << ", digest = " << digest.GetHex() << ", sig[0] = " << vchSig[0] << std::endl;
-    
+    std::cout << "deserialize ends, phase = " << phase  << " local view = " << localView << ", global view = " << globalView << ", seq = " << seq << ", senderId = "<< senderId << ", digest = " << digest.GetHex() << ", sig[0] = " << vchSig[0] << std::endl;
 }
 
 
