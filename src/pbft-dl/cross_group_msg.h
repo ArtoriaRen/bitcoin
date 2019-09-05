@@ -16,7 +16,6 @@
 #include "util.h"
 #include "pbft-dl/intra_group_msg.h"
 
-//TODO: cross group message should include a commit list.
 class CCrossGroupMsg{
 public:
     DL_Phase phase;

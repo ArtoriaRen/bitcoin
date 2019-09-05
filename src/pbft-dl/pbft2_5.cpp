@@ -1,6 +1,7 @@
 #include "pbft-dl/debug_flags.h"
 #include "pbft-dl/pbft2_5.h"
 #include "pbft-dl/pbft-dl.h"
+#include "pbft-dl/cert.h"
 #include "init.h"
 #include "pbft/pbft_msg.h"
 #include "crypto/aes.h"
@@ -290,7 +291,8 @@ bool CPbft2_5::onReceiveGP(CCrossGroupMsg& gp){
     log[gp.localCC[0].seq].globalPC.push_back(gp);
     // if the globalPC reaches the size of 2F+1, send it to groupmates.
     if(log[gp.localCC[0].seq].globalPC.size() == (nFaultyGroups << 1) + 1){
-	dlHandler.multicastCert(log[gp.localCC[0].seq].globalPC, udpClient, peers);
+	CCert cert(DL_GPCD, 2 * nFaultyGroups + 1, log[gp.localCC[0].seq].globalPC);
+	dlHandler.multicastCert(cert, udpClient, peers);
     }
     return true;
 }

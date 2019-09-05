@@ -19,7 +19,9 @@
 #include "pbft-dl/intra_group_msg.h"
 #include "pbft-dl/cross_group_msg.h"
 #include "pbft-dl/dl_log_entry.h"
+#include "pbft-dl/cert.h"
 #include "pbft/udp_server_client.h"
+#include "pbft/peer.h"
 
 /* handle communication with other groups.
  */
@@ -47,7 +49,7 @@ public:
     void sendGlobalMsg2Leaders(const CCrossGroupMsg& msg, UdpClient& udpClient);
     
     // send GlobalPC or GlobalCC to all members of the same group.
-    void multicastCert(const std::deque<CCrossGroupMsg>& globalCert, UdpClient& udpClient, const std::unordered_map<uint32_t, CPbftPeer>& peers);
+    void multicastCert(const CCert& cert, UdpClient& udpClient, const std::unordered_map<uint32_t, CPbftPeer>& peers);
 };
 
 

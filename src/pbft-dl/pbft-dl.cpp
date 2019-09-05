@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include "pbft-dl/debug_flags.h"
 #include "pbft-dl/pbft-dl.h"
+#include "cert.h"
 
 DL_pbft::DL_pbft():globalLeader(0){
 }
@@ -136,11 +137,9 @@ void DL_pbft::sendGlobalMsg2Leaders(const CCrossGroupMsg& msg, UdpClient& udpCli
     }
 }
 
-void DL_pbft::multicastCert(const std::deque<CCrossGroupMsg>& globalCert, UdpClient& udpClient, const std::unordered_map<uint32_t, CPbftPeer>& peers){
+void DL_pbft::multicastCert(const CCert& cert, UdpClient& udpClient, const std::unordered_map<uint32_t, CPbftPeer>& peers){
     std::ostringstream oss;
-    for(auto localCC : globalCert){
-	localCC.serialize(oss);
-    }
+    cert.serialize(oss);
 #ifdef SERIAL 
     std::cout << "oss size() = " << oss.str().size() << std::endl; 
 #endif

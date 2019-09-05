@@ -23,13 +23,12 @@ BOOST_FIXTURE_TEST_SUITE(pbft_dl_tests, TestingSetup)
 void sendReq(std::string reqString, int port, UdpClient& pbftClient);
 
 BOOST_AUTO_TEST_CASE(send_commit_list){
-// TODO: add group3 of pbftObjs to provide enough localCC to form a globalPC.
     char pRecvBuf[CPbftMessage::messageSizeBytes]; // buf to receive msg from pbft servers.
     int clientUdpPort = 18500; // the port of udp server at the pbft client side.
     UdpServer udpServer("127.0.0.1", clientUdpPort);
     
     // create a group with 3 nodes and use one node to emulate the leader of another group
-    int ports[] = {8350, 8342, 8343, 8344, 8345, 8346}; 
+    int ports[] = {8350, 8342, 8343, 8344, 8345, 8346, 8347, 8348, 8349}; 
 
     // group 1 : pbftObj 0, 1, 2.
     CPbft2_5 pbftObj0(ports[0], 0, 0); 
@@ -55,15 +54,46 @@ BOOST_AUTO_TEST_CASE(send_commit_list){
     pbftObj5.peers.insert(std::make_pair(pbftObj3.server_id, CPbftPeer("localhost", ports[3], pbftObj3.getPublicKey())));
     pbftObj5.peers.insert(std::make_pair(pbftObj4.server_id, CPbftPeer("localhost", ports[4], pbftObj4.getPublicKey())));
 
+    // group 3 : pbftObj 6, 7, 8. leader is 6
+    CPbft2_5 pbftObj6(ports[6], 6, 6); 
+    CPbft2_5 pbftObj7(ports[7], 7, 6); 
+    CPbft2_5 pbftObj8(ports[8], 8, 6); 
+    // add peer info to their groupmates.
+    pbftObj6.peers.insert(std::make_pair(pbftObj7.server_id, CPbftPeer("localhost", ports[7], pbftObj7.getPublicKey())));
+    pbftObj6.peers.insert(std::make_pair(pbftObj8.server_id, CPbftPeer("localhost", ports[8], pbftObj8.getPublicKey())));
+    pbftObj7.peers.insert(std::make_pair(pbftObj6.server_id, CPbftPeer("localhost", ports[6], pbftObj6.getPublicKey())));
+    pbftObj7.peers.insert(std::make_pair(pbftObj8.server_id, CPbftPeer("localhost", ports[8], pbftObj8.getPublicKey())));
+    pbftObj8.peers.insert(std::make_pair(pbftObj6.server_id, CPbftPeer("localhost", ports[6], pbftObj6.getPublicKey())));
+    pbftObj8.peers.insert(std::make_pair(pbftObj7.server_id, CPbftPeer("localhost", ports[7], pbftObj7.getPublicKey())));
+
     // add other group leader info to the leader of the above group
     pbftObj0.dlHandler.peerGroupLeaders.insert({pbftObj3.server_id, CPbftPeer("localhost", ports[3], pbftObj3.getPublicKey())});
+    pbftObj0.dlHandler.peerGroupLeaders.insert({pbftObj6.server_id, CPbftPeer("localhost", ports[6], pbftObj6.getPublicKey())});
     pbftObj3.dlHandler.peerGroupLeaders.insert({pbftObj0.server_id, CPbftPeer("localhost", ports[0], pbftObj0.getPublicKey())});
+    pbftObj3.dlHandler.peerGroupLeaders.insert({pbftObj6.server_id, CPbftPeer("localhost", ports[6], pbftObj6.getPublicKey())});
+    pbftObj6.dlHandler.peerGroupLeaders.insert({pbftObj0.server_id, CPbftPeer("localhost", ports[0], pbftObj0.getPublicKey())});
+    pbftObj6.dlHandler.peerGroupLeaders.insert({pbftObj3.server_id, CPbftPeer("localhost", ports[3], pbftObj3.getPublicKey())});
+    // add other group member info to verify localCC from them
     pbftObj0.dlHandler.pkMap.insert(std::make_pair(pbftObj3.server_id, pbftObj3.getPublicKey()));
     pbftObj0.dlHandler.pkMap.insert(std::make_pair(pbftObj4.server_id, pbftObj4.getPublicKey()));
     pbftObj0.dlHandler.pkMap.insert(std::make_pair(pbftObj5.server_id, pbftObj5.getPublicKey()));
+    pbftObj0.dlHandler.pkMap.insert(std::make_pair(pbftObj6.server_id, pbftObj6.getPublicKey()));
+    pbftObj0.dlHandler.pkMap.insert(std::make_pair(pbftObj7.server_id, pbftObj7.getPublicKey()));
+    pbftObj0.dlHandler.pkMap.insert(std::make_pair(pbftObj8.server_id, pbftObj8.getPublicKey()));
+
     pbftObj3.dlHandler.pkMap.insert(std::make_pair(pbftObj0.server_id, pbftObj0.getPublicKey()));
     pbftObj3.dlHandler.pkMap.insert(std::make_pair(pbftObj1.server_id, pbftObj1.getPublicKey()));
     pbftObj3.dlHandler.pkMap.insert(std::make_pair(pbftObj2.server_id, pbftObj2.getPublicKey()));
+    pbftObj3.dlHandler.pkMap.insert(std::make_pair(pbftObj6.server_id, pbftObj6.getPublicKey()));
+    pbftObj3.dlHandler.pkMap.insert(std::make_pair(pbftObj7.server_id, pbftObj7.getPublicKey()));
+    pbftObj3.dlHandler.pkMap.insert(std::make_pair(pbftObj8.server_id, pbftObj8.getPublicKey()));
+
+    pbftObj6.dlHandler.pkMap.insert(std::make_pair(pbftObj0.server_id, pbftObj0.getPublicKey()));
+    pbftObj6.dlHandler.pkMap.insert(std::make_pair(pbftObj1.server_id, pbftObj1.getPublicKey()));
+    pbftObj6.dlHandler.pkMap.insert(std::make_pair(pbftObj2.server_id, pbftObj2.getPublicKey()));
+    pbftObj6.dlHandler.pkMap.insert(std::make_pair(pbftObj3.server_id, pbftObj3.getPublicKey()));
+    pbftObj6.dlHandler.pkMap.insert(std::make_pair(pbftObj4.server_id, pbftObj4.getPublicKey()));
+    pbftObj6.dlHandler.pkMap.insert(std::make_pair(pbftObj5.server_id, pbftObj5.getPublicKey()));
 
     std::thread t0(DL_Receive, std::ref(pbftObj0));
     std::thread t1(DL_Receive, std::ref(pbftObj1));
@@ -71,7 +101,9 @@ BOOST_AUTO_TEST_CASE(send_commit_list){
     std::thread t3(DL_Receive, std::ref(pbftObj3));
     std::thread t4(DL_Receive, std::ref(pbftObj4));
     std::thread t5(DL_Receive, std::ref(pbftObj5));
-
+    std::thread t6(DL_Receive, std::ref(pbftObj6));
+    std::thread t7(DL_Receive, std::ref(pbftObj7));
+    std::thread t8(DL_Receive, std::ref(pbftObj8));
 
     // To emulate a pbft client, we use a udp client to send request to the pbft leader.
     UdpClient pbftClient;
