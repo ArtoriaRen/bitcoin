@@ -31,24 +31,23 @@ public:
     uint32_t globalLeader; // peer id of global leader
     // public keys of all members of other groups. Used to verify localCC from other groups.
     std::unordered_map<uint32_t, CPubKey> pkMap;
-
+    
     DL_pbft();
     
     // Check leader group Local-CC.
     bool checkGPP(CCrossGroupMsg& msg, uint32_t currentGV, const std::vector<DL_LogEntry>& log);
-
+    
     // Check Local-CC from 2f non-leader groups.
-    bool checkGP(CCrossGroupMsg& msg);
+    bool checkGP(CCrossGroupMsg& msg, uint32_t currentGV, const std::vector<DL_LogEntry>& log);
     
     // Check GPCLC from 2f + 1 groups.
     bool checkGC(CCrossGroupMsg& msg);
-
+    
     // send GPP to other local leaders. This is only called by the global leader.
-    void sendGPP2Leaders(const CCrossGroupMsg& msg, UdpClient& udpClient);
-
-    // send msg to other group leaders.
-    void sendMsg2Leaders(const CCrossGroupMsg& msg);
-
+    void sendGlobalMsg2Leaders(const CCrossGroupMsg& msg, UdpClient& udpClient);
+    
+    // send GlobalPC or GlobalCC to all members of the same group.
+    void multicastCert(const std::deque<CCrossGroupMsg>& globalCert, UdpClient& udpClient, const std::unordered_map<uint32_t, CPbftPeer>& peers);
 };
 
 

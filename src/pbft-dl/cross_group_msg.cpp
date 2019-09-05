@@ -15,6 +15,7 @@ CCrossGroupMsg::CCrossGroupMsg(DL_Phase p): phase(p){
 CCrossGroupMsg::CCrossGroupMsg(DL_Phase p, std::vector<CIntraGroupMsg>& commits): phase(p), localCC(commits){
 }
 
+// this constructor is used to assemble GPP message b/c client is piggybacked.
 CCrossGroupMsg::CCrossGroupMsg(DL_Phase p, std::vector<CIntraGroupMsg>& commits, std::string& req): phase(p), localCC(commits), clientReq(req){
 }
 

@@ -8,7 +8,7 @@
 #include "pbft/util.h"
 
 // pRecvBuf must be set large enough to receive cross group msg.
-CPbft2_5::CPbft2_5(int serverPort, unsigned int id, uint32_t l_leader): nFaulty(1), nGroups(1), localLeader(l_leader), localView(0), globalView(0), log(std::vector<DL_LogEntry>(CPbft::logSize, DL_LogEntry(nFaulty))), nextSeq(0), lastExecutedIndex(-1), server_id(id), udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient()), pRecvBuf(new char[(2 * nFaulty + 1) * CIntraGroupMsg::messageSizeBytes], std::default_delete<char[]>()), privateKey(CKey()), x(-1){
+CPbft2_5::CPbft2_5(int serverPort, unsigned int id, uint32_t l_leader): nFaulty(1), nFaultyGroups(1), localLeader(l_leader), localView(0), globalView(0), log(std::vector<DL_LogEntry>(CPbft::logSize, DL_LogEntry(nFaulty))), nextSeq(0), lastExecutedIndex(-1), server_id(id), udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient()), pRecvBuf(new char[(2 * nFaultyGroups + 1) * (2 * nFaulty + 1) * CIntraGroupMsg::messageSizeBytes], std::default_delete<char[]>()), privateKey(CKey()), x(-1){
 #ifdef BASIC_PBFT 
     std::cout << "CPbft2_5 constructor. faulty nodes in a group =  "<< nFaulty << std::endl;
 #endif
@@ -36,14 +36,14 @@ void DL_Receive(CPbft2_5& pbft2_5Obj){
 	 * Max recv bytes is set to 2(f+1) * intra_group_message so that a pbft2_5Obj can
 	 * receive cross_group_msg.
 	 */
-
-	ssize_t recvBytes =  pbft2_5Obj.udpServer.timed_recv(pbft2_5Obj.pRecvBuf.get(), (2 * pbft2_5Obj.nFaulty + 1) * CIntraGroupMsg::messageSizeBytes, 500, &src_addr, &len);
+	
+	ssize_t recvBytes =  pbft2_5Obj.udpServer.timed_recv(pbft2_5Obj.pRecvBuf.get(), (2 * pbft2_5Obj.nFaultyGroups + 1)*(2 * pbft2_5Obj.nFaulty + 1) * CIntraGroupMsg::messageSizeBytes, 500, &src_addr, &len);
 	
 	if(recvBytes == -1){
 	    // timeout. but we have got peer publickey. do nothing.
 	    continue;
 	}
-
+	
 #ifdef BASIC_PBFT 
 	std::cout << "recvBytes = " << recvBytes << std::endl;
 #endif
@@ -103,54 +103,61 @@ void DL_Receive(CPbft2_5& pbft2_5Obj){
 		pbft2_5Obj.onReceiveGPP(gppMsg);
 		break;
 	    }
-//	    case static_cast<int>(DLP_GP):
-//	    {
-//		CCrossGroupMsg gpMsg(DL_Phase::DLP_GP, pbft2_5Obj.server_id);
-//		gpMsg.deserialize(iss);
-//		pbft2_5Obj.onReceiveGP(gpMsg);
-//	    }
+	    case static_cast<int>(DL_GP):
+	    {
+		CCrossGroupMsg gpMsg(DL_Phase::DL_GP);
+		gpMsg.deserialize(iss);
+		pbft2_5Obj.onReceiveGP(gpMsg);
+		break;
+	    }
 	    //	    case DLP_GPCD:
 	    //	    {
 	    //		CCrossGroupMsg gpcdMsg(DL_Phase::DLP_GPCD, pbft2_5Obj.server_id);
 	    //		gpcdMsg.deserialize(iss);
 	    //		pbft2_5Obj.dlHandler.onReceiveGPCD(gpMsg);
+	    //		break;
 	    //	    }
 	    //	    case DLC_GPLC:
 	    //	    {
 	    //		CCrossGroupMsg gpcdMsg(DL_Phase::DLC_GPLC, pbft2_5Obj.server_id);
 	    //		gpcdMsg.deserialize(iss);
 	    //		pbft2_5Obj.dlHandler.onReceiveGPLC(gpMsg);
+	    //		break;
 	    //	    }
 	    //	    case DLC_GC:
 	    //	    {
 	    //		CCrossGroupMsg msg(DL_Phase::DLC_GC, pbft2_5Obj.server_id);
 	    //		msg.deserialize(iss);
 	    //		pbft2_5Obj.dlHandler.onReceiveGC(msg);
+	    //		break;
 	    //	    }
 	    //	    case DLC_GCCD:
 	    //	    {
 	    //		CCrossGroupMsg msg(DL_Phase::DLC_GCCD, pbft2_5Obj.server_id);
 	    //		msg.deserialize(iss);
 	    //		pbft2_5Obj.dlHandler.onReceiveGCCD(msg);
+	    //		break;
 	    //	    }
 	    //	    case DLR_LR:
 	    //	    {
 	    //		CCrossGroupMsg msg(DL_Phase::DLR_LR, pbft2_5Obj.server_id);
 	    //		msg.deserialize(iss);
 	    //		pbft2_5Obj.dlHandler.onReceiveLR(msg);
+	    //		break;
 	    //	    }
 	    //	    case DLR_GR:
 	    //	    {
 	    //		CCrossGroupMsg msg(DL_Phase::DLR_GR, pbft2_5Obj.server_id);
 	    //		msg.deserialize(iss);
 	    //		pbft2_5Obj.dlHandler.onReceiveGR(msg);
+	    //		break;
 	    //	    }
 	    //	    case execute:
 	    //		// only the local leader need to handle the execute message?
 	    //		std::cout << "received execute msg" << std::endl;
 	    //		break;
 	    default:
-		std::cout << "received invalid msg" << std::endl;
+		std::cout << "server " << pbft2_5Obj.server_id << " received invalid msg" << std::endl;
 	}
     }
 }
@@ -242,14 +249,15 @@ bool CPbft2_5::onReceiveCommit(CIntraGroupMsg& commit, bool sanityCheck){
 #endif
 	    CCrossGroupMsg gpp = assembleGPP(commit.seq);
 	    log[commit.seq].globalPC.push_back(gpp);
-	    dlHandler.sendGPP2Leaders(gpp, udpClient);
+	    dlHandler.sendGlobalMsg2Leaders(gpp, udpClient);
 	} else {
 	    //this node is a local leader, send GP to other group leaders.
 #ifdef CROSS_GROUP_DEBUG
 	    std::cout << "server " << server_id << " multicast GP " << log[commit.seq].pre_prepare.clientReq << std::endl;
 #endif
 	    CCrossGroupMsg gp = assembleGP(commit.seq);
-	    dlHandler.sendMsg2Leaders(gp);
+	    log[commit.seq].globalPC.push_back(gp);
+	    dlHandler.sendGlobalMsg2Leaders(gp, udpClient);
 	}
 	return true;
     }
@@ -260,30 +268,47 @@ bool CPbft2_5::onReceiveGPP(CCrossGroupMsg& gpp){
 #ifdef CROSS_GROUP_DEBUG
     std::cout << "server " << server_id << " receieved GPP, req = " << gpp.clientReq << std::endl;
 #endif
-    // TODO: check all commits in the localCC
-    if(dlHandler.checkGPP(gpp, globalView, log))
-	    return true;
-    return false;
+    if(!dlHandler.checkGPP(gpp, globalView, log))
+	return false;
+    // add to globalPC
+    log[gpp.localCC[0].seq].globalPC.push_back(gpp);
+    CLocalPP pp = assemblePre_prepare(gpp.localCC[0].seq, gpp.clientReq);
+    // TODO: should have GPP be broadcast together, and group members need also check if GPP is valid.
+    broadcast(&pp);
+    return true;
 }
 
-bool CPbft2_5::onReceiveGP(CCrossGroupMsg& commit){
+bool CPbft2_5::onReceiveGP(CCrossGroupMsg& gp){
+    // TODO: how to tolerate network reodering issue? GP may arrive before GPP and a node do not know the correct req for a seq before it receives a GPP.
+#ifdef CROSS_GROUP_DEBUG
+    std::cout << "server " << server_id << " receieved GP, digest = " << gp.localCC[0].digest.GetHex() << std::endl;
+#endif
+    // TODO: must check if the digest matches req in GPP.
+    if(!dlHandler.checkGP(gp, globalView, log))
+	return false;
+    // add to globalPC
+    log[gp.localCC[0].seq].globalPC.push_back(gp);
+    // if the globalPC reaches the size of 2F+1, send it to groupmates.
+    if(log[gp.localCC[0].seq].globalPC.size() == (nFaultyGroups << 1) + 1){
+	dlHandler.multicastCert(log[gp.localCC[0].seq].globalPC, udpClient, peers);
+    }
     return true;
 }
 
 /* This function does not execute tx. Instead, it send a GP or 
  */
 void CPbft2_5::executeTransaction(const int seq){
-//    std::ostringstream oss;
-//    // serialize all commit messages into one stream.
-//    for(auto c : commitList.at(seq)){
-//	c.serialize(oss); 
-//    }
-//    
-//    // send the stream to all group leader
-//    for(auto it = dlHandler.peerGroupLeaders.begin(); it != dlHandler.peerGroupLeaders.end(); it++){
-//	udpClient.sendto(oss, it->second.ip, it->second.port);
-//	
-//    }
+    //    std::ostringstream oss;
+    //    // serialize all commit messages into one stream.
+    //    for(auto c : commitList.at(seq)){
+    //	c.serialize(oss); 
+    //    }
+    //    
+    //    // send the stream to all group leader
+    //    for(auto it = dlHandler.peerGroupLeaders.begin(); it != dlHandler.peerGroupLeaders.end(); it++){
+    //	udpClient.sendto(oss, it->second.ip, it->second.port);
+    //	
+    //    }
     
 }
 
@@ -293,7 +318,7 @@ CCrossGroupMsg CPbft2_5::assembleGPP(uint32_t seq){
 }
 
 CCrossGroupMsg CPbft2_5::assembleGP(uint32_t seq){
-    return CCrossGroupMsg();
+    return CCrossGroupMsg(DL_GP, log[seq].localCC);
 }
 
 
@@ -320,7 +345,7 @@ bool CPbft2_5::checkMsg(CIntraGroupMsg* msg){
 	std::cerr<< "server local view = " << localView << ", but msg local view = " << msg->localView << std::endl;
 	return false;
     }
-
+    
     // server should be in the global view
     if(globalView != msg->globalView){
 	std::cerr<< "server global view = " << globalView << ", but msg global view = " << msg->globalView << std::endl;
@@ -334,7 +359,7 @@ bool CPbft2_5::checkMsg(CIntraGroupMsg* msg){
 	std::cerr<< "digest error. digest in log = " << log[msg->seq].pre_prepare.digest.GetHex() << ", but msg->digest = " << msg->digest.GetHex() << std::endl;
 	return false;
     }
-
+    
     // if phase is pre-prepare, check if the digest matches client req
     if(msg->phase == DL_pre_prepare){
 	std::string req = ((CLocalPP*)msg)->clientReq;
@@ -373,7 +398,7 @@ CLocalPP CPbft2_5::assemblePre_prepare(uint32_t seq, std::string clientReq){
     toSent.seq = seq;
     toSent.localView = localView;
     toSent.globalView = globalView;
-//    toSent.view = 0;
+    //    toSent.view = 0;
     localView = 0; // also change the local view, or the sanity check would fail.
     toSent.digest = Hash(clientReq.begin(), clientReq.end());
     toSent.clientReq = clientReq;

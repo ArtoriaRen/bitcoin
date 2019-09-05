@@ -34,8 +34,8 @@
 
 class CPbft2_5{
 public:
-    uint32_t nFaulty; // number of faulty nodes in this group. group size should be 3 * nFaulty + 1;
-    uint32_t nGroups; // total number of groups. 
+    uint32_t nFaulty; // number of faulty nodes in this group, i.e. f. group size should be 3 * nFaulty + 1;
+    uint32_t nFaultyGroups; // total number of groups, i.e. F 
     uint32_t localLeader; // peer id of local leader
     DL_pbft dlHandler;
 

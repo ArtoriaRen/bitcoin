@@ -55,7 +55,9 @@ void CIntraGroupMsg::deserialize(std::istringstream& s, char* clientReq) {
     s >> senderId;
     if(clientReq != nullptr){
 	    s >> clientReq;
+#ifdef INTRA_GROUP_DEBUG
 	std::cout  << "deserializing clientReq " << clientReq << std::endl;
+#endif
     }
     s.get(); // discard the delimiter after senderId.
     digest.Unserialize(s); // 256 bits = 32 bytes
