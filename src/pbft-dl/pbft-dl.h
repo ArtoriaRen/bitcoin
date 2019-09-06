@@ -41,6 +41,9 @@ public:
     
     // Check Local-CC from 2f non-leader groups.
     bool checkGP(CCrossGroupMsg& msg, uint32_t currentGV, const std::vector<DL_LogEntry>& log);
+
+    // check received globalPC. This function need the pk of nodes in other groups.
+    bool checkGPCD(const CCertMsg& cert, uint32_t currentGV, const std::vector<DL_LogEntry>& log);
     
     // Check GPCLC from 2f + 1 groups.
     bool checkGC(CCrossGroupMsg& msg);
@@ -49,7 +52,7 @@ public:
     void sendGlobalMsg2Leaders(const CCrossGroupMsg& msg, UdpClient& udpClient);
     
     // send GlobalPC or GlobalCC to all members of the same group.
-    void multicastCert(const CCert& cert, UdpClient& udpClient, const std::unordered_map<uint32_t, CPbftPeer>& peers);
+    void multicastCert(const CCertMsg& cert, UdpClient& udpClient, const std::unordered_map<uint32_t, CPbftPeer>& peers);
 };
 
 

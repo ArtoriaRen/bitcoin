@@ -8,8 +8,10 @@
 #include "pbft/peer.h"
 #include "pbft/util.h"
 
+CPbft2_5::CPbft2_5(): nFaulty(1), nFaultyGroups(1), localLeader(0), localView(0), globalView(0), nextSeq(0), lastExecutedIndex(-1), server_id(INT_MAX), x(-1){}
+
 // pRecvBuf must be set large enough to receive cross group msg.
-CPbft2_5::CPbft2_5(int serverPort, unsigned int id, uint32_t l_leader): nFaulty(1), nFaultyGroups(1), localLeader(l_leader), localView(0), globalView(0), log(std::vector<DL_LogEntry>(CPbft::logSize, DL_LogEntry(nFaulty))), nextSeq(0), lastExecutedIndex(-1), server_id(id), udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient()), pRecvBuf(new char[(2 * nFaultyGroups + 1) * (2 * nFaulty + 1) * CIntraGroupMsg::messageSizeBytes], std::default_delete<char[]>()), privateKey(CKey()), x(-1){
+CPbft2_5::CPbft2_5(int serverPort, unsigned int id, uint32_t l_leader): nFaulty(1), nFaultyGroups(1), localLeader(l_leader), localView(0), globalView(0), log(std::vector<DL_LogEntry>(CPbft::logSize, DL_LogEntry(nFaulty))), nextSeq(0), lastExecutedIndex(-1), server_id(id), udpServer(new UdpServer("localhost", serverPort)), udpClient(UdpClient()), pRecvBuf(new char[(2 * nFaultyGroups + 1) * (2 * nFaulty + 1) * CIntraGroupMsg::messageSizeBytes], std::default_delete<char[]>()), privateKey(CKey()), x(-1){
 #ifdef BASIC_PBFT 
     std::cout << "CPbft2_5 constructor. faulty nodes in a group =  "<< nFaulty << std::endl;
 #endif
@@ -20,6 +22,32 @@ CPbft2_5::CPbft2_5(int serverPort, unsigned int id, uint32_t l_leader): nFaulty(
     std::cout << "my serverId = " << server_id << ", publicKey = " << publicKey.GetHash().ToString() <<std::endl;
 #endif
 }    
+
+CPbft2_5& CPbft2_5::operator = (const CPbft2_5& rhs){
+    if(this == &rhs)
+	return *this;
+    nFaulty = rhs.nFaulty; 
+    nFaultyGroups = rhs.nFaultyGroups;
+    localLeader = rhs.localLeader;
+    dlHandler = rhs.dlHandler;
+    localView = rhs.localView;
+    globalView = rhs.globalView;
+    log = rhs.log;
+    nextSeq = rhs.nextSeq; 
+    lastExecutedIndex = rhs.lastExecutedIndex;
+    leader = rhs.leader;
+    members = rhs.members;
+    server_id = rhs.server_id;
+    peers = rhs.peers; 
+    udpServer = rhs.udpServer;
+    udpClient = rhs.udpClient;
+    pRecvBuf = rhs.pRecvBuf;
+    privateKey = rhs.privateKey;
+    publicKey = rhs.publicKey; 
+    x = rhs.x; 
+    return *this;
+
+}
 
 CPbft2_5::~CPbft2_5(){
     
@@ -38,7 +66,7 @@ void DL_Receive(CPbft2_5& pbft2_5Obj){
 	 * receive cross_group_msg.
 	 */
 	
-	ssize_t recvBytes =  pbft2_5Obj.udpServer.timed_recv(pbft2_5Obj.pRecvBuf.get(), (2 * pbft2_5Obj.nFaultyGroups + 1)*(2 * pbft2_5Obj.nFaulty + 1) * CIntraGroupMsg::messageSizeBytes, 500, &src_addr, &len);
+	ssize_t recvBytes =  pbft2_5Obj.udpServer->timed_recv(pbft2_5Obj.pRecvBuf.get(), (2 * pbft2_5Obj.nFaultyGroups + 1)*(2 * pbft2_5Obj.nFaulty + 1) * CIntraGroupMsg::messageSizeBytes, 500, &src_addr, &len);
 	
 	if(recvBytes == -1){
 	    // timeout. but we have got peer publickey. do nothing.
@@ -111,13 +139,13 @@ void DL_Receive(CPbft2_5& pbft2_5Obj){
 		pbft2_5Obj.onReceiveGP(gpMsg);
 		break;
 	    }
-	    //	    case DLP_GPCD:
-	    //	    {
-	    //		CCrossGroupMsg gpcdMsg(DL_Phase::DLP_GPCD, pbft2_5Obj.server_id);
-	    //		gpcdMsg.deserialize(iss);
-	    //		pbft2_5Obj.dlHandler.onReceiveGPCD(gpMsg);
-	    //		break;
-	    //	    }
+	    case DL_GPCD:
+	    {
+		CCertMsg gpcdMsg(DL_Phase::DL_GPCD, 1* pbft2_5Obj.nFaultyGroups * 2 + 1);
+		gpcdMsg.deserialize(iss);
+		pbft2_5Obj.onReceiveGPCD(gpcdMsg);
+		break;
+	    }
 	    //	    case DLC_GPLC:
 	    //	    {
 	    //		CCrossGroupMsg gpcdMsg(DL_Phase::DLC_GPLC, pbft2_5Obj.server_id);
@@ -291,8 +319,24 @@ bool CPbft2_5::onReceiveGP(CCrossGroupMsg& gp){
     log[gp.localCC[0].seq].globalPC.push_back(gp);
     // if the globalPC reaches the size of 2F+1, send it to groupmates.
     if(log[gp.localCC[0].seq].globalPC.size() == (nFaultyGroups << 1) + 1){
-	CCert cert(DL_GPCD, 2 * nFaultyGroups + 1, log[gp.localCC[0].seq].globalPC);
+	CCertMsg cert(DL_GPCD, 2 * nFaultyGroups + 1, log[gp.localCC[0].seq].globalPC);
 	dlHandler.multicastCert(cert, udpClient, peers);
+    }
+    return true;
+}
+
+bool CPbft2_5::onReceiveGPCD(const CCertMsg& gpcd){
+    if(!dlHandler.checkGPCD(gpcd, globalView, log))
+	return false;
+    // add to globalPC
+    log[gpcd.globalCert[0].localCC[0].seq].globalPC = gpcd.globalCert;
+    // send commit to local leader to ack receiving globalPC
+    CIntraGroupMsg c = assembleMsg(DL_GPLC, gpcd.globalCert[0].localCC[0].seq); 
+    if(server_id != localLeader){
+	// send commit only to local leader
+	send2Peer(localLeader, &c);
+    } else {
+	log[gpcd.globalCert[0].localCC[0].seq].localCC.push_back(c);
     }
     return true;
 }
@@ -325,9 +369,10 @@ CCrossGroupMsg CPbft2_5::assembleGP(uint32_t seq){
 
 
 void CPbft2_5::send2Peer(uint32_t peerId, CIntraGroupMsg* msg){
+    std::cout << "server " << server_id << " send " << msg->phase << " msg to server" << peerId << std::endl;
     std::ostringstream oss;
     msg->serialize(oss); 
-    udpClient.sendto(oss, peers[peerId].ip, peers[peerId].port);
+    udpClient.sendto(oss, peers.at(peerId).ip, peers.at(peerId).port);
 }
 
 bool CPbft2_5::checkMsg(CIntraGroupMsg* msg){
@@ -429,6 +474,7 @@ void CPbft2_5::broadcast(CIntraGroupMsg* msg){
     }
     // loop to  send prepare to all nodes in the peers map.
     for(auto p: peers){
+	std::cout << "server " << server_id <<" sends " << msg->phase << " msg to peer " << p.first << ", ip:port = " << p.second.ip << ":" << p.second.port << std::endl;
 	udpClient.sendto(oss, p.second.ip, p.second.port);
     }
     // virtually send the message to this node itself if it is a prepare or commit msg.
@@ -462,7 +508,7 @@ CPubKey CPbft2_5::getPublicKey(){
 void CPbft2_5::broadcastPubKey(){
     std::ostringstream oss;
     // opti: serialized version can be stored.
-    serializePubKeyMsg(oss, server_id, udpServer.get_port(), publicKey);
+    serializePubKeyMsg(oss, server_id, udpServer->get_port(), publicKey);
     int pbftPeerPort = std::stoi(gArgs.GetArg("-pbftpeerport", "18340"));
     udpClient.sendto(oss, "127.0.0.1", pbftPeerPort);
 }
@@ -470,7 +516,7 @@ void CPbft2_5::broadcastPubKey(){
 
 void CPbft2_5::sendPubKey(const struct sockaddr_in& src_addr, uint32_t recver_id){
     std::ostringstream oss;
-    serializePubKeyMsg(oss, server_id, udpServer.get_port(), publicKey);
+    serializePubKeyMsg(oss, server_id, udpServer->get_port(), publicKey);
     udpClient.sendto(oss, inet_ntoa(src_addr.sin_addr), peers.at(recver_id).port);
 }
 

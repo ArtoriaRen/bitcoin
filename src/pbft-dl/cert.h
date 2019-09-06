@@ -17,15 +17,15 @@
 #include "pbft-dl/debug_flags.h"
 #include "pbft-dl/cross_group_msg.h"
 
-class CCert{
+class CCertMsg{
 public:
     DL_Phase phase; // phase should be global PC dessiminate or global CC dessiminate
     uint32_t certSize; // the number of localCCs in the cert. should be 2F+1.
     std::deque<CCrossGroupMsg> globalCert; // a global PC or a global CC: a list of 2F+1 LocalCC
     
-    CCert(); 
-    CCert(DL_Phase p, uint32_t size); // this constructor is need for deserialization.
-    CCert(DL_Phase p, uint32_t size, std::deque<CCrossGroupMsg>& cert);
+    CCertMsg(); 
+    CCertMsg(DL_Phase p, uint32_t size); // this constructor is need for deserialization.
+    CCertMsg(DL_Phase p, uint32_t size, std::deque<CCrossGroupMsg>& cert);
     
     void serialize(std::ostringstream& s) const;
     

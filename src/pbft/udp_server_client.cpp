@@ -3,7 +3,7 @@
  * To change this template file, choose Tools | Templates
  * and open the template in the editor.
  */
-#include "pbft-dl/debug_flags.h"
+
 #include "pbft/udp_server_client.h"
 #include <string.h>
 #include <unistd.h>
@@ -22,10 +22,7 @@
  */
 UdpClient::UdpClient()
 {
-#ifdef BASIC_PBFT 
     std::cout << "udp client constructor"<< std::endl;
-
-#endif
 }
 
 /** \brief Clean up the UDP client object.
@@ -156,9 +153,7 @@ UdpServer::UdpServer(const std::string& addr, int port)
 : f_port(port)
 , f_addr(addr)
 {
-#ifdef BASIC_PBFT 
     std::cout << "udp server constructor, port = " << f_port << std::endl;
-#endif
     char decimal_port[16];
     snprintf(decimal_port, sizeof(decimal_port), "%d", f_port);
     decimal_port[sizeof(decimal_port) / sizeof(decimal_port[0]) - 1] = '\0';

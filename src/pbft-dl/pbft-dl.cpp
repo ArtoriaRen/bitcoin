@@ -114,7 +114,7 @@ bool DL_pbft::checkGP(CCrossGroupMsg& gpMsg, uint32_t currentGV, const std::vect
 #endif
     }
     return true;
-
+    
 }
 
 bool DL_pbft::checkGC(CCrossGroupMsg& msg){
@@ -137,7 +137,7 @@ void DL_pbft::sendGlobalMsg2Leaders(const CCrossGroupMsg& msg, UdpClient& udpCli
     }
 }
 
-void DL_pbft::multicastCert(const CCert& cert, UdpClient& udpClient, const std::unordered_map<uint32_t, CPbftPeer>& peers){
+void DL_pbft::multicastCert(const CCertMsg& cert, UdpClient& udpClient, const std::unordered_map<uint32_t, CPbftPeer>& peers){
     std::ostringstream oss;
     cert.serialize(oss);
 #ifdef SERIAL 
@@ -150,4 +150,23 @@ void DL_pbft::multicastCert(const CCert& cert, UdpClient& udpClient, const std::
 	
 	udpClient.sendto(oss, groupMate.second.ip, groupMate.second.port);
     }
+}
+
+bool DL_pbft::checkGPCD(const CCertMsg& cert, uint32_t currentGV, const std::vector<DL_LogEntry>& log){
+    unsigned int gppCnt = 0, gpCnt = 0;
+    bool valid = false;
+    for(auto lc: cert.globalCert){ // each element in globalCert is a local commit msg.
+	if(lc.phase == DL_GPP){
+	    gppCnt++;
+	    valid = checkGPP(lc, currentGV, log);
+	} else {
+	    gpCnt++;
+	    valid = checkGP(lc, currentGV, log);
+	}
+	if(!valid)
+	    return false;
+    }
+    if(gppCnt == 1 && gpCnt == cert.certSize - 1)
+	return true;
+    return false;
 }

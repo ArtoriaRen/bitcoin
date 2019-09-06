@@ -5,16 +5,16 @@
  */
 #include "pbft-dl/cert.h"
 
-CCert::CCert(): phase(DL_GPCD), certSize(3){ // 3 is the minimum size of a cert under nFaultyGroups = 1.
+CCertMsg::CCertMsg(): phase(DL_GPCD), certSize(3){ // 3 is the minimum size of a cert under nFaultyGroups = 1.
 }
 
-CCert::CCert(DL_Phase p, uint32_t size): phase(p), certSize(size){
+CCertMsg::CCertMsg(DL_Phase p, uint32_t size): phase(p), certSize(size){
 }
 
-CCert::CCert(DL_Phase p, uint32_t size, std::deque<CCrossGroupMsg>& cert): phase(p), certSize(size), globalCert(cert){
+CCertMsg::CCertMsg(DL_Phase p, uint32_t size, std::deque<CCrossGroupMsg>& cert): phase(p), certSize(size), globalCert(cert){
 }
 
-void CCert::serialize(std::ostringstream& s) const {
+void CCertMsg::serialize(std::ostringstream& s) const {
     s << static_cast<int> (phase);
     s << " ";
     for(auto localCC : globalCert){
@@ -22,7 +22,7 @@ void CCert::serialize(std::ostringstream& s) const {
     }
 }
 
-void CCert::deserialize(std::istringstream& s){
+void CCertMsg::deserialize(std::istringstream& s){
    for(unsigned int i = 0; i < certSize; i++ ){
 	CCrossGroupMsg crossMsg;
 	int phaseNum = -1;
