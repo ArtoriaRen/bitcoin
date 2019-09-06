@@ -3,6 +3,7 @@
 #include "pbft-dl/debug_flags.h"
 #include "pbft-dl/pbft-dl.h"
 #include "cert.h"
+#include "pbft2_5.h"
 
 DL_pbft::DL_pbft():globalLeader(0){
 }
@@ -122,7 +123,7 @@ bool DL_pbft::checkGC(CCrossGroupMsg& msg){
     
 }
 
-void DL_pbft::sendGlobalMsg2Leaders(const CCrossGroupMsg& msg, UdpClient& udpClient){
+void DL_pbft::sendGlobalMsg2Leaders(const CCrossGroupMsg& msg, UdpClient& udpClient, CPbft2_5* pbftObj){
     std::ostringstream oss;
     msg.serialize(oss);
 #ifdef SERIAL 
@@ -134,6 +135,18 @@ void DL_pbft::sendGlobalMsg2Leaders(const CCrossGroupMsg& msg, UdpClient& udpCli
 #endif
 	
 	udpClient.sendto(oss, p.second.ip, p.second.port);
+    }
+
+    // virtually send the message to this node itself if the msg is GP.
+    switch(msg.phase){
+	case DL_GP:
+	    pbftObj->onReceiveGP(const_cast<CCrossGroupMsg&>(msg), false);
+	    break;
+//	case DL_GC:
+//	    onReceiveCommit(const_cast<CIntraGroupMsg&>(*msg), false);
+//	    break;
+	default:
+	    break;
     }
 }
 

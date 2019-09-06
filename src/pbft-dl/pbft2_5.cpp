@@ -136,7 +136,7 @@ void DL_Receive(CPbft2_5& pbft2_5Obj){
 	    {
 		CCrossGroupMsg gpMsg(DL_Phase::DL_GP);
 		gpMsg.deserialize(iss);
-		pbft2_5Obj.onReceiveGP(gpMsg);
+		pbft2_5Obj.onReceiveGP(gpMsg, true);
 		break;
 	    }
 	    case DL_GPCD:
@@ -285,8 +285,7 @@ bool CPbft2_5::onReceiveCommit(CIntraGroupMsg& commit, bool sanityCheck){
 	    std::cout << "server " << server_id << " multicast GP " << log[commit.seq].pre_prepare.clientReq << std::endl;
 #endif
 	    CCrossGroupMsg gp = assembleGP(commit.seq);
-	    log[commit.seq].globalPC.push_back(gp);
-	    dlHandler.sendGlobalMsg2Leaders(gp, udpClient);
+	    dlHandler.sendGlobalMsg2Leaders(gp, udpClient, this);
 	}
 	return true;
     }
@@ -295,29 +294,34 @@ bool CPbft2_5::onReceiveCommit(CIntraGroupMsg& commit, bool sanityCheck){
 
 bool CPbft2_5::onReceiveGPP(CCrossGroupMsg& gpp){
 #ifdef CROSS_GROUP_DEBUG
-    std::cout << "server " << server_id << " receieved GPP, req = " << gpp.clientReq << std::endl;
+    std::cout << "server " << server_id << " receieved GPP, seq = " << gpp.localCC[0].seq << std::endl;
 #endif
     if(!dlHandler.checkGPP(gpp, globalView, log))
 	return false;
     // add to globalPC
+    std::cout << "-------------log[0].globalPC size = " << log[0].globalPC.size() << std::endl;
     log[gpp.localCC[0].seq].globalPC.push_back(gpp);
+    std::cout << "-------------log[0].globalPC size = " << log[0].globalPC.size() << std::endl;
     CLocalPP pp = assemblePre_prepare(gpp.localCC[0].seq, gpp.clientReq);
     // TODO: should have GPP be broadcast together, and group members need also check if GPP is valid.
     broadcast(&pp);
     return true;
 }
 
-bool CPbft2_5::onReceiveGP(CCrossGroupMsg& gp){
+bool CPbft2_5::onReceiveGP(CCrossGroupMsg& gp, bool sanityCheck){
     // TODO: how to tolerate network reodering issue? GP may arrive before GPP and a node do not know the correct req for a seq before it receives a GPP.
 #ifdef CROSS_GROUP_DEBUG
     std::cout << "server " << server_id << " receieved GP, digest = " << gp.localCC[0].digest.GetHex() << std::endl;
 #endif
     // TODO: must check if the digest matches req in GPP.
-    if(!dlHandler.checkGP(gp, globalView, log))
+    if(sanityCheck && !dlHandler.checkGP(gp, globalView, log))
 	return false;
     // add to globalPC
+    std::cout << "-------------log[0].globalPC size = " << log[0].globalPC.size() << std::endl;
     log[gp.localCC[0].seq].globalPC.push_back(gp);
+    std::cout << "-------------log[0].globalPC size = " << log[0].globalPC.size() << std::endl;
     // if the globalPC reaches the size of 2F+1, send it to groupmates.
+    std::cout << "server " << server_id << " seq = " << gp.localCC[0].seq <<  " GlobalPC size = " << log[gp.localCC[0].seq].globalPC.size() << std::endl;
     if(log[gp.localCC[0].seq].globalPC.size() == (nFaultyGroups << 1) + 1){
 	CCertMsg cert(DL_GPCD, 2 * nFaultyGroups + 1, log[gp.localCC[0].seq].globalPC);
 	dlHandler.multicastCert(cert, udpClient, peers);

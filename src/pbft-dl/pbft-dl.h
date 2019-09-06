@@ -23,6 +23,7 @@
 #include "pbft/udp_server_client.h"
 #include "pbft/peer.h"
 
+class CPbft2_5;
 /* handle communication with other groups.
  */
 class DL_pbft{
@@ -31,7 +32,7 @@ public:
     // All leaders of other groups (posibbly including the global leader). key is server id. 
     std::unordered_map<uint32_t, CPbftPeer> peerGroupLeaders;
     uint32_t globalLeader; // peer id of global leader
-    // public keys of all members of other groups. Used to verify localCC from other groups.
+    // public keys of all nodes. 
     std::unordered_map<uint32_t, CPubKey> pkMap;
     
     DL_pbft();
@@ -49,7 +50,7 @@ public:
     bool checkGC(CCrossGroupMsg& msg);
     
     // send GPP to other local leaders. This is only called by the global leader.
-    void sendGlobalMsg2Leaders(const CCrossGroupMsg& msg, UdpClient& udpClient);
+    void sendGlobalMsg2Leaders(const CCrossGroupMsg& msg, UdpClient& udpClient, CPbft2_5* pbftObj = nullptr);
     
     // send GlobalPC or GlobalCC to all members of the same group.
     void multicastCert(const CCertMsg& cert, UdpClient& udpClient, const std::unordered_map<uint32_t, CPbftPeer>& peers);

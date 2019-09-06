@@ -89,10 +89,10 @@ public:
     bool onReceiveGPP(CCrossGroupMsg& gpp);
     
     // only the local leader can receive GP.
-    bool onReceiveGP(CCrossGroupMsg& commit);
+    bool onReceiveGP(CCrossGroupMsg& gp, bool sanityCheck);
     
     // a node should send a commit msg to ack receiving a global PC.
-    bool onReceiveGPCD(const CCertMsg& gp);
+    bool onReceiveGPCD(const CCertMsg& gpcd);
 
     /* Once enough local commits are collected, send the commit message list to other group leaders. 
      This function will only be called by a local leader, because only local leaders can receive commits.*/

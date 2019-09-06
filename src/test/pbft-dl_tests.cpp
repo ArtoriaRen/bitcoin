@@ -59,34 +59,34 @@ BOOST_AUTO_TEST_CASE(send_commit_list){
     pbftObjs[8].peers.insert(std::make_pair(pbftObjs[6].server_id, CPbftPeer("localhost", ports[6], pbftObjs[6].getPublicKey())));
     pbftObjs[8].peers.insert(std::make_pair(pbftObjs[7].server_id, CPbftPeer("localhost", ports[7], pbftObjs[7].getPublicKey())));
     
-    // add other group leader info to the leader of the above group
+    // add other group leader info to local leaders 
     pbftObjs[0].dlHandler.peerGroupLeaders.insert({pbftObjs[3].server_id, CPbftPeer("localhost", ports[3], pbftObjs[3].getPublicKey())});
     pbftObjs[0].dlHandler.peerGroupLeaders.insert({pbftObjs[6].server_id, CPbftPeer("localhost", ports[6], pbftObjs[6].getPublicKey())});
     pbftObjs[3].dlHandler.peerGroupLeaders.insert({pbftObjs[0].server_id, CPbftPeer("localhost", ports[0], pbftObjs[0].getPublicKey())});
     pbftObjs[3].dlHandler.peerGroupLeaders.insert({pbftObjs[6].server_id, CPbftPeer("localhost", ports[6], pbftObjs[6].getPublicKey())});
     pbftObjs[6].dlHandler.peerGroupLeaders.insert({pbftObjs[0].server_id, CPbftPeer("localhost", ports[0], pbftObjs[0].getPublicKey())});
     pbftObjs[6].dlHandler.peerGroupLeaders.insert({pbftObjs[3].server_id, CPbftPeer("localhost", ports[3], pbftObjs[3].getPublicKey())});
-    // add other group member info to verify localCC from them
-    for(int j = 0; j < 3; j++){
-	for(int i = 3; i < 9; i++){
+    // all all nodes' pk to each node's pk list 
+    for(int j = 0; j < 9; j++){
+	for(int i = 0; i < 9; i++){
 	    pbftObjs[j].dlHandler.pkMap.insert(std::make_pair(pbftObjs[i].server_id, pbftObjs[i].getPublicKey()));
 	}
     }
     
-    for(int j = 3; j < 6; j++){
-	for(int i = 0; i < 3; i++){
-	    pbftObjs[j].dlHandler.pkMap.insert(std::make_pair(pbftObjs[i].server_id, pbftObjs[i].getPublicKey()));
-	}
-	for(int i = 6; i < 9; i++){
-	    pbftObjs[j].dlHandler.pkMap.insert(std::make_pair(pbftObjs[i].server_id, pbftObjs[i].getPublicKey()));
-	}
-    }
-    
-    for(int j = 6; j < 9; j++){
-	for(int i = 0; i < 6; i++){
-	    pbftObjs[j].dlHandler.pkMap.insert(std::make_pair(pbftObjs[i].server_id, pbftObjs[i].getPublicKey()));
-	}
-    }
+//    for(int j = 3; j < 6; j++){
+//	for(int i = 0; i < 3; i++){
+//	    pbftObjs[j].dlHandler.pkMap.insert(std::make_pair(pbftObjs[i].server_id, pbftObjs[i].getPublicKey()));
+//	}
+//	for(int i = 6; i < 9; i++){
+//	    pbftObjs[j].dlHandler.pkMap.insert(std::make_pair(pbftObjs[i].server_id, pbftObjs[i].getPublicKey()));
+//	}
+//    }
+//    
+//    for(int j = 6; j < 9; j++){
+//	for(int i = 0; i < 6; i++){
+//	    pbftObjs[j].dlHandler.pkMap.insert(std::make_pair(pbftObjs[i].server_id, pbftObjs[i].getPublicKey()));
+//	}
+//    }
     
     std::thread t0(DL_Receive, std::ref(pbftObjs[0]));
     std::thread t1(DL_Receive, std::ref(pbftObjs[1]));

@@ -15,7 +15,7 @@
 #define DEBUG_FLAGS_H
 
 #undef BASIC_PBFT
-#define INTRA_GROUP_DEBUG
+//#define INTRA_GROUP_DEBUG
 #define CROSS_GROUP_DEBUG
 #undef SERIAL
 
