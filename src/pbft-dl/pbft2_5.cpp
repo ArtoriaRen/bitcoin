@@ -46,7 +46,7 @@ CPbft2_5& CPbft2_5::operator = (const CPbft2_5& rhs){
     publicKey = rhs.publicKey; 
     x = rhs.x; 
     return *this;
-
+    
 }
 
 CPbft2_5::~CPbft2_5(){
@@ -258,7 +258,7 @@ bool CPbft2_5::onReceivePrepare(CIntraGroupMsg& prepare, bool sanityCheck){
 
 bool CPbft2_5::onReceiveCommit(CIntraGroupMsg& commit, bool sanityCheck){
 #ifdef INTRA_GROUP_DEBUG
-    std::cout << "received commit" << std::endl;
+    std::cout << "server " << server_id << "received commit" << std::endl;
 #endif
     // sanity check for signature, seq, view.
     if(sanityCheck && !checkMsg(&commit)){
@@ -267,6 +267,7 @@ bool CPbft2_5::onReceiveCommit(CIntraGroupMsg& commit, bool sanityCheck){
     
     // count the number of prepare msg. 
     log[commit.seq].localCC.push_back(commit);
+    std::cout << "server " << server_id << "commit number = " <<  log[commit.seq].localCC.size() << std::endl;
     if(log[commit.seq].phase == DL_commit && log[commit.seq].localCC.size() == (nFaulty << 1 ) + 1 ){ 
 #ifdef CROSS_GROUP_DEBUG
 	std::cout << "global leader = " << dlHandler.globalLeader << std::endl;
@@ -301,9 +302,12 @@ bool CPbft2_5::onReceiveGPP(CCrossGroupMsg& gpp){
     // add to globalPC
     std::cout << "-------------log[0].globalPC size = " << log[0].globalPC.size() << std::endl;
     log[gpp.localCC[0].seq].globalPC.push_back(gpp);
-    std::cout << "-------------log[0].globalPC size = " << log[0].globalPC.size() << std::endl;
+    std::cout << "server " << server_id << "-------------log[0].globalPC size = " << log[0].globalPC.size() <<", address of log" << &log <<  std::endl;
     CLocalPP pp = assemblePre_prepare(gpp.localCC[0].seq, gpp.clientReq);
     // TODO: should have GPP be broadcast together, and group members need also check if GPP is valid.
+    // must create a log entry before broadcasting pp msg b/c broadcast is gonna create new log entry if pre_prepare.digest is null.
+    log[gpp.localCC[0].seq].pre_prepare = pp;
+    log[gpp.localCC[0].seq].phase = DL_prepare;
     broadcast(&pp);
     return true;
 }
@@ -319,7 +323,7 @@ bool CPbft2_5::onReceiveGP(CCrossGroupMsg& gp, bool sanityCheck){
     // add to globalPC
     std::cout << "-------------log[0].globalPC size = " << log[0].globalPC.size() << std::endl;
     log[gp.localCC[0].seq].globalPC.push_back(gp);
-    std::cout << "-------------log[0].globalPC size = " << log[0].globalPC.size() << std::endl;
+    std::cout << "server " << server_id << "-------------log[0].globalPC size = " << log[0].globalPC.size() <<", address of log = " << &log << ", address of this = " << this << std::endl;
     // if the globalPC reaches the size of 2F+1, send it to groupmates.
     std::cout << "server " << server_id << " seq = " << gp.localCC[0].seq <<  " GlobalPC size = " << log[gp.localCC[0].seq].globalPC.size() << std::endl;
     if(log[gp.localCC[0].seq].globalPC.size() == (nFaultyGroups << 1) + 1){
