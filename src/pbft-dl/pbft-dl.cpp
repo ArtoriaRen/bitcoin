@@ -75,7 +75,7 @@ bool DL_pbft::checkGP(CCrossGroupMsg& gpMsg, uint32_t currentGV, const std::vect
     int localViewStd = -1;
     for(auto commit : gpMsg.localCC){
 	if(pkMap.find(commit.senderId) == pkMap.end()){
-	    std::cerr<< "checking GP : no pub key for the sender" << std::endl;
+	    std::cerr<< "checking a commit msg in the GP message: no pub key for the sender" << std::endl;
 	    return false;
 	}
 	// verify signature and return wrong if sig is wrong
@@ -118,7 +118,50 @@ bool DL_pbft::checkGP(CCrossGroupMsg& gpMsg, uint32_t currentGV, const std::vect
     
 }
 
-bool DL_pbft::checkGC(CCrossGroupMsg& msg){
+bool DL_pbft::checkGC(CCrossGroupMsg& gcMsg, uint32_t currentGV, const std::vector<DL_LogEntry>& log){
+    // check all sig of nodes in all groups whose gplc is in the GC message
+    int localViewStd = -1;
+    for(auto commit : gcMsg.localCC){
+	if(pkMap.find(commit.senderId) == pkMap.end()){
+	    std::cerr<< "checking a commit msg in the GC message: no pub key for the sender" << std::endl;
+	    return false;
+	}
+	// verify signature and return wrong if sig is wrong
+	uint256 msgHash;
+	commit.getHash(msgHash);
+	if(!pkMap[commit.senderId].Verify(msgHash, commit.vchSig)){
+	    std::cerr<< "verification sender" << commit.senderId <<"'s sig fail" << std::endl;
+	    return false;
+	} 
+	// all commits should be in the same local view. 
+	if(localViewStd == -1){
+	    // this is the first commit msg in the localCC, we should set localViewStd
+	    localViewStd = commit.localView;
+	} else if(commit.localView != localViewStd){
+	    std::cerr<< "commit local view = " << commit.localView << ", but localViewStd = " << localViewStd << std::endl;
+	    return false;
+	}
+	
+	// this server should be in the global view of all commits in the localCC.
+	if(commit.globalView != currentGV){
+	    std::cerr<< "commit global view = " << commit.globalView << ", but current global view = " << currentGV  << std::endl;
+	    return false;
+	}
+	
+	/* check if the seq is alreadly attached to another digest.
+	 * The corresponding log entry should have a pre_prepare because GPP should arrive first and trigger localPP msg. 
+	 * placeholder: faulty followers may accept.
+	 */
+	// TODO: how to tolerate GP arrives before GPP arrives? delay the verification of matching digest?
+	if(!log[commit.seq].pre_prepare.digest.IsNull() && log[commit.seq].pre_prepare.digest != commit.digest){
+	    std::cerr<< "digest error. digest in log = " << log[commit.seq].pre_prepare.digest.GetHex() << ", but commit digest = " << commit.digest.GetHex() << std::endl;
+	    return false;
+	}
+	
+#ifdef CROSS_GROUP_DEBUG
+    	std::cout << "dl sanity check of sender" << commit.senderId << "'s commit succeed" << std::endl;
+#endif
+    }
     return true;
     
 }
@@ -137,14 +180,14 @@ void DL_pbft::sendGlobalMsg2Leaders(const CCrossGroupMsg& msg, UdpClient& udpCli
 	udpClient.sendto(oss, p.second.ip, p.second.port);
     }
 
-    // virtually send the message to this node itself if the msg is GP.
+    // virtually send the message to this node itself if the msg is GP or GC.
     switch(msg.phase){
 	case DL_GP:
 	    pbftObj->onReceiveGP(const_cast<CCrossGroupMsg&>(msg), false);
 	    break;
-//	case DL_GC:
-//	    onReceiveCommit(const_cast<CIntraGroupMsg&>(*msg), false);
-//	    break;
+	case DL_GC:
+	    pbftObj->onReceiveGC(const_cast<CCrossGroupMsg&>(msg), false);
+	    break;
 	default:
 	    break;
     }

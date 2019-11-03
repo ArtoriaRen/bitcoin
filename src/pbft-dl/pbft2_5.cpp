@@ -153,13 +153,13 @@ void DL_Receive(CPbft2_5& pbft2_5Obj){
 		pbft2_5Obj.onReceiveGPLC(gplcMsg);
 		break;
 	    }
-	    //	    case DLC_GC:
-	    //	    {
-	    //		CCrossGroupMsg msg(DL_Phase::DLC_GC, pbft2_5Obj.server_id);
-	    //		msg.deserialize(iss);
-	    //		pbft2_5Obj.dlHandler.onReceiveGC(msg);
-	    //		break;
-	    //	    }
+	    case DL_GC:
+	    {
+		CCrossGroupMsg gcMsg(DL_Phase::DL_GC);
+		gcMsg.deserialize(iss);
+		pbft2_5Obj.onReceiveGC(gcMsg, true);
+		break;
+	    }
 	    //	    case DLC_GCCD:
 	    //	    {
 	    //		CCrossGroupMsg msg(DL_Phase::DLC_GCCD, pbft2_5Obj.server_id);
@@ -285,7 +285,6 @@ bool CPbft2_5::onReceiveCommit(CIntraGroupMsg& commit, bool sanityCheck){
 	    std::cout << "server " << server_id << " multicast GP " << log[commit.seq].pre_prepare.clientReq << std::endl;
 #endif
 	    CCrossGroupMsg gp = assembleGP(commit.seq);
-	    log[commit.seq].globalPC.push_back(gp);
 	    dlHandler.sendGlobalMsg2Leaders(gp, udpClient, this);
 	}
 	return true;
@@ -324,6 +323,7 @@ bool CPbft2_5::onReceiveGP(CCrossGroupMsg& gp, bool sanityCheck){
     std::cout << "server " << server_id << "-------------log[0].globalPC size = " << log[0].globalPC.size() <<", address of log = " << &log << ", address of this = " << this << std::endl;
     // if the globalPC reaches the size of 2F+1, send it to groupmates.
     std::cout << "server " << server_id << " seq = " << gp.localCC[0].seq <<  " GlobalPC size = " << log[gp.localCC[0].seq].globalPC.size() << std::endl;
+    // TODO: what if there is no gpp in globalPC?
     if(log[gp.localCC[0].seq].globalPC.size() == (nFaultyGroups << 1) + 1){
 	// send a gpcd message to local followers
 	CCertMsg cert(DL_GPCD, 2 * nFaultyGroups + 1, log[gp.localCC[0].seq].globalPC);
@@ -365,9 +365,37 @@ bool CPbft2_5::onReceiveGPLC(CIntraGroupMsg& gplc) {
 	std::cout << "local leader = " << server_id << " enters Global commit phase by sending DL_GC message." << std::endl;
 #endif
         CCrossGroupMsg gc = assembleGC(gplc.seq);
-        log[gplc.seq].globalCC.push_back(gc);
-        dlHandler.sendGlobalMsg2Leaders(gc, udpClient);
+        dlHandler.sendGlobalMsg2Leaders(gc, udpClient, this);
 	return true;
+    }
+    return true;
+}
+
+
+bool CPbft2_5::onReceiveGC(CCrossGroupMsg& gc, bool sanityCheck) {
+#ifdef CROSS_GROUP_DEBUG
+    std::cout << "server " << server_id << " receieved GC, digest = " << gp.localCC[0].digest.GetHex() << std::endl;
+#endif
+    // TODO: must check if the digest matches req in GPP.
+    if(!dlHandler.checkGC(gc, globalView, log))
+	return false;
+    // add to globalCC
+    log[gc.localCC[0].seq].globalCC.push_back(gc);
+    // if the globalCC reaches the size of 2F+1, send it to groupmates.
+    std::cout << "server " << server_id << " seq = " << gc.localCC[0].seq <<  " -------------GlobalCC size = " << log[gc.localCC[0].seq].globalCC.size() << std::endl;
+    /* we don't check the phase here bacause as long as we collect enough GC messages,
+     * we do not need the GC message from our own group.
+     */ 
+    if(log[gc.localCC[0].seq].globalCC.size() == (nFaultyGroups << 1) + 1){
+	// send a gpcd message to local followers
+	CCertMsg cert(DL_GCCD, 2 * nFaultyGroups + 1, log[gc.localCC[0].seq].globalCC);
+	dlHandler.multicastCert(cert, udpClient, peers);
+	/* Now that we have collected enough gc messages and multicast to local followers,
+	 *  it is time to enter local reply phase. 
+	 */
+	log[gc.localCC[0].seq].phase = DL_LR;
+	// the local leader execute the request if all proceeding requests have been executed. 
+	executeTransaction(gc.localCC[0].seq);
     }
     return true;
 }
@@ -375,6 +403,10 @@ bool CPbft2_5::onReceiveGPLC(CIntraGroupMsg& gplc) {
 /* This function does not execute tx. Instead, it send a GP or 
  */
 void CPbft2_5::executeTransaction(const int seq){
+    /* TODO: put real execution result in the result field of this log and 
+     * return and return code to indicate the operation succeed or not.
+     */
+    log[seq].result = "OK";
     //    std::ostringstream oss;
     //    // serialize all commit messages into one stream.
     //    for(auto c : commitList.at(seq)){

@@ -96,8 +96,14 @@ public:
 
     // only local leaders can receive GPLC
     bool onReceiveGPLC(CIntraGroupMsg& gplc);
-    /* Once enough local commits are collected, send the commit message list to other group leaders. 
-     This function will only be called by a local leader, because only local leaders can receive commits.*/
+
+    // only local leaders can receive GC
+    bool onReceiveGC(CCrossGroupMsg& gc, bool sanityCheck);
+
+    /* Once enough local commits are collected, send the commit message list to 
+     * other group leaders. This function will only be called by a local leader, 
+     * because only local leaders can receive commits.
+     */
     void executeTransaction(const int seq) ;
     
     CCrossGroupMsg assembleGPP(uint32_t seq);

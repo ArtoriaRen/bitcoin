@@ -41,16 +41,16 @@ public:
     DL_pbft();
     
     // Check leader group Local-CC.
-    bool checkGPP(CCrossGroupMsg& msg, uint32_t currentGV, const std::vector<DL_LogEntry>& log);
+    bool checkGPP(CCrossGroupMsg& gppMsg, uint32_t currentGV, const std::vector<DL_LogEntry>& log);
     
     // Check Local-CC from 2f non-leader groups.
-    bool checkGP(CCrossGroupMsg& msg, uint32_t currentGV, const std::vector<DL_LogEntry>& log);
+    bool checkGP(CCrossGroupMsg& gpMsg, uint32_t currentGV, const std::vector<DL_LogEntry>& log);
 
     // check received globalPC. This function need the pk of nodes in other groups.
     bool checkGPCD(const CCertMsg& cert, uint32_t currentGV, const std::vector<DL_LogEntry>& log);
     
     // Check GPCLC from 2f + 1 groups.
-    bool checkGC(CCrossGroupMsg& msg);
+    bool checkGC(CCrossGroupMsg& gcMsg, uint32_t currentGV, const std::vector<DL_LogEntry>& log);
     
     // send GPP to other local leaders. This is only called by the global leader.
     void sendGlobalMsg2Leaders(const CCrossGroupMsg& msg, UdpClient& udpClient, CPbft2_5* pbftObj = nullptr);

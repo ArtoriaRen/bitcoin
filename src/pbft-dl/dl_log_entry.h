@@ -33,8 +33,14 @@ public:
 
 
     // data structure for global consensus
-    std::deque<CCrossGroupMsg> globalPC; // a list of 2F+1 LocalCC
-    std::deque<CCrossGroupMsg> globalCC; // a list of 2F+1 LocalCC acking a group has received a globalPC.
+    // a list of 2F+1 LocalCC
+    std::deque<CCrossGroupMsg> globalPC; 
+    // a list of 2F+1 LocalCC acking a group has received a globalPC.
+    std::deque<CCrossGroupMsg> globalCC; 
+
+    // execution result for this log entry
+    std::string result;
+
 
     //---placeholder. default phase should be pre-prepare.
     DL_LogEntry();
