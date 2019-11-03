@@ -94,6 +94,8 @@ public:
     // a node should send a commit msg to ack receiving a global PC.
     bool onReceiveGPCD(const CCertMsg& gpcd);
 
+    // only local leaders can receive GPLC
+    bool onReceiveGPLC(CIntraGroupMsg& gplc);
     /* Once enough local commits are collected, send the commit message list to other group leaders. 
      This function will only be called by a local leader, because only local leaders can receive commits.*/
     void executeTransaction(const int seq) ;
@@ -101,6 +103,8 @@ public:
     CCrossGroupMsg assembleGPP(uint32_t seq);
     
     CCrossGroupMsg assembleGP(uint32_t seq);
+    
+    CCrossGroupMsg assembleGC(uint32_t seq);
     
     bool checkMsg(CIntraGroupMsg* msg);
     CLocalPP assemblePre_prepare(uint32_t seq, std::string clientReq);

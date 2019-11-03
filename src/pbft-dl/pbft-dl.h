@@ -29,7 +29,10 @@ class CPbft2_5;
 class DL_pbft{
 public:
     static const int FAUTY_GROUPS = 1;
-    // All leaders of other groups (posibbly including the global leader). key is server id. 
+    /* All leaders of other groups other than this group 
+     * (possibly including the global leader if this group is not the leader group). 
+     * key is server id.
+     */
     std::unordered_map<uint32_t, CPbftPeer> peerGroupLeaders;
     uint32_t globalLeader; // peer id of global leader
     // public keys of all nodes. 

@@ -26,7 +26,10 @@ public:
 //    std::vector<CPrepare> prepareArray;
     uint32_t prepareCount;
 //    uint32_t commitCount;
-    std::vector<CIntraGroupMsg> localCC; // holds 2f+1 local commits within the group.
+    // holds 2f+1 local commits within the group.
+    std::vector<CIntraGroupMsg> localCC; 
+    // holds 2f+1 local commits for receiving global prepare certificate.
+    std::vector<CIntraGroupMsg> GPLC; 
 
 
     // data structure for global consensus

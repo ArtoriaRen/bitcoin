@@ -146,13 +146,13 @@ void DL_Receive(CPbft2_5& pbft2_5Obj){
 		pbft2_5Obj.onReceiveGPCD(gpcdMsg);
 		break;
 	    }
-	    //	    case DLC_GPLC:
-	    //	    {
-	    //		CCrossGroupMsg gpcdMsg(DL_Phase::DLC_GPLC, pbft2_5Obj.server_id);
-	    //		gpcdMsg.deserialize(iss);
-	    //		pbft2_5Obj.dlHandler.onReceiveGPLC(gpMsg);
-	    //		break;
-	    //	    }
+	    case DL_GPLC:
+	    {
+		CIntraGroupMsg gplcMsg(DL_Phase::DL_GPLC, pbft2_5Obj.server_id);
+		gplcMsg.deserialize(iss);
+		pbft2_5Obj.onReceiveGPLC(gplcMsg);
+		break;
+	    }
 	    //	    case DLC_GC:
 	    //	    {
 	    //		CCrossGroupMsg msg(DL_Phase::DLC_GC, pbft2_5Obj.server_id);
@@ -265,9 +265,8 @@ bool CPbft2_5::onReceiveCommit(CIntraGroupMsg& commit, bool sanityCheck){
 	return false;
     }
     
-    // count the number of prepare msg. 
+    // count the number of commit msg. 
     log[commit.seq].localCC.push_back(commit);
-    std::cout << "server " << server_id << "commit number = " <<  log[commit.seq].localCC.size() << std::endl;
     if(log[commit.seq].phase == DL_commit && log[commit.seq].localCC.size() == (nFaulty << 1 ) + 1 ){ 
 #ifdef CROSS_GROUP_DEBUG
 	std::cout << "global leader = " << dlHandler.globalLeader << std::endl;
@@ -286,6 +285,7 @@ bool CPbft2_5::onReceiveCommit(CIntraGroupMsg& commit, bool sanityCheck){
 	    std::cout << "server " << server_id << " multicast GP " << log[commit.seq].pre_prepare.clientReq << std::endl;
 #endif
 	    CCrossGroupMsg gp = assembleGP(commit.seq);
+	    log[commit.seq].globalPC.push_back(gp);
 	    dlHandler.sendGlobalMsg2Leaders(gp, udpClient, this);
 	}
 	return true;
@@ -300,9 +300,7 @@ bool CPbft2_5::onReceiveGPP(CCrossGroupMsg& gpp){
     if(!dlHandler.checkGPP(gpp, globalView, log))
 	return false;
     // add to globalPC
-    std::cout << "-------------log[0].globalPC size = " << log[0].globalPC.size() << std::endl;
     log[gpp.localCC[0].seq].globalPC.push_back(gpp);
-    std::cout << "server " << server_id << "-------------log[0].globalPC size = " << log[0].globalPC.size() <<", address of log" << &log <<  std::endl;
     CLocalPP pp = assemblePre_prepare(gpp.localCC[0].seq, gpp.clientReq);
     // TODO: should have GPP be broadcast together, and group members need also check if GPP is valid.
     // must create a log entry before broadcasting pp msg b/c broadcast is gonna create new log entry if pre_prepare.digest is null.
@@ -327,8 +325,14 @@ bool CPbft2_5::onReceiveGP(CCrossGroupMsg& gp, bool sanityCheck){
     // if the globalPC reaches the size of 2F+1, send it to groupmates.
     std::cout << "server " << server_id << " seq = " << gp.localCC[0].seq <<  " GlobalPC size = " << log[gp.localCC[0].seq].globalPC.size() << std::endl;
     if(log[gp.localCC[0].seq].globalPC.size() == (nFaultyGroups << 1) + 1){
+	// send a gpcd message to local followers
 	CCertMsg cert(DL_GPCD, 2 * nFaultyGroups + 1, log[gp.localCC[0].seq].globalPC);
 	dlHandler.multicastCert(cert, udpClient, peers);
+	/* collected enough gp messages, it is time to enter global_PC_local_commit phase. */
+	log[gp.localCC[0].seq].phase = DL_GPLC;
+	// the local leader adds a GPLC msg to itself log
+	CIntraGroupMsg c = assembleMsg(DL_GPLC, gp.localCC[0].seq); 
+	log[gp.localCC[0].seq].GPLC.push_back(c);
     }
     return true;
 }
@@ -340,11 +344,30 @@ bool CPbft2_5::onReceiveGPCD(const CCertMsg& gpcd){
     log[gpcd.globalCert[0].localCC[0].seq].globalPC = gpcd.globalCert;
     // send commit to local leader to ack receiving globalPC
     CIntraGroupMsg c = assembleMsg(DL_GPLC, gpcd.globalCert[0].localCC[0].seq); 
-    if(server_id != localLeader){
-	// send commit only to local leader
-	send2Peer(localLeader, &c);
-    } else {
-	log[gpcd.globalCert[0].localCC[0].seq].localCC.push_back(c);
+    // send commit only to local leader
+    send2Peer(localLeader, &c);
+    return true;
+}
+
+bool CPbft2_5::onReceiveGPLC(CIntraGroupMsg& gplc) {
+#ifdef INTRA_GROUP_DEBUG
+	std::cout << "local leader = " << server_id << "received gplc from follwer " << gplc.senderId << std::endl;
+#endif
+    // sanity check for signature, seq, view.
+    if(!checkMsg(&gplc)){
+	return false;
+    }
+    
+    // count the number of gplc msg. 
+    log[gplc.seq].GPLC.push_back(gplc);
+    if(log[gplc.seq].phase == DL_GPLC && log[gplc.seq].GPLC.size() == (nFaulty << 1 ) + 1 ){ 
+#ifdef INTRA_GROUP_DEBUG
+	std::cout << "local leader = " << server_id << " enters Global commit phase by sending DL_GC message." << std::endl;
+#endif
+        CCrossGroupMsg gc = assembleGC(gplc.seq);
+        log[gplc.seq].globalCC.push_back(gc);
+        dlHandler.sendGlobalMsg2Leaders(gc, udpClient);
+	return true;
     }
     return true;
 }
@@ -373,6 +396,10 @@ CCrossGroupMsg CPbft2_5::assembleGPP(uint32_t seq){
 
 CCrossGroupMsg CPbft2_5::assembleGP(uint32_t seq){
     return CCrossGroupMsg(DL_GP, log[seq].localCC);
+}
+
+CCrossGroupMsg CPbft2_5::assembleGC(uint32_t seq){
+    return CCrossGroupMsg(DL_GC, log[seq].GPLC);
 }
 
 
