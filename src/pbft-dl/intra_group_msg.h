@@ -35,7 +35,7 @@ public:
     uint32_t senderId;
     uint256 digest; // use the block header hash as digest.
     std::vector<unsigned char> vchSig; //serilized ecdsa signature.
-    const static uint32_t messageSizeBytes = 128; // the real size is 4*4 + 32 +72 = 120 bytes.
+    const static uint32_t messageSizeBytes = 128; // the real size is 4*5 + 32 +72 = 124 bytes.
     
     CIntraGroupMsg();
 
@@ -67,6 +67,27 @@ public:
     std::string clientReq;
 };
 
+/*Local pre-prepare message*/
+class CLocalReply {
+public:
+    uint32_t phase;
+    uint32_t senderId;
+    char reply; // execution result
+    uint256 digest; // use the block header hash as digest.
+    /* TODO: change the YCSB workload (probably hash each key and value to constant size)
+     * so that the reply has a fixed size.
+     * Assume the reply is 1 byte for now.
+     */
+    std::vector<unsigned char> vchSig; //serilized ecdsa signature.
+    // the real size of a reply msg is 4*2 + 1 + 32 + 72 = 113 bytes.
 
+    CLocalReply(const uint32_t sender, char rpl, const uint256& dgt);
+
+    void serialize(std::ostringstream& s) const;
+    
+    void deserialize(std::istringstream& s); 
+
+    void getHash(uint256& result);
+};
 #endif /* DL_MSG_H */
 

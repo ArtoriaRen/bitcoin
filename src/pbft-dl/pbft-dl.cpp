@@ -19,7 +19,7 @@ bool DL_pbft::checkGPP(CCrossGroupMsg& gppMsg, uint32_t currentGV, const std::ve
     uint256 reqHash = Hash(gppMsg.clientReq.begin(), gppMsg.clientReq.end());
     //TODO: check if all commits are of the same seq (this step can be saved if we compress the GPP by using shared seq instead of a seq in every commit msg.)
     // check all sig in the leader group local-CC 
-    int localViewStd = -1;
+    uint32_t localViewStd = INT_MAX;
     for(auto commit : gppMsg.localCC){
 	if(pkMap.find(commit.senderId) == pkMap.end()){
 	    std::cerr<< "cross group: no pub key for the sender" << std::endl;
@@ -33,7 +33,7 @@ bool DL_pbft::checkGPP(CCrossGroupMsg& gppMsg, uint32_t currentGV, const std::ve
 	    return false;
 	} 
 	// all commits should be in the same local view. 
-	if(localViewStd == -1){
+	if(localViewStd == INT_MAX){
 	    // this is the first commit msg in the localCC, we should set localViewStd
 	    localViewStd = commit.localView;
 	} else if(commit.localView != localViewStd){
@@ -72,7 +72,7 @@ bool DL_pbft::checkGPP(CCrossGroupMsg& gppMsg, uint32_t currentGV, const std::ve
 
 bool DL_pbft::checkGP(CCrossGroupMsg& gpMsg, uint32_t currentGV, const std::vector<DL_LogEntry>& log){
     // check all sig in the leader group local-CC 
-    int localViewStd = -1;
+    uint32_t localViewStd = INT_MAX;
     for(auto commit : gpMsg.localCC){
 	if(pkMap.find(commit.senderId) == pkMap.end()){
 	    std::cerr<< "checking a commit msg in the GP message: no pub key for the sender" << std::endl;
@@ -86,7 +86,7 @@ bool DL_pbft::checkGP(CCrossGroupMsg& gpMsg, uint32_t currentGV, const std::vect
 	    return false;
 	} 
 	// all commits should be in the same local view. 
-	if(localViewStd == -1){
+	if(localViewStd == INT_MAX){
 	    // this is the first commit msg in the localCC, we should set localViewStd
 	    localViewStd = commit.localView;
 	} else if(commit.localView != localViewStd){
@@ -120,7 +120,7 @@ bool DL_pbft::checkGP(CCrossGroupMsg& gpMsg, uint32_t currentGV, const std::vect
 
 bool DL_pbft::checkGC(CCrossGroupMsg& gcMsg, uint32_t currentGV, const std::vector<DL_LogEntry>& log){
     // check all sig of nodes in all groups whose gplc is in the GC message
-    int localViewStd = -1;
+    uint32_t localViewStd = INT_MAX;
     for(auto commit : gcMsg.localCC){
 	if(pkMap.find(commit.senderId) == pkMap.end()){
 	    std::cerr<< "checking a commit msg in the GC message: no pub key for the sender" << std::endl;
@@ -134,7 +134,7 @@ bool DL_pbft::checkGC(CCrossGroupMsg& gcMsg, uint32_t currentGV, const std::vect
 	    return false;
 	} 
 	// all commits should be in the same local view. 
-	if(localViewStd == -1){
+	if(localViewStd == INT_MAX){
 	    // this is the first commit msg in the localCC, we should set localViewStd
 	    localViewStd = commit.localView;
 	} else if(commit.localView != localViewStd){
@@ -225,4 +225,14 @@ bool DL_pbft::checkGPCD(const CCertMsg& cert, uint32_t currentGV, const std::vec
     if(gppCnt == 1 && gpCnt == cert.certSize - 1)
 	return true;
     return false;
+}
+
+bool DL_pbft::checkGCCD(const CCertMsg& cert, uint32_t currentGV, const std::vector<DL_LogEntry>& log){
+    bool valid = false;
+    for(auto lc: cert.globalCert){ // each element in globalCert is a local commit msg.
+        valid = checkGC(lc, currentGV, log);
+	if(!valid)
+	    return false;
+    }
+    return true;
 }

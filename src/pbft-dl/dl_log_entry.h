@@ -39,7 +39,7 @@ public:
     std::deque<CCrossGroupMsg> globalCC; 
 
     // execution result for this log entry
-    std::string result;
+    char result;
 
 
     //---placeholder. default phase should be pre-prepare.

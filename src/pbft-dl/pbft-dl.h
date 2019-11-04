@@ -51,6 +51,9 @@ public:
     
     // Check GPCLC from 2f + 1 groups.
     bool checkGC(CCrossGroupMsg& gcMsg, uint32_t currentGV, const std::vector<DL_LogEntry>& log);
+
+    // check received globalCC. This function need the pk of nodes in other groups.
+    bool checkGCCD(const CCertMsg& cert, uint32_t currentGV, const std::vector<DL_LogEntry>& log);
     
     // send GPP to other local leaders. This is only called by the global leader.
     void sendGlobalMsg2Leaders(const CCrossGroupMsg& msg, UdpClient& udpClient, CPbft2_5* pbftObj = nullptr);

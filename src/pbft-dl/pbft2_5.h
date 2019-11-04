@@ -100,6 +100,9 @@ public:
     // only local leaders can receive GC
     bool onReceiveGC(CCrossGroupMsg& gc, bool sanityCheck);
 
+    // a node should send a commit msg to ack receiving a global CC.
+    bool onReceiveGCCD(const CCertMsg& gccd);
+
     /* Once enough local commits are collected, send the commit message list to 
      * other group leaders. This function will only be called by a local leader, 
      * because only local leaders can receive commits.
@@ -115,6 +118,7 @@ public:
     bool checkMsg(CIntraGroupMsg* msg);
     CLocalPP assemblePre_prepare(uint32_t seq, std::string clientReq);
     CIntraGroupMsg assembleMsg(DL_Phase phase, uint32_t seq);
+    CLocalReply assembleLocalReply(char reply, uint32_t seq);
     void broadcast(CIntraGroupMsg* msg);
     // ------placeholder: may be used to send ip.
     CPubKey getPublicKey();
@@ -127,7 +131,7 @@ public:
     friend void DL_Receive(CPbft2_5& pbft2_5Obj);
     
     void send2Peer(uint32_t peerId, CIntraGroupMsg* msg);
-    
+    void send2Peer(uint32_t peerId, CLocalReply& msg);
 };
 
 void DL_Receive(CPbft2_5& pbft2_5Obj);
