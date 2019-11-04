@@ -11,6 +11,9 @@
 CIntraGroupMsg::CIntraGroupMsg():phase(DL_pre_prepare), localView(0), globalView(0), seq(0), senderId(0), digest(), vchSig(){
 }
 
+CIntraGroupMsg::CIntraGroupMsg(DL_Phase p):phase(p), localView(0), globalView(0), seq(0), senderId(0), digest(), vchSig(){
+}
+
 CIntraGroupMsg::CIntraGroupMsg(uint32_t senderId):phase(DL_pre_prepare), localView(0), globalView(0), seq(0), senderId(senderId), digest(), vchSig(){
 }
 
@@ -116,13 +119,17 @@ void CLocalPP::deserialize(std::istringstream& s){
 #endif
 }
 
+CLocalReply::CLocalReply(): phase(DL_LR), seq(), senderId(), reply(), digest(), vchSig(){
+}
 
-CLocalReply::CLocalReply(const uint32_t sender, char rpl, const uint256& dgt): 
-phase(DL_LR), senderId(sender), reply(rpl), digest(dgt), vchSig(){
+CLocalReply::CLocalReply(uint32_t seqNum, const uint32_t sender, char rpl, const uint256& dgt): 
+phase(DL_LR), seq(seqNum), senderId(sender), reply(rpl), digest(dgt), vchSig(){
 }
 
 void CLocalReply::serialize(std::ostringstream& s) const {
     s << static_cast<int> (phase);
+    s << " ";
+    s << seq;
     s << " ";
     s << senderId;
     s << " ";
@@ -138,6 +145,7 @@ void CLocalReply::serialize(std::ostringstream& s) const {
 }
 
 void CLocalReply::deserialize(std::istringstream& s) {
+    s >> seq;
     s >> senderId;
     s >> reply;
     s.get(); // discard the delimiter after reply.
@@ -160,6 +168,7 @@ void CLocalReply::deserialize(std::istringstream& s) {
 
 void CLocalReply::getHash(uint256& result){
     CHash256().Write((const unsigned char*)&phase, sizeof(phase))
+	    .Write((const unsigned char*)&seq, sizeof(seq))
 	    .Write((const unsigned char*)&senderId, sizeof(senderId))
 	    .Write((const unsigned char*)&reply, sizeof(reply))
 	    .Write(digest.begin(), sizeof(digest))

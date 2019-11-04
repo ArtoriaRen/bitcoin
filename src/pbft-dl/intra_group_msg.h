@@ -39,6 +39,8 @@ public:
     
     CIntraGroupMsg();
 
+    CIntraGroupMsg(DL_Phase p);
+
     CIntraGroupMsg(uint32_t senderId);
     
     CIntraGroupMsg(DL_Phase p, uint32_t senderId);
@@ -71,6 +73,7 @@ public:
 class CLocalReply {
 public:
     uint32_t phase;
+    uint32_t seq;
     uint32_t senderId;
     char reply; // execution result
     uint256 digest; // use the block header hash as digest.
@@ -79,9 +82,10 @@ public:
      * Assume the reply is 1 byte for now.
      */
     std::vector<unsigned char> vchSig; //serilized ecdsa signature.
-    // the real size of a reply msg is 4*2 + 1 + 32 + 72 = 113 bytes.
+    // the real size of a reply msg is 4*3 + 1 + 32 + 72 = 117 bytes.
 
-    CLocalReply(const uint32_t sender, char rpl, const uint256& dgt);
+    CLocalReply();
+    CLocalReply(uint32_t seqNum, const uint32_t sender, char rpl, const uint256& dgt);
 
     void serialize(std::ostringstream& s) const;
     

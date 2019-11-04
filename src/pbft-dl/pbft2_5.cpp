@@ -167,24 +167,13 @@ void DL_Receive(CPbft2_5& pbft2_5Obj){
 		pbft2_5Obj.onReceiveGCCD(gccdMsg);
 		break;
 	    }
-	    //	    case DLR_LR:
-	    //	    {
-	    //		CCrossGroupMsg msg(DL_Phase::DLR_LR, pbft2_5Obj.server_id);
-	    //		msg.deserialize(iss);
-	    //		pbft2_5Obj.dlHandler.onReceiveLR(msg);
-	    //		break;
-	    //	    }
-	    //	    case DLR_GR:
-	    //	    {
-	    //		CCrossGroupMsg msg(DL_Phase::DLR_GR, pbft2_5Obj.server_id);
-	    //		msg.deserialize(iss);
-	    //		pbft2_5Obj.dlHandler.onReceiveGR(msg);
-	    //		break;
-	    //	    }
-	    //	    case execute:
-	    //		// only the local leader need to handle the execute message?
-	    //		std::cout << "received execute msg" << std::endl;
-	    //		break;
+	    case DL_LR:
+	    {
+		CLocalReply lrMsg;
+		lrMsg.deserialize(iss);
+		pbft2_5Obj.onReceiveLR(lrMsg);
+		break;
+	    }
 	    default:
 		std::cout << "server " << pbft2_5Obj.server_id << " received invalid msg" << std::endl;
 	}
@@ -392,6 +381,9 @@ bool CPbft2_5::onReceiveGC(CCrossGroupMsg& gc, bool sanityCheck) {
 	dlHandler.multicastCert(cert, udpClient, peers);
 	// the local leader execute the request if all proceeding requests have been executed. 
 	executeTransaction(gc.localCC[0].seq);
+	// add the local execution result to replies array
+	CLocalReply r = assembleLocalReply(gc.localCC[0].seq); 
+	log[gc.localCC[0].seq].localReplies.push_back(r);
     }
     return true;
 }
@@ -404,33 +396,45 @@ bool CPbft2_5::onReceiveGCCD(const CCertMsg& gccd){
     // executeTransaction
     executeTransaction(gccd.globalCert[0].localCC[0].seq);
     // send local reply to local leader 
-    CLocalReply r = assembleLocalReply(DL_LR, gccd.globalCert[0].localCC[0].seq); 
+    CLocalReply r = assembleLocalReply(gccd.globalCert[0].localCC[0].seq); 
     // send commit only to local leader
     send2Peer(localLeader, r);
     return true;
 }
-/* This function does not execute tx. Instead, it send a GP or 
- */
+
+bool CPbft2_5::onReceiveLR(CLocalReply& lr) {
+#ifdef INTRA_GROUP_DEBUG
+	std::cout << "local leader = " << server_id << "received local reply from follwer " << lr.senderId << std::endl;
+#endif
+    // sanity check for signature, seq, view.
+    if(!checkMsg(lr)){
+	return false;
+    }
+    
+    // count the number of matching reply msg. 
+    log[lr.seq].localReplies.push_back(lr);
+    if(log[lr.seq].localReplies.size() == (nFaulty << 1 ) + 1 ){ 
+#ifdef INTRA_GROUP_DEBUG
+	std::cout << "local leader = " << server_id << " get enough local replies" << std::endl;
+#endif
+	std::cout << "local leader = " << server_id << " get enough local replies" << std::endl;
+	// create a global reply message
+        //CCrossGroupMsg gc = assembleGC(gplc.seq);
+	// send global reply msg directly to client
+        // dlHandler.sendGlobalMsg2Leaders(gc, udpClient, this);
+	return true;
+    }
+    return true;
+}
+
 void CPbft2_5::executeTransaction(const int seq){
     /* TODO: 
-     * 2. the result field should be a string recording the excution result of this 
-     * node.
-     * 3. a local leader should keep a hashmap mapping results to a set of reply msg.
+     * ? 3. a local leader should keep a hashmap mapping results to a set of reply msg.
      * Whenever a set grows to f + 1, send the whole set to local leader.
+     * 4. pre-prepare msg should have client ip and udp port so that local leaders can
+     * send global reply msg back to client.
      */
     log[seq].result = '0';  // '0' is a dummy result for now.
-    //    std::ostringstream oss;
-    //    // serialize all commit messages into one stream.
-    //    for(auto c : commitList.at(seq)){
-    //	c.serialize(oss); 
-    //    }
-    //    
-    //    // send the stream to all group leader
-    //    for(auto it = dlHandler.peerGroupLeaders.begin(); it != dlHandler.peerGroupLeaders.end(); it++){
-    //	udpClient.sendto(oss, it->second.ip, it->second.port);
-    //	
-    //    }
-    
 }
 
 
@@ -521,6 +525,33 @@ bool CPbft2_5::checkMsg(CIntraGroupMsg* msg){
 }
 
 
+bool CPbft2_5::checkMsg(CLocalReply& msg){
+    // verify signature and return wrong if sig is wrong
+    if(peers.find(msg.senderId) == peers.end()){
+	std::cerr<< "no pub key for the sender" << std::endl;
+	return false;
+    }
+    uint256 msgHash;
+    msg.getHash(msgHash);
+    if(!peers[msg.senderId].pk.Verify(msgHash, msg.vchSig)){
+	std::cerr<< "verification sig fail" << std::endl;
+	return false;
+    } 
+    
+    /* check if the seq is alreadly attached to another digest. Checking if log entry is null is necessary b/c prepare msgs may arrive earlier than pre-prepare.
+     * Placeholder: Faulty followers may accept.
+     */
+    if(!log[msg.seq].pre_prepare.digest.IsNull() && log[msg.seq].pre_prepare.digest != msg.digest){
+	std::cerr<< "digest error. digest in log = " << log[msg.seq].pre_prepare.digest.GetHex() << ", but msg.digest = " << msg.digest.GetHex() << std::endl;
+	return false;
+    }
+    
+#ifdef INTRA_GROUP_DEBUG
+    std::cout << "local reply sanity check succeed" << std::endl;
+#endif
+    return true;
+}
+
 
 CLocalPP CPbft2_5::assemblePre_prepare(uint32_t seq, std::string clientReq){
 #ifdef INTRA_GROUP_DEBUG
@@ -550,11 +581,11 @@ CIntraGroupMsg CPbft2_5::assembleMsg(DL_Phase phase, uint32_t seq){
     return toSent;
 }
 
-CLocalReply CPbft2_5::assembleLocalReply(char reply, uint32_t seq){
+CLocalReply CPbft2_5::assembleLocalReply(uint32_t seq){
     /* we use the digest from globalCC rather than digest from pre-prepare because 
      * a group may get a globalCC without GC msg from its own group.
      */
-    CLocalReply toSent(server_id, reply, log[seq].globalCC[0].localCC[0].digest);
+    CLocalReply toSent(seq, server_id, log[seq].result, log[seq].globalCC[0].localCC[0].digest);
     uint256 hash;
     toSent.getHash(hash);
     privateKey.Sign(hash, toSent.vchSig);

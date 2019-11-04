@@ -30,6 +30,8 @@ public:
     std::vector<CIntraGroupMsg> localCC; 
     // holds 2f+1 local commits for receiving global prepare certificate.
     std::vector<CIntraGroupMsg> GPLC; 
+    // holds 2f+1 local replies for receiving global commit certificate.
+    std::vector<CLocalReply> localReplies; 
 
 
     // data structure for global consensus
