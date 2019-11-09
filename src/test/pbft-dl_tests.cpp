@@ -20,12 +20,10 @@
 
 BOOST_FIXTURE_TEST_SUITE(pbft_dl_tests, TestingSetup)
 	
-	void sendReq(std::string reqString, int port, UdpClient& pbftClient);
+void sendReq(std::string reqString, int port, UdpClient& pbftClient);
+void receiveServerReplies(CPbft2_5& pbft2_5Obj);
 
 BOOST_AUTO_TEST_CASE(send_commit_list){
-    char pRecvBuf[CPbftMessage::messageSizeBytes]; // buf to receive msg from pbft servers.
-    int clientUdpPort = 18500; // the port of udp server at the pbft client side.
-    UdpServer udpServer("127.0.0.1", clientUdpPort);
     
     // create a group with 3 nodes and use one node to emulate the leader of another group
     int ports[] = {8350, 8342, 8343, 8344, 8345, 8346, 8347, 8348, 8349}; 
@@ -82,6 +80,7 @@ BOOST_AUTO_TEST_CASE(send_commit_list){
     std::thread t6(DL_Receive, std::ref(pbftObjs[6]));
     std::thread t7(DL_Receive, std::ref(pbftObjs[7]));
     std::thread t8(DL_Receive, std::ref(pbftObjs[8]));
+    std::thread t9(receiveServerReplies, std::ref(pbftObjs[0]));
     
     // To emulate a pbft client, we use a udp client to send request to the pbft leader.
     UdpClient pbftClient;
@@ -91,8 +90,6 @@ BOOST_AUTO_TEST_CASE(send_commit_list){
 	sendReq(reqString, ports[0], pbftClient);
     }
     
-    // wait for 2F global reply messages
-
     
     t0.join();
 }
@@ -101,6 +98,28 @@ void sendReq(std::string reqString, int port, UdpClient& pbftClient){
     std::ostringstream oss;
     oss << reqString; // do not put space here as space is used delimiter in stringstream.
     pbftClient.sendto(oss, "localhost", port);
+}
+
+void receiveServerReplies(CPbft2_5& pbft2_5Obj){
+    /* wait for 2F global reply messages.
+     * Should use "netcat -ul 2115" to listen for udp packets, otherwise, the t0.join() won't be executed */
+    int nFaultyGroups = 1;
+    int nFaulty = 1;
+    char pRecvBuf[(2 * nFaultyGroups + 1) * (2 * nFaulty + 1) * CIntraGroupMsg::messageSizeBytes]; // buf to receive msg from pbft servers.
+    int clientUdpPort = 18500; // the port of udp server at the pbft client side.
+    UdpServer udpServer("127.0.0.1", clientUdpPort);
+    for (int i = 0; i < 3; i++) {
+	ssize_t recvBytes = udpServer.recv(pRecvBuf, (2 * nFaultyGroups + 1)*(2 * nFaulty + 1) * CIntraGroupMsg::messageSizeBytes);
+	std::string recvString(pRecvBuf, recvBytes);
+	std::istringstream iss(recvString);
+	int phaseNum = -1;
+	iss >> phaseNum;
+    	BOOST_CHECK_EQUAL(static_cast<DL_Phase>(phaseNum), DL_Phase::DL_GR);
+	CGlobalReply gReply;
+	gReply.deserialize(iss);
+	std::cout << "reply from server " <<  gReply.localReplyArray[0].senderId << " is: " << gReply.localReplyArray[0].reply << std::endl; 
+    }
+
 }
 
 BOOST_AUTO_TEST_SUITE_END()

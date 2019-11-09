@@ -434,7 +434,7 @@ void CPbft2_5::executeTransaction(const int seq){
      * 4. pre-prepare msg should have client ip and udp port so that local leaders can
      * send global reply msg back to client.
      */
-    log[seq].result = '0';  // '0' is a dummy result for now.
+    log[seq].result = 'k';  // '0' is a dummy result for now.
 }
 
 
