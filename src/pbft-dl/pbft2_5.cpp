@@ -417,11 +417,11 @@ bool CPbft2_5::onReceiveLR(CLocalReply& lr) {
 #ifdef INTRA_GROUP_DEBUG
 	std::cout << "local leader = " << server_id << " get enough local replies" << std::endl;
 #endif
-	std::cout << "local leader = " << server_id << " get enough local replies" << std::endl;
+	std::cout << "local leader = " << server_id << " get 2f+1 local replies" << std::endl;
 	// create a global reply message
-        //CCrossGroupMsg gc = assembleGC(gplc.seq);
+        CGlobalReply globalReply = assembleGR(lr.seq);
 	// send global reply msg directly to client
-        // dlHandler.sendGlobalMsg2Leaders(gc, udpClient, this);
+        dlHandler.sendGlobalReply(globalReply, udpClient);
 	return true;
     }
     return true;
@@ -450,6 +450,9 @@ CCrossGroupMsg CPbft2_5::assembleGC(uint32_t seq){
     return CCrossGroupMsg(DL_GC, log[seq].GPLC);
 }
 
+CGlobalReply CPbft2_5::assembleGR(uint32_t seq){
+    return CGlobalReply(log[seq].localReplies);
+}
 
 void CPbft2_5::send2Peer(uint32_t peerId, CIntraGroupMsg* msg){
     std::cout << "server " << server_id << " send " << msg->phase << " msg to server" << peerId << std::endl;

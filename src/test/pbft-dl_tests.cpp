@@ -73,21 +73,6 @@ BOOST_AUTO_TEST_CASE(send_commit_list){
 	}
     }
     
-//    for(int j = 3; j < 6; j++){
-//	for(int i = 0; i < 3; i++){
-//	    pbftObjs[j].dlHandler.pkMap.insert(std::make_pair(pbftObjs[i].server_id, pbftObjs[i].getPublicKey()));
-//	}
-//	for(int i = 6; i < 9; i++){
-//	    pbftObjs[j].dlHandler.pkMap.insert(std::make_pair(pbftObjs[i].server_id, pbftObjs[i].getPublicKey()));
-//	}
-//    }
-//    
-//    for(int j = 6; j < 9; j++){
-//	for(int i = 0; i < 6; i++){
-//	    pbftObjs[j].dlHandler.pkMap.insert(std::make_pair(pbftObjs[i].server_id, pbftObjs[i].getPublicKey()));
-//	}
-//    }
-    
     std::thread t0(DL_Receive, std::ref(pbftObjs[0]));
     std::thread t1(DL_Receive, std::ref(pbftObjs[1]));
     std::thread t2(DL_Receive, std::ref(pbftObjs[2]));
@@ -105,6 +90,9 @@ BOOST_AUTO_TEST_CASE(send_commit_list){
     	std::string reqString = "r x=" + std::to_string(i); // the format of a request is r followed by the real request
 	sendReq(reqString, ports[0], pbftClient);
     }
+    
+    // wait for 2F global reply messages
+
     
     t0.join();
 }

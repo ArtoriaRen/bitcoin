@@ -18,7 +18,7 @@
 //#define INTRA_GROUP_DEBUG
 //#define CROSS_GROUP_DEBUG
 #undef SERIAL
-
+#define REPLY_DEBUG
 
 #endif /* DEBUG_FLAGS_H */
 

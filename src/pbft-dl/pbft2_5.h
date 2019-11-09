@@ -114,16 +114,20 @@ public:
      */
     void executeTransaction(const int seq) ;
     
+    /* assemble global messages */
     CCrossGroupMsg assembleGPP(uint32_t seq);
     
     CCrossGroupMsg assembleGP(uint32_t seq);
     
     CCrossGroupMsg assembleGC(uint32_t seq);
+
+    CGlobalReply assembleGR(uint32_t seq);
     
     bool checkMsg(CIntraGroupMsg* msg);
 
     bool checkMsg(CLocalReply& msg);
     
+    /* assemble local messages */
     CLocalPP assemblePre_prepare(uint32_t seq, std::string clientReq);
     CIntraGroupMsg assembleMsg(DL_Phase phase, uint32_t seq);
     CLocalReply assembleLocalReply(uint32_t seq);

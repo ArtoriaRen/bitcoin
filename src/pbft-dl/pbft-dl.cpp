@@ -236,3 +236,19 @@ bool DL_pbft::checkGCCD(const CCertMsg& cert, uint32_t currentGV, const std::vec
     }
     return true;
 }
+
+void DL_pbft::sendGlobalReply(const CGlobalReply& msg, UdpClient& udpClient){
+    std::ostringstream oss;
+    msg.serialize(oss);
+#ifdef SERIAL 
+    std::cout << "oss size() = " << oss.str().size() << std::endl; 
+#endif
+    // hard code client address for now.
+    std::string clientIP = "127.0.0.1";
+    int clientUdpPort = 18500; 
+    
+#ifdef REPLY_DEBUG
+    std::cout << "send global reply to client" << clientIP << ":" << clientUdpPort << std::endl;
+#endif
+    udpClient.sendto(oss, clientIP, clientUdpPort);
+}

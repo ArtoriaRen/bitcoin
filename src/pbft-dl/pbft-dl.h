@@ -60,6 +60,9 @@ public:
     
     // send GlobalPC or GlobalCC to all members of the same group.
     void multicastCert(const CCertMsg& cert, UdpClient& udpClient, const std::unordered_map<uint32_t, CPbftPeer>& peers);
+
+    // send global reply message to client. This is only called by the local leaders.
+    void sendGlobalReply(const CGlobalReply& msg, UdpClient& udpClient);
 };
 
 

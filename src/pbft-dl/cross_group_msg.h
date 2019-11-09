@@ -33,6 +33,20 @@ public:
     void deserialize(std::istringstream& s); 
 };
 
+class CGlobalReply{
+public: 
+    DL_Phase phase;
+    std::vector<CLocalReply> localReplyArray;
+    
+    // this constructor is used to assemble a placeholder CGlobalReply.
+    CGlobalReply();
+    // this constructor is used to assemble a GR message. A local reply array is passed in instead of a local commit array.
+    CGlobalReply(std::vector<CLocalReply>& replies);
+    
+    void serialize(std::ostringstream& s) const;
+    
+    void deserialize(std::istringstream& s); 
+};
 
 #endif /* CROSSGROUPMSG_H */
 

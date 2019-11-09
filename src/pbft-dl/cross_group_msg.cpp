@@ -15,9 +15,10 @@ CCrossGroupMsg::CCrossGroupMsg(DL_Phase p): phase(p){
 CCrossGroupMsg::CCrossGroupMsg(DL_Phase p, std::vector<CIntraGroupMsg>& commits): phase(p), localCC(commits){
 }
 
-// this constructor is used to assemble GPP message b/c client is piggybacked.
+// this constructor is used to assemble a GPP message b/c client req is piggybacked.
 CCrossGroupMsg::CCrossGroupMsg(DL_Phase p, std::vector<CIntraGroupMsg>& commits, std::string& req): phase(p), localCC(commits), clientReq(req){
 }
+
 
 void CCrossGroupMsg::serialize(std::ostringstream& s) const{
 #ifdef CROSS_GROUP_DEBUG
@@ -57,6 +58,45 @@ void CCrossGroupMsg::deserialize(std::istringstream& s){
 #endif
 	cMsg.deserialize(s);
 	localCC.push_back(cMsg);
+    }
+#ifdef CROSS_GROUP_DEBUG
+    std::cout << "lcoalCC deserialize finished" << std::endl;
+#endif
+}
+
+CGlobalReply::CGlobalReply(): phase(DL_GR), localReplyArray(){
+}
+
+CGlobalReply::CGlobalReply(std::vector<CLocalReply>& replies): phase(DL_GR), localReplyArray(replies){
+}
+
+void CGlobalReply::serialize(std::ostringstream& s) const{
+#ifdef CROSS_GROUP_DEBUG
+    std::cout << "LocalCC serialize starts, phase = " << phase << std::endl; 
+#endif
+    s << static_cast<int> (phase);
+    s << " ";
+    s << localReplyArray.size();
+    s << " ";
+    for(CLocalReply localReply: localReplyArray){
+	localReply.serialize(s);
+    }
+
+}
+
+void CGlobalReply::deserialize(std::istringstream& s){
+    // the phase has already deserialized by the udp server in CPbft2_5, so we only deserialize local reply array.
+
+    size_t numReplies = 0;
+    s >> numReplies; 
+    for (int i = 0; i < numReplies; i++){
+	CLocalReply localReply;
+	s >> localReply.phase;
+#ifdef CROSS_GROUP_DEBUG
+	std::cout << "phase of msg in localCC = " << cMsg.phase << std::endl;
+#endif
+	localReply.deserialize(s);
+	localReplyArray.push_back(localReply);
     }
 #ifdef CROSS_GROUP_DEBUG
     std::cout << "lcoalCC deserialize finished" << std::endl;
