@@ -64,7 +64,7 @@ private:
     CKey privateKey;
     CPubKey publicKey; // public key should be put on the blockchain so every can verify group members.
     std::thread receiver;
-    int x; // emulate the in-memory key-value store. x is the only key though.
+    std::unordered_map<int, char> data; // emulate the in-memory key-value store. x is the only key though.
     
 public:
     

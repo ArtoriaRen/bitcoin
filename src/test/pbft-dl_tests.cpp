@@ -86,7 +86,8 @@ BOOST_AUTO_TEST_CASE(send_commit_list){
     UdpClient pbftClient;
     
     for(int i = 0; i < 1; i++){
-    	std::string reqString = "r x=" + std::to_string(i); // the format of a request is r followed by the real request
+	// send  a write request
+    	std::string reqString = "r w,123,p"; 
 	sendReq(reqString, ports[0], pbftClient);
     }
     

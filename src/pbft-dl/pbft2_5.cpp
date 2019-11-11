@@ -8,10 +8,10 @@
 #include "pbft/peer.h"
 #include "pbft/util.h"
 
-CPbft2_5::CPbft2_5(): nFaulty(1), nFaultyGroups(1), localLeader(0), localView(0), globalView(0), nextSeq(0), lastExecutedIndex(-1), server_id(INT_MAX), x(-1){}
+CPbft2_5::CPbft2_5(): nFaulty(1), nFaultyGroups(1), localLeader(0), localView(0), globalView(0), nextSeq(0), lastExecutedIndex(-1), server_id(INT_MAX) {}
 
 // pRecvBuf must be set large enough to receive cross group msg.
-CPbft2_5::CPbft2_5(int serverPort, unsigned int id, uint32_t l_leader): nFaulty(1), nFaultyGroups(1), localLeader(l_leader), localView(0), globalView(0), log(std::vector<DL_LogEntry>(CPbft::logSize, DL_LogEntry(nFaulty))), nextSeq(0), lastExecutedIndex(-1), server_id(id), udpServer(new UdpServer("localhost", serverPort)), udpClient(UdpClient()), pRecvBuf(new char[(2 * nFaultyGroups + 1) * (2 * nFaulty + 1) * CIntraGroupMsg::messageSizeBytes], std::default_delete<char[]>()), privateKey(CKey()), x(-1){
+CPbft2_5::CPbft2_5(int serverPort, unsigned int id, uint32_t l_leader): nFaulty(1), nFaultyGroups(1), localLeader(l_leader), localView(0), globalView(0), log(std::vector<DL_LogEntry>(CPbft::logSize, DL_LogEntry(nFaulty))), nextSeq(0), lastExecutedIndex(-1), server_id(id), udpServer(new UdpServer("localhost", serverPort)), udpClient(UdpClient()), pRecvBuf(new char[(2 * nFaultyGroups + 1) * (2 * nFaulty + 1) * CIntraGroupMsg::messageSizeBytes], std::default_delete<char[]>()), privateKey(CKey()) {
 #ifdef BASIC_PBFT 
     std::cout << "CPbft2_5 constructor. faulty nodes in a group =  "<< nFaulty << std::endl;
 #endif
@@ -44,7 +44,7 @@ CPbft2_5& CPbft2_5::operator = (const CPbft2_5& rhs){
     pRecvBuf = rhs.pRecvBuf;
     privateKey = rhs.privateKey;
     publicKey = rhs.publicKey; 
-    x = rhs.x; 
+    data = rhs.data; 
     return *this;
     
 }
@@ -340,7 +340,7 @@ bool CPbft2_5::onReceiveGPCD(const CCertMsg& gpcd){
 
 bool CPbft2_5::onReceiveGPLC(CIntraGroupMsg& gplc) {
 #ifdef INTRA_GROUP_DEBUG
-	std::cout << "local leader = " << server_id << "received gplc from follwer " << gplc.senderId << std::endl;
+    std::cout << "local leader = " << server_id << "received gplc from follwer " << gplc.senderId << std::endl;
 #endif
     // sanity check for signature, seq, view.
     if(!checkMsg(&gplc)){
@@ -404,7 +404,7 @@ bool CPbft2_5::onReceiveGCCD(const CCertMsg& gccd){
 
 bool CPbft2_5::onReceiveLR(CLocalReply& lr) {
 #ifdef INTRA_GROUP_DEBUG
-	std::cout << "local leader = " << server_id << "received local reply from follwer " << lr.senderId << std::endl;
+    std::cout << "local leader = " << server_id << "received local reply from follwer " << lr.senderId << std::endl;
 #endif
     // sanity check for signature, seq, view.
     if(!checkMsg(lr)){
@@ -434,7 +434,32 @@ void CPbft2_5::executeTransaction(const int seq){
      * 4. pre-prepare msg should have client ip and udp port so that local leaders can
      * send global reply msg back to client.
      */
-    log[seq].result = 'k';  // '0' is a dummy result for now.
+    /* client request message format: "r <request type> <key> [<value>]". Request type 
+     * can be either read 'r' or write 'w'. If it is a write request, client must provide
+     * value.
+     */
+    std::string req = log[seq].pre_prepare.clientReq; 
+
+    if(req.at(0) == 'w'){
+	// this is a write request
+	std::size_t found = req.find(',', 2);
+	int key = std::stoi(req.substr(2, found - 2));
+	data[key] = req.at(found + 1);
+	log[seq].result = '0';  // '0' means write succeed. 
+	std::cout << "-----server " << server_id << " write key: " << key << ", value :" 
+		<< data[key] << std::endl;
+    } else if(req.at(0) == 'r') {
+	/* Empty string means read failed because all writes come together with 
+	 * a write value and empty string simply means the key has never been 
+	 * inserted into the map.
+	 */
+	int key = std::stoi(req.substr(2));
+	log[seq].result = data[key];  
+	std::cout << "-----server " << server_id << " read key: " << key << ", value :" 
+		<< data[key] << std::endl;
+    } else {
+	std::cout << "invalid request" << std::endl;
+    }
 }
 
 
