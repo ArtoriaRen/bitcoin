@@ -81,6 +81,7 @@ public:
     bool checkMsg(CPbftMessage* msg);
     CPre_prepare assemblePre_prepare(uint32_t seq, std::string clientReq);
     CPbftMessage assembleMsg(PbftPhase phase, uint32_t seq);
+    CReply assembleReply(uint32_t seq);
     void broadcast(CPbftMessage* msg);
     // ------placeholder: may be used to send ip.
     void broadcastPubKey();
@@ -88,10 +89,11 @@ public:
     void broadcastPubKeyReq();
     
     void executeTransaction(const int seq);
+    void sendReply2Client(const int seq);
     
     friend void interruptableReceive(CPbft& pbftObj);
     
-protected:
+private:
     UdpServer udpServer;
     UdpClient udpClient;
     std::shared_ptr<char> pRecvBuf;
@@ -100,6 +102,7 @@ protected:
     CPubKey publicKey; // public key should be put on the blockchain so every can verify group members.
     std::thread receiver;
     int x; // emulate the in-memory key-value store. x is the only key though.
+    std::unordered_map<int, char> data; // emulate the in-memory key-value store. x is the only key though.
 public:
     CPubKey getPublicKey();
     // ----placeholder: send public keys over udp instead of extract it from the blockchain.

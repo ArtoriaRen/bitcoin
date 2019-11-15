@@ -108,12 +108,13 @@ void sendReq(std::string reqString, int port, UdpClient& pbftClient){
 void receiveServerReplies(CPbft2_5& pbft2_5Obj){
     /* wait for 2F global reply messages.
      * Should use "netcat -ul 2115" to listen for udp packets, otherwise, the t0.join() won't be executed */
-    int nFaultyGroups = 1;
-    int nFaulty = 1;
+    const int nFaultyGroups = 1;
+    const int nFaulty = 1;
     char pRecvBuf[(2 * nFaultyGroups + 1) * (2 * nFaulty + 1) * CIntraGroupMsg::messageSizeBytes]; // buf to receive msg from pbft servers.
     int clientUdpPort = 18500; // the port of udp server at the pbft client side.
     UdpServer udpServer("127.0.0.1", clientUdpPort);
-    for (int i = 0; i < 3; i++) {
+    // we wait for 6 reply msg here because we've send two requests.
+    for (int i = 0; i < 6; i++) {
 	ssize_t recvBytes = udpServer.recv(pRecvBuf, (2 * nFaultyGroups + 1)*(2 * nFaulty + 1) * CIntraGroupMsg::messageSizeBytes);
 	std::string recvString(pRecvBuf, recvBytes);
 	std::istringstream iss(recvString);
@@ -124,6 +125,7 @@ void receiveServerReplies(CPbft2_5& pbft2_5Obj){
 	gReply.deserialize(iss);
 	std::cout << "reply from server " <<  gReply.localReplyArray[0].senderId << " is: " << gReply.localReplyArray[0].reply << std::endl; 
     }
+    std::cout << "get all 6 replies from servers " << std::endl; 
 
 }
 

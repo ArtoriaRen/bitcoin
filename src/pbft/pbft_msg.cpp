@@ -101,3 +101,59 @@ void CPre_prepare::deserialize(std::istringstream& s){
     clientReq = std::string(reqCharArr);
     std::cout << "client req : " << clientReq << std::endl;
 }
+
+CReply::CReply(): phase(PbftPhase::reply), seq(), senderId(), reply(), digest(), vchSig(){
+}
+
+CReply::CReply(uint32_t seqNum, const uint32_t sender, char rpl, const uint256& dgt): 
+phase(PbftPhase::reply), seq(seqNum), senderId(sender), reply(rpl), digest(dgt), vchSig(){
+}
+
+void CReply::serialize(std::ostringstream& s) const {
+    s << static_cast<int> (phase);
+    s << " ";
+    s << seq;
+    s << " ";
+    s << senderId;
+    s << " ";
+    s << reply;
+    s << " ";
+    digest.Serialize(s);
+    s << vchSig.size();
+    s << " ";
+    for (uint i = 0; i < vchSig.size(); i++) {
+//	std::cout  << "i = " << i << "sig char = " << vchSig[i] << std::endl;
+	s << vchSig[i];
+    }
+}
+
+void CReply::deserialize(std::istringstream& s) {
+    s >> seq;
+    s >> senderId;
+    s >> reply;
+    s.get(); // discard the delimiter after reply.
+    digest.Unserialize(s); // 256 bits = 32 bytes
+    size_t sigSize;
+    s >> sigSize; 
+    s.get(); // discard the delimiter after sigSize.
+    char c;
+    vchSig.clear();
+    for(unsigned int i = 0; i < sigSize; i++) { 
+	c = s.get();
+//	std::cout  << "sig char = " << c << std::endl;
+	vchSig.push_back(static_cast<unsigned char>(c));
+    }
+    
+#ifdef INTRA_GROUP_DEBUG
+    std::cout << "deserialize ends, phase = " << phase  << " local view = " << localView << ", global view = " << globalView << ", seq = " << seq << ", senderId = "<< senderId << ", digest = " << digest.GetHex() << ", sig[0] = " << vchSig[0] << std::endl;
+#endif
+}
+
+void CReply::getHash(uint256& result){
+    CHash256().Write((const unsigned char*)&phase, sizeof(phase))
+	    .Write((const unsigned char*)&seq, sizeof(seq))
+	    .Write((const unsigned char*)&senderId, sizeof(senderId))
+	    .Write((const unsigned char*)&reply, sizeof(reply))
+	    .Write(digest.begin(), sizeof(digest))
+	    .Finalize((unsigned char*)&result);
+}

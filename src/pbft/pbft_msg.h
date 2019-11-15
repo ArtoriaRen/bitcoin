@@ -17,7 +17,7 @@
 #include "uint256.h"
 //global view number
 
-enum PbftPhase {pre_prepare, prepare, commit, execute, end};
+enum PbftPhase {pre_prepare, prepare, commit, reply, end};
 
 class CPre_prepare;
 
@@ -79,6 +79,32 @@ public:
     CCommit():CPbftMessage(PbftPhase::commit){
     }
     
+};
+
+
+/*Local pre-prepare message*/
+class CReply {
+public:
+    PbftPhase phase;
+    uint32_t seq;
+    uint32_t senderId;
+    char reply; // execution result
+    uint256 digest; // use the block header hash as digest.
+    /* TODO: change the YCSB workload (probably hash each key and value to constant size)
+     * so that the reply has a fixed size.
+     * Assume the reply is 1 byte for now.
+     */
+    std::vector<unsigned char> vchSig; //serilized ecdsa signature.
+    // the real size of a reply msg is 4*3 + 1 + 32 + 72 = 117 bytes.
+
+    CReply();
+    CReply(uint32_t seqNum, const uint32_t sender, char rpl, const uint256& dgt);
+
+    void serialize(std::ostringstream& s) const;
+    
+    void deserialize(std::istringstream& s); 
+
+    void getHash(uint256& result);
 };
 
 #endif /* PBFT_MSG_H */

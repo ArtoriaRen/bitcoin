@@ -21,6 +21,7 @@
 BOOST_FIXTURE_TEST_SUITE(pbft_tests, TestingSetup)
 	
 void sendReq(std::string reqString, int port, UdpClient& pbftClient);
+void receiveServerReplies();
 
 BOOST_AUTO_TEST_CASE(conflict_digest)
 {
@@ -85,10 +86,6 @@ BOOST_AUTO_TEST_CASE(message_order){
 
 BOOST_AUTO_TEST_CASE(udp_server){
     //This test case start a new thread to run udp server for each pbft object. Must use Ctrl-C to terminate this test.
-    char pRecvBuf[CPbftMessage::messageSizeBytes]; // buf to receive msg from pbft servers.
-    int clientUdpPort = 18500; // the port of udp server at the pbft client side.
-    UdpServer udpServer("127.0.0.1", clientUdpPort);
-    
     // We cannot use a for loop to create CPbft objects and store them in an array or vector b/c no copy constructor is implemented. Even with pointers, objects created within a loop go out of scope once the control exits the loop and pointers become dangling.
     int port0 = 8350, port1 = 8342, port2 = 8343; 
     CPbft pbftObj0(port0, 0); 
@@ -103,28 +100,18 @@ BOOST_AUTO_TEST_CASE(udp_server){
     std::thread t0(interruptableReceive, std::ref(pbftObj0));
     std::thread t1(interruptableReceive, std::ref(pbftObj1));
     std::thread t2(interruptableReceive, std::ref(pbftObj2));
+    std::thread t3(receiveServerReplies);
     
     // To emulate a pbft client, we use a udp client to send request to the pbft leader.
     UdpClient pbftClient;
-    const int numReq = 3;
-    for(int i = 0; i < numReq; i++){
-    	std::string reqString = "r x=" + std::to_string(i); // the format of a request is r followed by the real request
-	sendReq(reqString, port0, pbftClient);
-    }
+
+    // send  a write request
+    std::string reqString = "r w,123,p"; 
+    sendReq(reqString, port0, pbftClient);
     
-    int response[numReq] = {0};
-    for(int i = 0; i < numReq * 3; i++){ // should receive numReq * 3 messages since 3 server exist.
-	ssize_t recvBytes =  udpServer.recv(pRecvBuf, CPbftMessage::messageSizeBytes);
-	std::string recv(pRecvBuf, 0, recvBytes); // recv should have the format of "x=<number>".
-	std::cout << "receive = " << recv.at(2) << std::endl;
-
-	response[recv.at(2) - '0']++; // increment the counter for the response
-    }
-
-    for(int i = 0; i < numReq; i++){
-	BOOST_CHECK_EQUAL(response[i], 3); // every server should have responsed.
-    }
-    std::cout << "received responses from 3 servers for all req.\nThis test succeeded. \nPress Ctrl-C to kill all threads." << std::endl; 
+    // send  a read request
+    reqString = "r r,123"; 
+    sendReq(reqString, port0, pbftClient);
     
     t0.join();
     // TODO: test if all CPbft instance has set x to 8
@@ -136,4 +123,25 @@ void sendReq(std::string reqString, int port, UdpClient& pbftClient){
     pbftClient.sendto(oss, "localhost", port);
 }
 
+void receiveServerReplies(){
+    /* wait for 2F global reply messages.
+     * Should use "netcat -ul 2115" to listen for udp packets, otherwise, the t0.join() won't be executed */
+    char pRecvBuf[CPbftMessage::messageSizeBytes]; // buf to receive msg from pbft servers.
+    int clientUdpPort = 18500; // the port of udp server at the pbft client side.
+    UdpServer udpServer("127.0.0.1", clientUdpPort);
+    // we wait for 6 reply msg here because we've send two requests.
+    for (int i = 0; i < 6; i++) {
+	ssize_t recvBytes = udpServer.recv(pRecvBuf, CPbftMessage::messageSizeBytes);
+	std::string recvString(pRecvBuf, recvBytes);
+	std::istringstream iss(recvString);
+	int phaseNum = -1;
+	iss >> phaseNum;
+    	BOOST_CHECK_EQUAL(static_cast<PbftPhase>(phaseNum), PbftPhase::reply);
+	CReply r;
+	r.deserialize(iss);
+	std::cout << "reply from server " <<  r.senderId << " is: " << r.reply << std::endl; 
+    }
+    std::cout << "get all 6 replies from servers " << std::endl; 
+
+}
 BOOST_AUTO_TEST_SUITE_END()

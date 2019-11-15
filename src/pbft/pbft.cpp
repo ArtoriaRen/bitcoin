@@ -119,10 +119,6 @@ void interruptableReceive(CPbft& pbftObj){
 		pbftObj.onReceiveCommit(cMsg, true);
 		break;
 	    }
-	    case execute:
-		// only the local leader need to handle the execute message?
-		std::cout << "received execute msg" << std::endl;
-		break;
 	    default:
 		std::cout << "received invalid msg" << std::endl;
 		
@@ -195,8 +191,8 @@ bool CPbft::onReceiveCommit(CPbftMessage& commit, bool sanityCheck){
     log[commit.seq].commitCount++;
     if(log[commit.seq].phase == PbftPhase::commit && log[commit.seq].commitCount == (nFaulty << 1 ) + 1 ){ 
 	// enter execute phase
-	std::cout << "enter execute phase" << std::endl;
-	log[commit.seq].phase = PbftPhase::execute;
+	std::cout << "enter reply phase" << std::endl;
+	log[commit.seq].phase = PbftPhase::reply;
 	executeTransaction(commit.seq);
 	return true;
     }
@@ -228,7 +224,7 @@ bool CPbft::checkMsg(CPbftMessage* msg){
 	std::cerr<< "digest error. digest in log = " << log[msg->seq].pre_prepare.digest.GetHex() << ", but msg->digest = " << msg->digest.GetHex() << std::endl;
 	return false;
     }
-
+    
     // if phase is pre-prepare, check if the digest matches client req
     if(msg->phase == PbftPhase::pre_prepare){
 	std::string req = ((CPre_prepare*)msg)->clientReq;
@@ -276,6 +272,17 @@ CPbftMessage CPbft::assembleMsg(PbftPhase phase, uint32_t seq){
     return toSent;
 }
 
+CReply CPbft::assembleReply(uint32_t seq){
+    /* we use the digest from globalCC rather than digest from pre-prepare because 
+     * a group may get a globalCC without GC msg from its own group.
+     */
+    CReply toSent(seq, server_id, log[seq].result, log[seq].pre_prepare.digest);
+    uint256 hash;
+    toSent.getHash(hash);
+    privateKey.Sign(hash, toSent.vchSig);
+    return toSent;
+}
+
 void CPbft::broadcast(CPbftMessage* msg){
     std::ostringstream oss;
     if(msg->phase == PbftPhase::pre_prepare){
@@ -313,18 +320,57 @@ void CPbft::executeTransaction(const int seq){
     // execute all lower-seq tx until this one if possible.
     int i = lastExecutedIndex + 1;
     for(; i < seq + 1; i++){
-	if(log[seq].phase == PbftPhase::execute){
-	    // send msg back to client. The client will wait for f+1 consistent responses.
-	    std::ostringstream oss;
-	    oss <<log[seq].pre_prepare.clientReq;
-	    std::cout<< "executing and send back to client: " <<log[seq].pre_prepare.clientReq << std::endl;
-	    udpClient.sendto(oss, "localhost", 18500);
+	if(log[i].phase == PbftPhase::reply){
+	    /* client request message format: "r <request type>,<key>[,<value>]". 
+	     * Request type can be either read 'r' or write 'w'. If it is a 
+	     * write request, client must provide value. We use comma as delimiter 
+	     * here to avoid coflict with message deserialization, which use space
+	     * as delimiter.
+	     */
+	    std::string req = log[i].pre_prepare.clientReq; 
+	    
+	    if(req.at(0) == 'w'){
+		// this is a write request
+		std::size_t found = req.find(',', 2);
+		int key = std::stoi(req.substr(2, found - 2));
+		data[key] = req.at(found + 1);
+		log[seq].result = '0';  // '0' means write succeed. 
+		std::cout << "-----server " << server_id << " write key: " << key << ", value :" 
+			<< data[key] << std::endl;
+	    } else if(req.at(0) == 'r') {
+		/* Empty string means read failed because all writes come together with 
+		 * a write value and empty string simply means the key has never been 
+		 * inserted into the map.
+		 */
+		int key = std::stoi(req.substr(2));
+		log[seq].result = data[key];  
+		std::cout << "-----server " << server_id << " read key: " << key << ", value :" 
+			<< data[key] << std::endl;
+	    } else {
+		std::cout << "invalid request" << std::endl;
+	    }
+	    /* TODO: send reply to client here. We send reply right after execution. */
+	    sendReply2Client(seq);
 	} else {
 	    break;
 	}
     }
     lastExecutedIndex = i-1;
-    
+    /* if lastExecutedIndex is less than seq, we delay sending reply until 
+     * the all requsts up to seq has been executed. This may be triggered 
+     * by future requests.
+     */
+}
+
+void CPbft::sendReply2Client(const int seq){
+    std::ostringstream oss;
+    CReply r = assembleReply(seq); 
+    r.serialize(oss);
+    // hard code client address for now.
+    std::string clientIP = "127.0.0.1";
+    int clientUdpPort = 12345; 
+    udpClient.sendto(oss, clientIP, clientUdpPort);
+    std::cout << "have sent reply to client port " << clientUdpPort << std::endl;
 }
 
 void CPbft::broadcastPubKey(){
