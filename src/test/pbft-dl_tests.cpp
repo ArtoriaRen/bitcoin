@@ -89,6 +89,10 @@ BOOST_AUTO_TEST_CASE(send_commit_list){
 	// send  a write request
     	std::string reqString = "r w,123,p"; 
 	sendReq(reqString, ports[0], pbftClient);
+
+	// send  a read request
+    	reqString = "r r,123"; 
+	sendReq(reqString, ports[0], pbftClient);
     }
     
     

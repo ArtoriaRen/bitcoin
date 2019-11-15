@@ -434,9 +434,10 @@ void CPbft2_5::executeTransaction(const int seq){
      * 4. pre-prepare msg should have client ip and udp port so that local leaders can
      * send global reply msg back to client.
      */
-    /* client request message format: "r <request type> <key> [<value>]". Request type 
+    /* client request message format: "r <request type>,<key>[,<value>]". Request type 
      * can be either read 'r' or write 'w'. If it is a write request, client must provide
-     * value.
+     * value. We use comma as delimiter here to avoid coflict with message deserialization,
+     * which use space as delimiter.
      */
     std::string req = log[seq].pre_prepare.clientReq; 
 

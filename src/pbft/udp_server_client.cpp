@@ -101,6 +101,7 @@ int UdpClient::sendto(std::ostringstream& oss, const std::string& addr, int port
     int r(getaddrinfo(addr.c_str(), decimal_port, &hints, &addrinfo));
     if(r != 0 || addrinfo == NULL)
     {
+	std::cerr << "!!!getaddrinfo returns: " << gai_strerror(r) << std::endl;
         throw UdpClient_server_runtime_error(("invalid address or port: \"" + addr + ":" + decimal_port + "\"").c_str());
     }
     f_socket = socket(addrinfo->ai_family, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
@@ -110,7 +111,9 @@ int UdpClient::sendto(std::ostringstream& oss, const std::string& addr, int port
 	strerror(errno);
         throw UdpClient_server_runtime_error(("could not create socket for: \"" + addr + ":" + decimal_port + "\"").c_str());
     }
-    return ::sendto(f_socket, oss.str().c_str(), oss.str().size(), 0, addrinfo->ai_addr, addrinfo->ai_addrlen);
+    int ret = ::sendto(f_socket, oss.str().c_str(), oss.str().size(), 0, addrinfo->ai_addr, addrinfo->ai_addrlen);
+    close(f_socket);
+    return ret;
 }
 
 
