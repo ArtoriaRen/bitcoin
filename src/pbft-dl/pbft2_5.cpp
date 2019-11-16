@@ -379,11 +379,11 @@ bool CPbft2_5::onReceiveGC(CCrossGroupMsg& gc, bool sanityCheck) {
 	// send a gpcd message to local followers
 	CCertMsg cert(DL_GCCD, 2 * nFaultyGroups + 1, log[gc.localCC[0].seq].globalCC);
 	dlHandler.multicastCert(cert, udpClient, peers);
-	// the local leader execute the request if all proceeding requests have been executed. 
+	/* the local leader execute the request if all proceeding requests have been executed.*/
+	// enter local reply phase
+	log[gc.localCC[0].seq].phase = DL_Phase::DL_LR;
 	executeTransaction(gc.localCC[0].seq);
-	// add the local execution result to replies array
-	CLocalReply r = assembleLocalReply(gc.localCC[0].seq); 
-	log[gc.localCC[0].seq].localReplies.push_back(r);
+	
     }
     return true;
 }
@@ -393,12 +393,10 @@ bool CPbft2_5::onReceiveGCCD(const CCertMsg& gccd){
 	return false;
     // add to globalCC
     log[gccd.globalCert[0].localCC[0].seq].globalCC = gccd.globalCert;
+    // enter local reply phase
+    log[gccd.globalCert[0].localCC[0].seq].phase = DL_Phase::DL_LR;
     // executeTransaction
     executeTransaction(gccd.globalCert[0].localCC[0].seq);
-    // send local reply to local leader 
-    CLocalReply r = assembleLocalReply(gccd.globalCert[0].localCC[0].seq); 
-    // send commit only to local leader
-    send2Peer(localLeader, r);
     return true;
 }
 
@@ -434,33 +432,57 @@ void CPbft2_5::executeTransaction(const int seq){
      * 4. pre-prepare msg should have client ip and udp port so that local leaders can
      * send global reply msg back to client.
      */
-    /* client request message format: "r <request type>,<key>[,<value>]". Request type 
-     * can be either read 'r' or write 'w'. If it is a write request, client must provide
-     * value. We use comma as delimiter here to avoid coflict with message deserialization,
-     * which use space as delimiter.
-     */
-    std::string req = log[seq].pre_prepare.clientReq; 
-
-    if(req.at(0) == 'w'){
-	// this is a write request
-	std::size_t found = req.find(',', 2);
-	int key = std::stoi(req.substr(2, found - 2));
-	data[key] = req.at(found + 1);
-	log[seq].result = '0';  // '0' means write succeed. 
-	std::cout << "-----server " << server_id << " write key: " << key << ", value :" 
-		<< data[key] << std::endl;
-    } else if(req.at(0) == 'r') {
-	/* Empty string means read failed because all writes come together with 
-	 * a write value and empty string simply means the key has never been 
-	 * inserted into the map.
-	 */
-	int key = std::stoi(req.substr(2));
-	log[seq].result = data[key];  
-	std::cout << "-----server " << server_id << " read key: " << key << ", value :" 
-		<< data[key] << std::endl;
-    } else {
-	std::cout << "invalid request" << std::endl;
+    
+    // execute all lower-seq tx until this one if possible.
+    int i = lastExecutedIndex + 1;
+    for(; i < seq + 1; i++){
+	if(log[i].phase == DL_Phase::DL_LR){
+	    /* client request message format: "r <request type>,<key>[,<value>]". Request type 
+	     * can be either read 'r' or write 'w'. If it is a write request, client must provide
+	     * value. We use comma as delimiter here to avoid coflict with message deserialization,
+	     * which use space as delimiter.
+	     */
+	    std::string req = log[i].pre_prepare.clientReq; 
+	    
+	    if(req.at(0) == 'w'){
+		// this is a write request
+		std::size_t found = req.find(',', 2);
+		int key = std::stoi(req.substr(2, found - 2));
+		data[key] = req.at(found + 1);
+		log[i].result = '0';  // '0' means write succeed. 
+		std::cout << "-----server " << server_id << " write key: " << key << ", value :" 
+			<< data[key] << std::endl;
+	    } else if(req.at(0) == 'r') {
+		/* Empty string means read failed because all writes come together with 
+		 * a write value and empty string simply means the key has never been 
+		 * inserted into the map.
+		 */
+		int key = std::stoi(req.substr(2));
+		log[i].result = data[key];  
+		std::cout << "-----server " << server_id << " read key: " << key << ", value :" 
+			<< data[key] << std::endl;
+	    } else {
+		std::cout << "invalid request" << std::endl;
+	    }
+	    /* send reply right after execution. */
+	    // send local reply to local leader 
+	    CLocalReply r = assembleLocalReply(i); 
+	    if (server_id != localLeader){
+		send2Peer(localLeader, r);
+	    } else {
+		// add the local execution result to replies array
+		CLocalReply r = assembleLocalReply(i); 
+		log[i].localReplies.push_back(r);
+	    }
+	} else {
+	    break;
+	}
     }
+    lastExecutedIndex = i-1;
+    /* if lastExecutedIndex is less than seq, we delay sending reply until 
+     * the all requsts up to seq has been executed. This may be triggered 
+     * by future requests.
+     */
 }
 
 

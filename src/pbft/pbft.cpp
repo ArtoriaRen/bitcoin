@@ -334,7 +334,7 @@ void CPbft::executeTransaction(const int seq){
 		std::size_t found = req.find(',', 2);
 		int key = std::stoi(req.substr(2, found - 2));
 		data[key] = req.at(found + 1);
-		log[seq].result = '0';  // '0' means write succeed. 
+		log[i].result = '0';  // '0' means write succeed. 
 		std::cout << "-----server " << server_id << " write key: " << key << ", value :" 
 			<< data[key] << std::endl;
 	    } else if(req.at(0) == 'r') {
@@ -343,14 +343,14 @@ void CPbft::executeTransaction(const int seq){
 		 * inserted into the map.
 		 */
 		int key = std::stoi(req.substr(2));
-		log[seq].result = data[key];  
+		log[i].result = data[key];  
 		std::cout << "-----server " << server_id << " read key: " << key << ", value :" 
 			<< data[key] << std::endl;
 	    } else {
 		std::cout << "invalid request" << std::endl;
 	    }
-	    /* TODO: send reply to client here. We send reply right after execution. */
-	    sendReply2Client(seq);
+	    /* send reply right after execution. */
+	    sendReply2Client(i);
 	} else {
 	    break;
 	}
