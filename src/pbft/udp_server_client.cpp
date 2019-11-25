@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <iostream>
 #include <sstream>
+#include "pbft/debug_flag_pbft.h"
 
 
 
@@ -22,7 +23,9 @@
  */
 UdpClient::UdpClient()
 {
+#ifdef UDP_DEBUG
     std::cout << "udp client constructor"<< std::endl;
+#endif
 }
 
 /** \brief Clean up the UDP client object.
@@ -156,7 +159,9 @@ UdpServer::UdpServer(const std::string& addr, int port)
 : f_port(port)
 , f_addr(addr)
 {
+#ifdef UDP_DEBUG
     std::cout << "udp server constructor, port = " << f_port << std::endl;
+#endif
     char decimal_port[16];
     snprintf(decimal_port, sizeof(decimal_port), "%d", f_port);
     decimal_port[sizeof(decimal_port) / sizeof(decimal_port[0]) - 1] = '\0';

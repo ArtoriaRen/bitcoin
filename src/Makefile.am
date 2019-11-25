@@ -181,6 +181,7 @@ BITCOIN_CORE_H = \
   pbft/peer.h \
   pbft/pbft_log_entry.h \
   pbft/util.h \
+  pbft-dl/debug_flag_pbft.h \
   pbft-dl/pbft-dl.h \
   pbft-dl/pbft2_5.h \
   pbft-dl/intra_group-msg.h \

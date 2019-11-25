@@ -7,6 +7,7 @@
 #include "pbft/pbft_msg.h"
 #include "hash.h"
 #include "pbft.h"
+#include "pbft/debug_flag_pbft.h"
 
 CPbftMessage::CPbftMessage():phase(PbftPhase::pre_prepare), view(0), seq(0), senderId(0), digest(), vchSig(){
 }
@@ -21,7 +22,9 @@ CPbftMessage::CPbftMessage(CPre_prepare& pre_prepare, uint32_t senderId):phase(p
 }
 
 void CPbftMessage::serialize(std::ostringstream& s, const char* clientReq) const {
+#ifdef SERIALIZATION
     std::cout << "serialize start, phase = " << phase  << ", view = " << view << ", seq = " << seq << ", senderId = "<< senderId << ", digest = " << digest.GetHex() << ", sig[0] = " << vchSig[0] << std::endl;
+#endif
     s << static_cast<int> (phase);
     s << " ";
     s << view;
@@ -31,7 +34,9 @@ void CPbftMessage::serialize(std::ostringstream& s, const char* clientReq) const
     s << senderId;
     s << " ";
     if(clientReq != nullptr){
+#ifdef SERIALIZATION
 	std::cout  << "serializing clientReq " << clientReq <<  std::endl;
+#endif
 	    s << clientReq; 
 	    s << " ";
     }
@@ -50,7 +55,9 @@ void CPbftMessage::deserialize(std::istringstream& s, char* clientReq) {
     s >> senderId;
     if(clientReq != nullptr){
 	    s >> clientReq;
+#ifdef SERIALIZATION
 	std::cout  << "deserializing clientReq " << clientReq << std::endl;
+#endif
     }
     s.get(); // discard the delimiter after senderId.
     digest.Unserialize(s); // 256 bits = 32 bytes
@@ -90,7 +97,9 @@ CPre_prepare::CPre_prepare(const CPbftMessage& msg){
 }
 
 void CPre_prepare::serialize(std::ostringstream& s) const{
+#ifdef SERIALIZATION
     std::cout << "pre_prepare serialize, add clientReq: " << clientReq << std::endl;
+#endif
     // we must serialize clientReq before vchSig because we are not sure the size of vchSig and it can contain space.
     CPbftMessage::serialize(s, clientReq.c_str());
 }

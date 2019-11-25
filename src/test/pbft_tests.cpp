@@ -85,36 +85,50 @@ BOOST_AUTO_TEST_CASE(message_order){
 }
 
 BOOST_AUTO_TEST_CASE(udp_server){
-    //This test case start a new thread to run udp server for each pbft object. Must use Ctrl-C to terminate this test.
-    // We cannot use a for loop to create CPbft objects and store them in an array or vector b/c no copy constructor is implemented. Even with pointers, objects created within a loop go out of scope once the control exits the loop and pointers become dangling.
-    int port0 = 8350, port1 = 8342, port2 = 8343; 
-    CPbft pbftObj0(port0, 0); 
-    CPbft pbftObj1(port1, 1); 
-    CPbft pbftObj2(port2, 2); 
-    pbftObj0.peers.insert(std::make_pair(pbftObj1.server_id, CPbftPeer("localhost", port1, pbftObj1.getPublicKey())));
-    pbftObj0.peers.insert(std::make_pair(pbftObj2.server_id, CPbftPeer("localhost", port2, pbftObj2.getPublicKey())));
-    pbftObj1.peers.insert(std::make_pair(pbftObj0.server_id, CPbftPeer("localhost", port0, pbftObj0.getPublicKey())));
-    pbftObj1.peers.insert(std::make_pair(pbftObj2.server_id, CPbftPeer("localhost", port2, pbftObj2.getPublicKey())));
-    pbftObj2.peers.insert(std::make_pair(pbftObj0.server_id, CPbftPeer("localhost", port0, pbftObj0.getPublicKey())));
-    pbftObj2.peers.insert(std::make_pair(pbftObj1.server_id, CPbftPeer("localhost", port1, pbftObj1.getPublicKey())));
-    std::thread t0(interruptableReceive, std::ref(pbftObj0));
-    std::thread t1(interruptableReceive, std::ref(pbftObj1));
-    std::thread t2(interruptableReceive, std::ref(pbftObj2));
-    std::thread t3(receiveServerReplies);
+    /*This test case start a new thread to run udp server for each pbft object. 
+     * Must use Ctrl-C to terminate this test.
+     */ 
+
+    /* We cannot use a for loop to create CPbft objects and store them in an 
+     * array or vector b/c no copy constructor is implemented. Even with pointers,
+     * objects created within a loop go out of scope once the control exits the
+     * loop and pointers become dangling.
+     */
+    int basePort = 8350; 
+    const unsigned int numNodes = 16;
+    CPbft pbftObjs[numNodes];
+    for(unsigned int i = 0; i < numNodes; i++){
+	pbftObjs[i] = CPbft(basePort + i, i); 
+    }
+
+    for(uint i = 0; i < numNodes; i++){
+	for(uint j = 0; j < numNodes; j++) {
+	    if (j != i) {
+		pbftObjs[i].peers.insert(std::make_pair(pbftObjs[j].server_id, CPbftPeer("localhost", basePort + j, pbftObjs[j].getPublicKey())));
+	    }
+	}
+    }
+
+    std::vector<std::thread> threads;
+    threads.reserve(numNodes);
+    for (uint i = 0; i < numNodes; i++){
+	threads.emplace_back(std::thread(interruptableReceive, std::ref(pbftObjs[i])));
+    }
+
+    std::thread clientUdpReceiver(receiveServerReplies);
     
     // To emulate a pbft client, we use a udp client to send request to the pbft leader.
     UdpClient pbftClient;
 
     // send  a write request
     std::string reqString = "r w,123,p"; 
-    sendReq(reqString, port0, pbftClient);
+    sendReq(reqString, basePort, pbftClient);
     
     // send  a read request
     reqString = "r r,123"; 
-    sendReq(reqString, port0, pbftClient);
+    sendReq(reqString, basePort, pbftClient);
     
-    t0.join();
-    // TODO: test if all CPbft instance has set x to 8
+    threads[0].join();
 }
 
 void sendReq(std::string reqString, int port, UdpClient& pbftClient){
@@ -129,8 +143,8 @@ void receiveServerReplies(){
     char pRecvBuf[CPbftMessage::messageSizeBytes]; // buf to receive msg from pbft servers.
     int clientUdpPort = 18500; // the port of udp server at the pbft client side.
     UdpServer udpServer("127.0.0.1", clientUdpPort);
-    // we wait for 6 reply msg here because we've send two requests.
-    for (int i = 0; i < 6; i++) {
+    // we wait for 8 reply msg here because we've send two requests.
+    for (int i = 0; i < 32; i++) {
 	ssize_t recvBytes = udpServer.recv(pRecvBuf, CPbftMessage::messageSizeBytes);
 	std::string recvString(pRecvBuf, recvBytes);
 	std::istringstream iss(recvString);
@@ -139,7 +153,7 @@ void receiveServerReplies(){
     	BOOST_CHECK_EQUAL(static_cast<PbftPhase>(phaseNum), PbftPhase::reply);
 	CReply r;
 	r.deserialize(iss);
-	std::cout << "reply from server " <<  r.senderId << " is: " << r.reply << std::endl; 
+	std::cout << "CLIENT: reply from server " <<  r.senderId << " is: " << r.reply << std::endl; 
     }
     std::cout << "get all 6 replies from servers " << std::endl; 
 

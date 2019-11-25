@@ -17,10 +17,11 @@
 #include "crypto/aes.h"
 #include "pbft/peer.h"
 #include "pbft/util.h"
+#include "pbft/debug_flag_pbft.h"
 
-//----------placeholder:members is initialized as size-4.
+CPbft::CPbft(): localView(0), nextSeq(0), lastExecutedIndex(-1), server_id(INT_MAX), nFaulty(1){}
 
-CPbft::CPbft(int serverPort, unsigned int id): localView(0), globalView(0), log(std::vector<CPbftLogEntry>(CPbft::logSize)), nextSeq(0), lastExecutedIndex(-1), members(std::vector<uint32_t>(groupSize)), server_id(id), nGroups(1), udpServer(UdpServer("localhost", serverPort)), udpClient(UdpClient()), pRecvBuf(new char[CPbftMessage::messageSizeBytes], std::default_delete<char[]>()), privateKey(CKey()), x(-1){
+CPbft::CPbft(int serverPort, unsigned int id): localView(0),log(std::vector<CPbftLogEntry>(CPbft::logSize)), nextSeq(0), lastExecutedIndex(-1), members(std::vector<uint32_t>(groupSize)), server_id(id), nGroups(1), udpServer(new UdpServer("localhost", serverPort)), udpClient(UdpClient()), pRecvBuf(new char[CPbftMessage::messageSizeBytes], std::default_delete<char[]>()), privateKey(CKey()), x(-1){
     nFaulty = (members.size() - 1)/3;
     std::cout << "CPbft constructor. faulty nodes in a group =  "<< nFaulty << std::endl;
     privateKey.MakeNewKey(false);
@@ -35,6 +36,27 @@ CPbft::~CPbft(){
     
 }
 
+CPbft& CPbft::operator = (const CPbft& rhs){
+    if(this == &rhs)
+	return *this;
+    nFaulty = rhs.nFaulty; 
+    nGroups = rhs.nGroups;
+    localView = rhs.localView;
+    log = rhs.log;
+    nextSeq = rhs.nextSeq; 
+    lastExecutedIndex = rhs.lastExecutedIndex;
+    leader = rhs.leader;
+    members = rhs.members;
+    server_id = rhs.server_id;
+    peers = rhs.peers; 
+    udpServer = rhs.udpServer;
+    udpClient = rhs.udpClient;
+    pRecvBuf = rhs.pRecvBuf;
+    privateKey = rhs.privateKey;
+    publicKey = rhs.publicKey; 
+    data = rhs.data; 
+    return *this;
+}
 
 /**
  * Go through the last nBlocks block, calculate membership of nGroups groups.
@@ -64,7 +86,7 @@ void interruptableReceive(CPbft& pbftObj){
     
     while(!ShutdownRequested()){
 	// timeout block on receving a new packet. Attention: timeout is in milliseconds. 
-	ssize_t recvBytes =  pbftObj.udpServer.timed_recv(pbftObj.pRecvBuf.get(), CPbftMessage::messageSizeBytes, 500, &src_addr, &len);
+	ssize_t recvBytes =  pbftObj.udpServer->timed_recv(pbftObj.pRecvBuf.get(), CPbftMessage::messageSizeBytes, 500, &src_addr, &len);
 	
 	if(recvBytes == -1){
 	    // timeout. but we have got peer publickey. do nothing.
@@ -83,6 +105,7 @@ void interruptableReceive(CPbft& pbftObj){
 		continue;
 	    case CPbft::clientReqHeader:
 		// received client request, send preprepare
+		std::cout << "receive client req" << std::endl;
 		uint32_t seq = pbftObj.nextSeq++; 
 		std::string clientReq(&pbftObj.pRecvBuf.get()[2], recvBytes - 2);
 		CPre_prepare pp = pbftObj.assemblePre_prepare(seq, clientReq);
@@ -133,7 +156,9 @@ void CPbft::start(){
 }
 
 bool CPbft::onReceivePrePrepare(CPre_prepare& pre_prepare){
+#ifdef BASIC_PBFT
     std::cout<< "received pre-prepare" << std::endl;
+#endif
     // sanity check for signature, seq, view, digest.
     /*Faulty nodes may proceed even if the sanity check fails*/
     if(!checkMsg(&pre_prepare)){
@@ -151,14 +176,18 @@ bool CPbft::onReceivePrePrepare(CPre_prepare& pre_prepare){
 	CPbftMessage c = assembleMsg(PbftPhase::commit, pre_prepare.seq);
 	broadcast(&c);
     } else {
+#ifdef BASIC_PBFT
 	std::cout << "enter prepare phase. seq in pre-prepare = " << pre_prepare.seq << std::endl;
+#endif
 	log[pre_prepare.seq].phase = PbftPhase::prepare;
     }
     return true;
 }
 
 bool CPbft::onReceivePrepare(CPbftMessage& prepare, bool sanityCheck){
-    std::cout << "received prepare." << std::endl;
+#ifdef BASIC_PBFT
+    std::cout << "server " <<server_id << " received prepare." << std::endl;
+#endif
     // sanity check for signature, seq, view.
     if(sanityCheck && !checkMsg(&prepare)){
 	return false;
@@ -171,7 +200,9 @@ bool CPbft::onReceivePrepare(CPbftMessage& prepare, bool sanityCheck){
     //use == (nFaulty << 1) instead of >= (nFaulty << 1) so that we do not re-send commit msg every time another prepare msg is received.  
     if(log[prepare.seq].phase == PbftPhase::prepare && log[prepare.seq].prepareCount == (nFaulty << 1)){
 	// enter commit phase
+#ifdef BASIC_PBFT
 	std::cout << "server " << server_id << " enter commit phase" << std::endl;
+#endif
 	log[prepare.seq].phase = PbftPhase::commit;
 	CPbftMessage c = assembleMsg(PbftPhase::commit, prepare.seq); 
 	broadcast(&c);
@@ -181,7 +212,9 @@ bool CPbft::onReceivePrepare(CPbftMessage& prepare, bool sanityCheck){
 }
 
 bool CPbft::onReceiveCommit(CPbftMessage& commit, bool sanityCheck){
+#ifdef BASIC_PBFT
     std::cout << "received commit" << std::endl;
+#endif
     // sanity check for signature, seq, view.
     if(sanityCheck && !checkMsg(&commit)){
 	return false;
@@ -191,7 +224,9 @@ bool CPbft::onReceiveCommit(CPbftMessage& commit, bool sanityCheck){
     log[commit.seq].commitCount++;
     if(log[commit.seq].phase == PbftPhase::commit && log[commit.seq].commitCount == (nFaulty << 1 ) + 1 ){ 
 	// enter execute phase
+#ifdef BASIC_PBFT
 	std::cout << "enter reply phase" << std::endl;
+#endif
 	log[commit.seq].phase = PbftPhase::reply;
 	executeTransaction(commit.seq);
 	return true;
@@ -221,7 +256,7 @@ bool CPbft::checkMsg(CPbftMessage* msg){
      * Placeholder: Faulty followers may accept.
      */
     if(!log[msg->seq].pre_prepare.digest.IsNull() && log[msg->seq].pre_prepare.digest != msg->digest){
-	std::cerr<< "digest error. digest in log = " << log[msg->seq].pre_prepare.digest.GetHex() << ", but msg->digest = " << msg->digest.GetHex() << std::endl;
+	std::cerr<< "digest error for log entry " << msg->seq << ". digest in log = " << log[msg->seq].pre_prepare.digest.GetHex() << ", but msg->digest = " << msg->digest.GetHex() << std::endl;
 	return false;
     }
     
@@ -244,7 +279,6 @@ bool CPbft::checkMsg(CPbftMessage* msg){
 	    return false;
 	}
     }
-    std::cout << "sanity check succeed" << std::endl;
     return true;
 }
 
@@ -376,7 +410,7 @@ void CPbft::sendReply2Client(const int seq){
 void CPbft::broadcastPubKey(){
     std::ostringstream oss;
     // opti: serialized version can be stored.
-    serializePubKeyMsg(oss, server_id, udpServer.get_port(), publicKey);
+    serializePubKeyMsg(oss, server_id, udpServer->get_port(), publicKey);
     int pbftPeerPort = std::stoi(gArgs.GetArg("-pbftpeerport", "18340"));
     udpClient.sendto(oss, "127.0.0.1", pbftPeerPort);
 }
@@ -384,7 +418,7 @@ void CPbft::broadcastPubKey(){
 
 void CPbft::sendPubKey(const struct sockaddr_in& src_addr, uint32_t recver_id){
     std::ostringstream oss;
-    serializePubKeyMsg(oss, server_id, udpServer.get_port(), publicKey);
+    serializePubKeyMsg(oss, server_id, udpServer->get_port(), publicKey);
     udpClient.sendto(oss, inet_ntoa(src_addr.sin_addr), peers.at(recver_id).port);
 }
 

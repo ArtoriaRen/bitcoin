@@ -33,9 +33,9 @@
 class CPbft{
 public:
     static const size_t logSize = 128; 
-    static const size_t groupSize = 4;
+    static const size_t groupSize = 16;
     uint32_t localView;
-    uint32_t globalView;
+    //uint32_t globalView;
     // pbft log. The index is sequence number.
     std::vector<CPbftLogEntry> log;
     uint32_t nextSeq; // next available seq that has not been attached to any client request.
@@ -51,12 +51,13 @@ public:
     // udp server convert received char array into CPbftMessage and put them in a queue.(May not be used if we process msg in the udp server thread.) 
     //    std::mutex mtxMsg;
     //    std::condition_variable ready;
-    std::deque<CPbftMessage> receiveQue;
+    // std::deque<CPbftMessage> receiveQue;
     
-    
+    CPbft();
     explicit CPbft(int serverPort, unsigned int id);    
-    //    CPbft& operator = (CPbft&);
     
+    CPbft& operator = (const CPbft& rhs);
+
     ~CPbft();
     // start a thread to receive udp packets and process packet according to the protocol . 
     void start();
@@ -94,7 +95,7 @@ public:
     friend void interruptableReceive(CPbft& pbftObj);
     
 private:
-    UdpServer udpServer;
+    std::shared_ptr<UdpServer> udpServer;
     UdpClient udpClient;
     std::shared_ptr<char> pRecvBuf;
     // private ECDSA key used to sign messages
