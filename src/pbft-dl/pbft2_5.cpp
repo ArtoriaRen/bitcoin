@@ -307,11 +307,11 @@ bool CPbft2_5::onReceiveGP(CCrossGroupMsg& gp, bool sanityCheck){
     if(sanityCheck && !dlHandler.checkGP(gp, globalView, log))
 	return false;
     // add to globalPC
-    std::cout << "-------------log[0].globalPC size = " << log[0].globalPC.size() << std::endl;
     log[gp.localCC[0].seq].globalPC.push_back(gp);
-    std::cout << "server " << server_id << "-------------log[0].globalPC size = " << log[0].globalPC.size() <<", address of log = " << &log << ", address of this = " << this << std::endl;
     // if the globalPC reaches the size of 2F+1, send it to groupmates.
+#ifdef CROSS_GROUP_DEBUG
     std::cout << "server " << server_id << " seq = " << gp.localCC[0].seq <<  " GlobalPC size = " << log[gp.localCC[0].seq].globalPC.size() << std::endl;
+#endif
     // TODO: what if there is no gpp in globalPC?
     if(log[gp.localCC[0].seq].globalPC.size() == (nFaultyGroups << 1) + 1){
 	// send a gpcd message to local followers
@@ -371,7 +371,9 @@ bool CPbft2_5::onReceiveGC(CCrossGroupMsg& gc, bool sanityCheck) {
     // add to globalCC
     log[gc.localCC[0].seq].globalCC.push_back(gc);
     // if the globalCC reaches the size of 2F+1, send it to groupmates.
+#ifdef CROSS_GROUP_DEBUG
     std::cout << "server " << server_id << " seq = " << gc.localCC[0].seq <<  " -------------GlobalCC size = " << log[gc.localCC[0].seq].globalCC.size() << std::endl;
+#endif
     /* we don't check the phase here bacause as long as we collect enough GC messages,
      * we do not need the GC message from our own group.
      */ 
@@ -414,8 +416,8 @@ bool CPbft2_5::onReceiveLR(CLocalReply& lr) {
     if(log[lr.seq].localReplies.size() == (nFaulty << 1 ) + 1 ){ 
 #ifdef INTRA_GROUP_DEBUG
 	std::cout << "local leader = " << server_id << " get enough local replies" << std::endl;
-#endif
 	std::cout << "local leader = " << server_id << " get 2f+1 local replies" << std::endl;
+#endif
 	// create a global reply message
         CGlobalReply globalReply = assembleGR(lr.seq);
 	// send global reply msg directly to client
@@ -450,8 +452,10 @@ void CPbft2_5::executeTransaction(const int seq){
 		int key = std::stoi(req.substr(2, found - 2));
 		data[key] = req.at(found + 1);
 		log[i].result = '0';  // '0' means write succeed. 
+#ifdef EXECUTION
 		std::cout << "-----server " << server_id << " write key: " << key << ", value :" 
 			<< data[key] << std::endl;
+#endif
 	    } else if(req.at(0) == 'r') {
 		/* Empty string means read failed because all writes come together with 
 		 * a write value and empty string simply means the key has never been 
@@ -459,8 +463,10 @@ void CPbft2_5::executeTransaction(const int seq){
 		 */
 		int key = std::stoi(req.substr(2));
 		log[i].result = data[key];  
+#ifdef EXECUTION
 		std::cout << "-----server " << server_id << " read key: " << key << ", value :" 
 			<< data[key] << std::endl;
+#endif
 	    } else {
 		std::cout << "invalid request" << std::endl;
 	    }
@@ -487,6 +493,9 @@ void CPbft2_5::executeTransaction(const int seq){
 
 
 CCrossGroupMsg CPbft2_5::assembleGPP(uint32_t seq){
+#ifdef MSG_ASSEMBLE
+    std::cout << "assembe GPP for seq = " << seq << std::endl;
+#endif
     return CCrossGroupMsg(DL_GPP, log[seq].localCC, log[seq].pre_prepare.clientReq);
 }
 
@@ -503,14 +512,18 @@ CGlobalReply CPbft2_5::assembleGR(uint32_t seq){
 }
 
 void CPbft2_5::send2Peer(uint32_t peerId, CIntraGroupMsg* msg){
+#ifdef INTRA_GROUP_DEBUG
     std::cout << "server " << server_id << " send " << msg->phase << " msg to server" << peerId << std::endl;
+#endif
     std::ostringstream oss;
     msg->serialize(oss); 
     udpClient.sendto(oss, peers.at(peerId).ip, peers.at(peerId).port);
 }
 
 void CPbft2_5::send2Peer(uint32_t peerId, CLocalReply& msg) {
+#ifdef INTRA_GROUP_DEBUG
     std::cout << "server " << server_id << " send " << msg.phase << " msg to server" << peerId << std::endl;
+#endif
     std::ostringstream oss;
     msg.serialize(oss); 
     udpClient.sendto(oss, peers.at(peerId).ip, peers.at(peerId).port);
@@ -636,7 +649,8 @@ CLocalReply CPbft2_5::assembleLocalReply(uint32_t seq){
     /* we use the digest from globalCC rather than digest from pre-prepare because 
      * a group may get a globalCC without GC msg from its own group.
      */
-    CLocalReply toSent(seq, server_id, log[seq].result, log[seq].globalCC[0].localCC[0].digest);
+    std::string req = log[seq].pre_prepare.clientReq;
+    CLocalReply toSent(seq, server_id, log[seq].result, log[seq].globalCC[0].localCC[0].digest, req.substr(req.find_last_of(',') + 1));
     uint256 hash;
     toSent.getHash(hash);
     privateKey.Sign(hash, toSent.vchSig);
@@ -652,7 +666,9 @@ void CPbft2_5::broadcast(CIntraGroupMsg* msg){
     }
     // loop to  send prepare to all nodes in the peers map.
     for(auto p: peers){
+#ifdef MSG_ASSEMBLE 
 	std::cout << "server " << server_id <<" sends " << msg->phase << " msg to peer " << p.first << ", ip:port = " << p.second.ip << ":" << p.second.port << std::endl;
+#endif
 	udpClient.sendto(oss, p.second.ip, p.second.port);
     }
     // virtually send the message to this node itself if it is a prepare or commit msg.

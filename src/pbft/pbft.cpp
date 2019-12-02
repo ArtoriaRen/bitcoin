@@ -105,7 +105,9 @@ void interruptableReceive(CPbft& pbftObj){
 		continue;
 	    case CPbft::clientReqHeader:
 		// received client request, send preprepare
+#ifdef BASIC_PBFT
 		std::cout << "receive client req" << std::endl;
+#endif
 		uint32_t seq = pbftObj.nextSeq++; 
 		std::string clientReq(&pbftObj.pRecvBuf.get()[2], recvBytes - 2);
 		CPre_prepare pp = pbftObj.assemblePre_prepare(seq, clientReq);
@@ -123,7 +125,9 @@ void interruptableReceive(CPbft& pbftObj){
 	    case pre_prepare:
 	    {
 		CPre_prepare ppMsg(pbftObj.server_id);
+#ifdef SOCKET
 		std::cout << "recvBytes = " << recvBytes << std::endl;
+#endif
 		ppMsg.deserialize(iss);
 		pbftObj.onReceivePrePrepare(ppMsg);
 		break;
@@ -157,7 +161,7 @@ void CPbft::start(){
 
 bool CPbft::onReceivePrePrepare(CPre_prepare& pre_prepare){
 #ifdef BASIC_PBFT
-    std::cout<< "received pre-prepare" << std::endl;
+    std::cout<< "server " << server_id << "received pre-prepare, seq = " << pre_prepare.seq << std::endl;
 #endif
     // sanity check for signature, seq, view, digest.
     /*Faulty nodes may proceed even if the sanity check fails*/
@@ -186,7 +190,7 @@ bool CPbft::onReceivePrePrepare(CPre_prepare& pre_prepare){
 
 bool CPbft::onReceivePrepare(CPbftMessage& prepare, bool sanityCheck){
 #ifdef BASIC_PBFT
-    std::cout << "server " <<server_id << " received prepare." << std::endl;
+    std::cout << "server " <<server_id << " received prepare. seq = "  << prepare.seq << std::endl;
 #endif
     // sanity check for signature, seq, view.
     if(sanityCheck && !checkMsg(&prepare)){
@@ -213,7 +217,7 @@ bool CPbft::onReceivePrepare(CPbftMessage& prepare, bool sanityCheck){
 
 bool CPbft::onReceiveCommit(CPbftMessage& commit, bool sanityCheck){
 #ifdef BASIC_PBFT
-    std::cout << "received commit" << std::endl;
+    std::cout << "server " << server_id << "received commit, seq = "  << commit.seq  << std::endl;
 #endif
     // sanity check for signature, seq, view.
     if(sanityCheck && !checkMsg(&commit)){
@@ -283,7 +287,9 @@ bool CPbft::checkMsg(CPbftMessage* msg){
 }
 
 CPre_prepare CPbft::assemblePre_prepare(uint32_t seq, std::string clientReq){
-    std::cout << "assembling pre_prepare, client req = " << clientReq << std::endl;
+#ifdef MSG_ASSEMBLE
+    std::cout << "assembling pre_prepare, seq = " << seq << "client req = " << clientReq << std::endl;
+#endif
     CPre_prepare toSent(server_id); // phase is set to Pre_prepare by default.
     toSent.seq = seq;
     toSent.view = 0;
@@ -310,7 +316,9 @@ CReply CPbft::assembleReply(uint32_t seq){
     /* we use the digest from globalCC rather than digest from pre-prepare because 
      * a group may get a globalCC without GC msg from its own group.
      */
-    CReply toSent(seq, server_id, log[seq].result, log[seq].pre_prepare.digest);
+    std::string req = log[seq].pre_prepare.clientReq;
+    // the last field of a requst is the timestamp
+    CReply toSent(seq, server_id, log[seq].result, log[seq].pre_prepare.digest, req.substr(req.find_last_of(',') + 1));
     uint256 hash;
     toSent.getHash(hash);
     privateKey.Sign(hash, toSent.vchSig);
@@ -335,7 +343,9 @@ void CPbft::broadcast(CPbftMessage* msg){
 	    if(log[msg->seq].pre_prepare.digest.IsNull()){
 		// add to log, phase is  auto-set to prepare
 		log[msg->seq] = CPbftLogEntry(*(static_cast<CPre_prepare*>(msg)));
+#ifdef BASIC_PBFT
 		std::cout<< "add to log, clientReq =" << (static_cast<CPre_prepare*>(msg))->clientReq << std::endl;
+#endif
 	    }
 	    
 	    break;
@@ -369,8 +379,10 @@ void CPbft::executeTransaction(const int seq){
 		int key = std::stoi(req.substr(2, found - 2));
 		data[key] = req.at(found + 1);
 		log[i].result = '0';  // '0' means write succeed. 
+#ifdef EXECUTION
 		std::cout << "-----server " << server_id << " write key: " << key << ", value :" 
 			<< data[key] << std::endl;
+#endif
 	    } else if(req.at(0) == 'r') {
 		/* Empty string means read failed because all writes come together with 
 		 * a write value and empty string simply means the key has never been 
@@ -378,8 +390,10 @@ void CPbft::executeTransaction(const int seq){
 		 */
 		int key = std::stoi(req.substr(2));
 		log[i].result = data[key];  
+#ifdef EXECUTION
 		std::cout << "-----server " << server_id << " read key: " << key << ", value :" 
 			<< data[key] << std::endl;
+#endif
 	    } else {
 		std::cout << "invalid request" << std::endl;
 	    }
@@ -404,7 +418,9 @@ void CPbft::sendReply2Client(const int seq){
     std::string clientIP = "127.0.0.1";
     int clientUdpPort = 12345; 
     udpClient.sendto(oss, clientIP, clientUdpPort);
+#ifdef REPLY
     std::cout << "have sent reply to client port " << clientUdpPort << std::endl;
+#endif
 }
 
 void CPbft::broadcastPubKey(){

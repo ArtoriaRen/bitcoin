@@ -32,7 +32,10 @@
 
 class CPbft{
 public:
-    static const size_t logSize = 128; 
+    /* limit log size to 2002 because YCSB workloads load and run add up to 
+     * 2000 operations and our basic test cases in pbft_test.cpp send 2 requests.
+     */
+    static const size_t logSize = 2002;  
     static const size_t groupSize = 16;
     uint32_t localView;
     //uint32_t globalView;

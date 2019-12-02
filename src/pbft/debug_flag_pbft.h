@@ -5,22 +5,22 @@
  */
 
 /* 
- * File:   debug_flags.h
+ * File:   debug_flag_pbft.h
  * Author: l27ren
  *
- * Created on September 4, 2019, 3:42 PM
+ * Created on November 24, 2019, 11:38 AM
  */
 
-#ifndef DEBUG_FLAGS_H
-#define DEBUG_FLAGS_H
+#ifndef DEBUG_FLAG_PBFT_H
+#define DEBUG_FLAG_PBFT_H
 
 #undef BASIC_PBFT
 #undef MSG_ASSEMBLE
-#undef INTRA_GROUP_DEBUG
-#undef CROSS_GROUP_DEBUG
-#undef SERIAL
-#undef REPLY_DEBUG
+#undef SERIALIZATION
+#undef UDP_DEBUG
 #undef EXECUTION
+#undef REPLY
+#undef SOCKET
 
-#endif /* DEBUG_FLAGS_H */
+#endif /* DEBUG_FLAG_PBFT_H */
 

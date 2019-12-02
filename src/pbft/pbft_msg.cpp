@@ -108,14 +108,16 @@ void CPre_prepare::deserialize(std::istringstream& s){
     char reqCharArr[128] = {'\0'};
     CPbftMessage::deserialize(s, reqCharArr);
     clientReq = std::string(reqCharArr);
+#ifdef SERIALIZATION
     std::cout << "client req : " << clientReq << std::endl;
+#endif
 }
 
 CReply::CReply(): phase(PbftPhase::reply), seq(), senderId(), reply(), digest(), vchSig(){
 }
 
-CReply::CReply(uint32_t seqNum, const uint32_t sender, char rpl, const uint256& dgt): 
-phase(PbftPhase::reply), seq(seqNum), senderId(sender), reply(rpl), digest(dgt), vchSig(){
+CReply::CReply(uint32_t seqNum, const uint32_t sender, char rpl, const uint256& dgt, std::string ts): 
+phase(PbftPhase::reply), seq(seqNum), senderId(sender), reply(rpl), timestamp(ts), digest(dgt), vchSig(){
 }
 
 void CReply::serialize(std::ostringstream& s) const {
@@ -126,6 +128,8 @@ void CReply::serialize(std::ostringstream& s) const {
     s << senderId;
     s << " ";
     s << reply;
+    s << " ";
+    s << timestamp;
     s << " ";
     digest.Serialize(s);
     s << vchSig.size();
@@ -140,6 +144,7 @@ void CReply::deserialize(std::istringstream& s) {
     s >> seq;
     s >> senderId;
     s >> reply;
+    s >> timestamp;
     s.get(); // discard the delimiter after reply.
     digest.Unserialize(s); // 256 bits = 32 bytes
     size_t sigSize;

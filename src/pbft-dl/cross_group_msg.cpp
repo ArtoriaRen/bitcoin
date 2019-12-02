@@ -45,7 +45,9 @@ void CCrossGroupMsg::deserialize(std::istringstream& s){
     // the phase has already by the udp server function, so we only deserialize client req, if applicable, and Local-CC here.
     if(phase == DL_GPP){
 	s >> clientReq;
+#ifdef CROSS_GROUP_DEBUG
 	std::cout << "client req in GPP = " << clientReq << std::endl;
+#endif
     }
     // TODO: add number of commits in the localCC so that the temination condition is more accurate.                  
     size_t numCommits = 0;

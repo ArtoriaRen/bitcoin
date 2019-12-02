@@ -38,7 +38,9 @@ void CIntraGroupMsg::serialize(std::ostringstream& s, const char* clientReq) con
     s << senderId;
     s << " ";
     if(clientReq != nullptr){
+#ifdef INTRA_GROUP_DEBUG
 	std::cout  << "serializing clientReq " << clientReq <<  std::endl;
+#endif
 	    s << clientReq; 
 	    s << " ";
     }
@@ -122,8 +124,8 @@ void CLocalPP::deserialize(std::istringstream& s){
 CLocalReply::CLocalReply(): phase(DL_LR), seq(), senderId(), reply(), digest(), vchSig(){
 }
 
-CLocalReply::CLocalReply(uint32_t seqNum, const uint32_t sender, char rpl, const uint256& dgt): 
-phase(DL_LR), seq(seqNum), senderId(sender), reply(rpl), digest(dgt), vchSig(){
+CLocalReply::CLocalReply(uint32_t seqNum, const uint32_t sender, char rpl, const uint256& dgt, std::string ts): 
+phase(DL_LR), seq(seqNum), senderId(sender), reply(rpl), timestamp(ts), digest(dgt), vchSig(){
 }
 
 void CLocalReply::serialize(std::ostringstream& s) const {
@@ -134,6 +136,8 @@ void CLocalReply::serialize(std::ostringstream& s) const {
     s << senderId;
     s << " ";
     s << reply;
+    s << " ";
+    s << timestamp;
     s << " ";
     digest.Serialize(s);
     s << vchSig.size();
@@ -148,6 +152,7 @@ void CLocalReply::deserialize(std::istringstream& s) {
     s >> seq;
     s >> senderId;
     s >> reply;
+    s >> timestamp;
     s.get(); // discard the delimiter after reply.
     digest.Unserialize(s); // 256 bits = 32 bytes
     size_t sigSize;

@@ -40,7 +40,7 @@ public:
     uint32_t localLeader; // peer id of local leader
     DL_pbft dlHandler;
     
-    static const size_t logSize = 128; 
+    static const size_t logSize = 2002; 
     uint32_t localView;
     uint32_t globalView;
     // pbft log. The index is sequence number.

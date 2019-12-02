@@ -89,6 +89,7 @@ public:
     uint32_t seq;
     uint32_t senderId;
     char reply; // execution result
+    std::string timestamp;
     uint256 digest; // use the block header hash as digest.
     /* TODO: change the YCSB workload (probably hash each key and value to constant size)
      * so that the reply has a fixed size.
@@ -98,7 +99,7 @@ public:
     // the real size of a reply msg is 4*3 + 1 + 32 + 72 = 117 bytes.
 
     CReply();
-    CReply(uint32_t seqNum, const uint32_t sender, char rpl, const uint256& dgt);
+    CReply(uint32_t seqNum, const uint32_t sender, char rpl, const uint256& dgt, std::string timestamp);
 
     void serialize(std::ostringstream& s) const;
     
