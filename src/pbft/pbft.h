@@ -36,7 +36,7 @@ public:
      * 2000 operations and our basic test cases in pbft_test.cpp send 2 requests.
      */
     static const size_t logSize = 2002;  
-    static const size_t groupSize = 16;
+    size_t groupSize;
     uint32_t localView;
     //uint32_t globalView;
     // pbft log. The index is sequence number.
@@ -57,7 +57,7 @@ public:
     // std::deque<CPbftMessage> receiveQue;
     
     CPbft();
-    explicit CPbft(int serverPort, unsigned int id);    
+    explicit CPbft(int serverPort, unsigned int id, size_t numNodes);    
     
     CPbft& operator = (const CPbft& rhs);
 

@@ -35,7 +35,7 @@ UdpClient::UdpClient()
  */
 UdpClient::~UdpClient()
 {
-    close(f_socket);
+   // close(f_socket);
 }
 
 /** \brief Retrieve a copy of the socket identifier.

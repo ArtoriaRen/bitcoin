@@ -19,9 +19,9 @@
 #include "pbft/util.h"
 #include "pbft/debug_flag_pbft.h"
 
-CPbft::CPbft(): localView(0), nextSeq(0), lastExecutedIndex(-1), server_id(INT_MAX), nFaulty(1){}
+CPbft::CPbft(): groupSize(4), localView(0), nextSeq(0), lastExecutedIndex(-1), server_id(INT_MAX), nFaulty(1){}
 
-CPbft::CPbft(int serverPort, unsigned int id): localView(0),log(std::vector<CPbftLogEntry>(CPbft::logSize)), nextSeq(0), lastExecutedIndex(-1), members(std::vector<uint32_t>(groupSize)), server_id(id), nGroups(1), udpServer(new UdpServer("localhost", serverPort)), udpClient(UdpClient()), pRecvBuf(new char[CPbftMessage::messageSizeBytes], std::default_delete<char[]>()), privateKey(CKey()), x(-1){
+CPbft::CPbft(int serverPort, unsigned int id, size_t numNodes): groupSize(numNodes), localView(0),log(std::vector<CPbftLogEntry>(CPbft::logSize)), nextSeq(0), lastExecutedIndex(-1), members(std::vector<uint32_t>(groupSize)), server_id(id), nGroups(1), udpServer(new UdpServer("localhost", serverPort)), udpClient(UdpClient()), pRecvBuf(new char[CPbftMessage::messageSizeBytes], std::default_delete<char[]>()), privateKey(CKey()), x(-1){
     nFaulty = (members.size() - 1)/3;
     std::cout << "CPbft constructor. faulty nodes in a group =  "<< nFaulty << std::endl;
     privateKey.MakeNewKey(false);
@@ -39,6 +39,7 @@ CPbft::~CPbft(){
 CPbft& CPbft::operator = (const CPbft& rhs){
     if(this == &rhs)
 	return *this;
+    groupSize = rhs.groupSize;
     nFaulty = rhs.nFaulty; 
     nGroups = rhs.nGroups;
     localView = rhs.localView;

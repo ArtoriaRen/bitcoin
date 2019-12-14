@@ -11,7 +11,7 @@
 CPbft2_5::CPbft2_5(): nFaulty(1), nFaultyGroups(1), localLeader(0), localView(0), globalView(0), nextSeq(0), lastExecutedIndex(-1), server_id(INT_MAX) {}
 
 // pRecvBuf must be set large enough to receive cross group msg.
-CPbft2_5::CPbft2_5(int serverPort, unsigned int id, uint32_t l_leader): nFaulty(1), nFaultyGroups(1), localLeader(l_leader), localView(0), globalView(0), log(std::vector<DL_LogEntry>(CPbft::logSize, DL_LogEntry(nFaulty))), nextSeq(0), lastExecutedIndex(-1), server_id(id), udpServer(new UdpServer("localhost", serverPort)), udpClient(UdpClient()), pRecvBuf(new char[(2 * nFaultyGroups + 1) * (2 * nFaulty + 1) * CIntraGroupMsg::messageSizeBytes], std::default_delete<char[]>()), privateKey(CKey()) {
+CPbft2_5::CPbft2_5(int serverPort, unsigned int id, uint32_t l_leader, uint32_t numFaultyGroups): nFaulty(1), nFaultyGroups(numFaultyGroups), localLeader(l_leader), localView(0), globalView(0), log(std::vector<DL_LogEntry>(CPbft::logSize, DL_LogEntry(nFaulty))), nextSeq(0), lastExecutedIndex(-1), server_id(id), udpServer(new UdpServer("localhost", serverPort)), udpClient(UdpClient()), pRecvBuf(new char[(2 * nFaultyGroups + 1) * (2 * nFaulty + 1) * CIntraGroupMsg::messageSizeBytes], std::default_delete<char[]>()), privateKey(CKey()) {
 #ifdef BASIC_PBFT 
     std::cout << "CPbft2_5 constructor. faulty nodes in a group =  "<< nFaulty << std::endl;
 #endif
@@ -363,7 +363,7 @@ bool CPbft2_5::onReceiveGPLC(CIntraGroupMsg& gplc) {
 
 bool CPbft2_5::onReceiveGC(CCrossGroupMsg& gc, bool sanityCheck) {
 #ifdef CROSS_GROUP_DEBUG
-    std::cout << "server " << server_id << " receieved GC, digest = " << gp.localCC[0].digest.GetHex() << std::endl;
+    std::cout << "server " << server_id << " receieved GC, digest = " << gc.localCC[0].digest.GetHex() << std::endl;
 #endif
     // TODO: must check if the digest matches req in GPP.
     if(!dlHandler.checkGC(gc, globalView, log))

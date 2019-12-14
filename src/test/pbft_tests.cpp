@@ -26,7 +26,7 @@ void receiveServerReplies();
 BOOST_AUTO_TEST_CASE(conflict_digest)
 {
     // a server should not be able to accept conflicting pre-prepare
-    CPbft pbftObj(18322, 0); // 18322 can be an arbitrary port because we do not start UDP server in this test.
+    CPbft pbftObj(18322, 0, 4); // 18322 can be an arbitrary port because we do not start UDP server in this test.
     pbftObj.peers.insert(std::make_pair(pbftObj.server_id, CPbftPeer("localhost", 18322, pbftObj.getPublicKey())));
     CPre_prepare msg0 = pbftObj.assemblePre_prepare(64, "test");
     bool onRecvPre_prepare0 =  pbftObj.onReceivePrePrepare(msg0);
@@ -42,9 +42,9 @@ BOOST_AUTO_TEST_CASE(message_order){
      */
     // If no failure occurs, 3 nodes are enough for normal operation.
     int port0 = 8350, port1 = 8342, port2 = 8343; 
-    CPbft pbftObj0(port0, 0); // 18322 can be an arbitrary port because we do not start UDP server in this test.
-    CPbft pbftObj1(port1, 100); 
-    CPbft pbftObj2(port2, 200);
+    CPbft pbftObj0(port0, 0 ,4); // 18322 can be an arbitrary port because we do not start UDP server in this test.
+    CPbft pbftObj1(port1, 100, 4); 
+    CPbft pbftObj2(port2, 200, 4);
     pbftObj0.peers.insert(std::make_pair(pbftObj1.server_id, CPbftPeer("localhost", port1, pbftObj1.getPublicKey())));
     pbftObj0.peers.insert(std::make_pair(pbftObj2.server_id, CPbftPeer("localhost", port2, pbftObj2.getPublicKey())));
     pbftObj1.peers.insert(std::make_pair(pbftObj0.server_id, CPbftPeer("localhost", port0, pbftObj0.getPublicKey())));
@@ -95,10 +95,10 @@ BOOST_AUTO_TEST_CASE(udp_server){
      * loop and pointers become dangling.
      */
     int basePort = 8350; 
-    const unsigned int numNodes = 16;
+    const unsigned int numNodes = 52;
     CPbft pbftObjs[numNodes];
     for(unsigned int i = 0; i < numNodes; i++){
-	pbftObjs[i] = CPbft(basePort + i, i); 
+	pbftObjs[i] = CPbft(basePort + i, i, numNodes); 
     }
 
     for(uint i = 0; i < numNodes; i++){

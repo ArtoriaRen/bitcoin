@@ -167,7 +167,7 @@ void CLocalReply::deserialize(std::istringstream& s) {
     }
     
 #ifdef INTRA_GROUP_DEBUG
-    std::cout << "deserialize ends, phase = " << phase  << " local view = " << localView << ", global view = " << globalView << ", seq = " << seq << ", senderId = "<< senderId << ", digest = " << digest.GetHex() << ", sig[0] = " << vchSig[0] << std::endl;
+    std::cout << "deserialize ends, phase = " << phase  << ", seq = " << seq << ", senderId = "<< senderId << ", digest = " << digest.GetHex() << ", sig[0] = " << vchSig[0] << std::endl;
 #endif
 }
 

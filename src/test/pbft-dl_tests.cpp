@@ -25,14 +25,14 @@ void receiveServerReplies();
 
 BOOST_AUTO_TEST_CASE(send_commit_list){
     
-    // create a group with 3 nodes and use one node to emulate the leader of another group
+    // create groups with 4 nodes and use one node to emulate the leader of another group
     int basePort = 8350;
-    const unsigned int numNodes = 9;
-    const unsigned int groupSize = 3;
+    const unsigned int numNodes = 52;
+    const unsigned int groupSize = 4;
     const unsigned int numGroups = numNodes/groupSize;
     CPbft2_5 pbftObjs[numNodes];
     for(unsigned int i = 0; i < numNodes; i++){
-	pbftObjs[i] = CPbft2_5(basePort + i, i, (i/3) * 3); 
+	pbftObjs[i] = CPbft2_5(basePort + i, i, i - i % groupSize, (numGroups - 1)/3); 
     }
 
     // add peer info to their groupmates.

@@ -12,7 +12,7 @@
  */
 
 #ifndef DEBUG_FLAGS_H
-#define DEBUG_FLAGS_H
+#undef DEBUG_FLAGS_H
 
 #undef BASIC_PBFT
 #undef MSG_ASSEMBLE

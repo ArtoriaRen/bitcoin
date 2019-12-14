@@ -1750,7 +1750,7 @@ bool AppInitMain()
     int pbftUdpServerPort = std::stoi(gArgs.GetArg("-pbftudpserverport", "8340"));
     int pbftNodeId = std::stoi(gArgs.GetArg("-pbftnodeid", "0"));
 
-    pbftLogic.reset(new CPbft(pbftUdpServerPort, pbftNodeId));
+    pbftLogic.reset(new CPbft(pbftUdpServerPort, pbftNodeId, 4));
 
     pbftLogic->start();
     

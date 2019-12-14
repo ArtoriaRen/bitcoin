@@ -95,7 +95,7 @@ void CGlobalReply::deserialize(std::istringstream& s){
 	CLocalReply localReply;
 	s >> localReply.phase;
 #ifdef CROSS_GROUP_DEBUG
-	std::cout << "phase of msg in localCC = " << cMsg.phase << std::endl;
+	std::cout << "phase of msg in localCC = " << localReply.phase << std::endl;
 #endif
 	localReply.deserialize(s);
 	localReplyArray.push_back(localReply);

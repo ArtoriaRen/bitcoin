@@ -70,7 +70,7 @@ public:
     
     CPbft2_5();
 
-    CPbft2_5(int serverPort, unsigned int id, uint32_t l_leader);
+    CPbft2_5(int serverPort, unsigned int id, uint32_t l_leader, uint32_t numFaultyGroups);
     
     CPbft2_5& operator = (const CPbft2_5& rhs);
 
