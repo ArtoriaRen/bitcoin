@@ -95,7 +95,7 @@ BOOST_AUTO_TEST_CASE(udp_server){
      * loop and pointers become dangling.
      */
     int basePort = 8350; 
-    const unsigned int numNodes = 52;
+    const unsigned int numNodes = 64;
     CPbft pbftObjs[numNodes];
     for(unsigned int i = 0; i < numNodes; i++){
 	pbftObjs[i] = CPbft(basePort + i, i, numNodes); 

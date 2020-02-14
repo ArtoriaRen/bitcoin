@@ -27,7 +27,7 @@ BOOST_AUTO_TEST_CASE(send_commit_list){
     
     // create groups with 4 nodes and use one node to emulate the leader of another group
     int basePort = 8350;
-    const unsigned int numNodes = 52;
+    const unsigned int numNodes = 28;
     const unsigned int groupSize = 4;
     const unsigned int numGroups = numNodes/groupSize;
     CPbft2_5 pbftObjs[numNodes];
