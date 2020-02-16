@@ -51,7 +51,7 @@ BOOST_AUTO_TEST_CASE(pbft_sharding_test){
     std::vector<std::thread> threads;
     threads.reserve(numNodes);
     for (uint i = 0; i < numNodes; i++){
-	threads.emplace_back(std::thread(interruptableReceive, std::ref(pbftShardingObjs[i])));
+	threads.emplace_back(std::thread(interruptableReceiveSharding, std::ref(pbftShardingObjs[i])));
     }
 
     std::thread clientUdpReceiver(receiveServerReplies);

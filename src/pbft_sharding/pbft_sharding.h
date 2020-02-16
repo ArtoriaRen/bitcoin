@@ -27,6 +27,7 @@
 #include "msg.h"
 #include "log_entry.h"
 #include "pbft/peer.h"
+#include "pbft_sharding/txProcessor.h"
 
 
 class CPbftSharding{
@@ -94,7 +95,7 @@ public:
     void executeTransaction(const int seq);
     void sendReply2Client(const int seq);
     
-    friend void interruptableReceive(CPbftSharding& pbftShardingObj);
+    friend void interruptableReceiveSharding(CPbftSharding& pbftShardingObj);
     
 private:
     std::shared_ptr<UdpServer> udpServer;
@@ -104,8 +105,7 @@ private:
     CKey privateKey;
     CPubKey publicKey; // public key should be put on the blockchain so every can verify group members.
     std::thread receiver;
-    int x; // emulate the in-memory key-value store. x is the only key though.
-    std::unordered_map<int, char> data; // emulate the in-memory key-value store. x is the only key though.
+    CTxProcessor txProcessor; 
 public:
     CPubKey getPublicKey();
     // ----placeholder: send public keys over udp instead of extract it from the blockchain.
@@ -116,7 +116,7 @@ public:
 };
 
 
-void interruptableReceive(CPbftSharding& pbftShardingObj);
+void interruptableReceiveSharding(CPbftSharding& pbftShardingObj);
 
 #endif /* PBFT_H */
 

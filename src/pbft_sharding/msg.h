@@ -23,6 +23,8 @@ enum PbftShardingPhase {PRE_PREPARE, PREPARE, COMMIT, DECISION_EXCHANGE, DECISIO
 class PrePrepareMsg;
 
 class Message {
+private:
+    bool voteCommit;
 public:
     PbftShardingPhase phase;
     uint32_t view;
@@ -36,7 +38,7 @@ public:
 
     Message(uint32_t senderId);
     
-    Message(PbftShardingPhase p, uint32_t senderId);
+    Message(PbftShardingPhase p, uint32_t senderId, bool voteCommitIn);
     
     Message(PrePrepareMsg& pre_prepare, uint32_t senderId);
     
@@ -45,6 +47,10 @@ public:
     void deserialize(std::istringstream& s, CTransactionRef clientReq = nullptr); 
 
     void getHash(uint256& result);
+
+    bool getVoteCommit() const;
+
+    void setVoteCommit(bool voteCommitIn);
 };
 
 class PrePrepareMsg : public Message{
@@ -53,8 +59,9 @@ class PrePrepareMsg : public Message{
      * so that the block does not have to be in the Pre-prepare message.*/
     
 public:
-    PrePrepareMsg():Message(PbftShardingPhase::PRE_PREPARE, 0){
-    }
+    CTransactionRef clientReq;
+
+    PrePrepareMsg():Message(){ }
     
     //add explicit?
     PrePrepareMsg(const Message& msg);
@@ -63,25 +70,23 @@ public:
     
     void deserialize(std::istringstream& s); 
 
-    CTransactionRef clientReq;
+    const CTransaction& getTx();
+
 };
 
-
-class Prepare: public Message{
-    
+class PrepareMsg: public Message{
 public:
-    Prepare():Message(PbftShardingPhase::PREPARE){
+    PrepareMsg():Message(){
+	phase = PbftShardingPhase::PREPARE;
     }
 };
 
-class Commit: public Message{
-    
+class CommitMsg: public Message{
 public:
-    Commit():Message(PbftShardingPhase::COMMIT){
+    CommitMsg():Message(){
+	phase = PbftShardingPhase::COMMIT;
     }
-    
 };
-
 
 /*Local pre-prepare message*/
 class Reply {
@@ -89,8 +94,7 @@ public:
     PbftShardingPhase phase;
     uint32_t seq;
     uint32_t senderId;
-    char reply; // execution result
-    std::string timestamp;
+    bool reply; // execution result:  1-commit or 0-abort
     uint256 digest; // use the block header hash as digest.
     /* TODO: change the YCSB workload (probably hash each key and value to constant size)
      * so that the reply has a fixed size.
@@ -100,7 +104,7 @@ public:
     // the real size of a reply msg is 4*3 + 1 + 32 + 72 = 117 bytes.
 
     Reply();
-    Reply(uint32_t seqNum, const uint32_t sender, char rpl, const uint256& dgt, std::string timestamp);
+    Reply(uint32_t seqNum, const uint32_t sender, bool rpl, const uint256& dgt);
 
     void serialize(std::ostringstream& s) const;
     

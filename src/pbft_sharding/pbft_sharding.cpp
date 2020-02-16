@@ -11,7 +11,6 @@
 #include <locale>
 #include<string.h>
 #include <netinet/in.h>
-//#include "pbft/pbft.h"
 #include "pbft_sharding/pbft_sharding.h"
 #include "init.h"
 #include "pbft_sharding/msg.h"
@@ -20,10 +19,11 @@
 #include "pbft/peer.h"
 #include "debug_flag.h"
 #include "primitives/transaction.h"
+#include "txProcessor.h"
 
 CPbftSharding::CPbftSharding(): groupSize(4), localView(0), nextSeq(0), lastExecutedIndex(-1), server_id(INT_MAX), nFaulty(1){}
 
-CPbftSharding::CPbftSharding(int serverPort, unsigned int id, size_t numNodes): groupSize(numNodes), localView(0),log(std::vector<CLogEntry>(CPbftSharding::logSize)), nextSeq(0), lastExecutedIndex(-1), members(std::vector<uint32_t>(groupSize)), server_id(id), nGroups(1), udpServer(new UdpServer("localhost", serverPort)), udpClient(UdpClient()), pRecvBuf(new char[Message::messageSizeBytes], std::default_delete<char[]>()), privateKey(CKey()), x(-1){
+CPbftSharding::CPbftSharding(int serverPort, unsigned int id, size_t numNodes): groupSize(numNodes), localView(0),log(std::vector<CLogEntry>(CPbftSharding::logSize)), nextSeq(0), lastExecutedIndex(-1), members(std::vector<uint32_t>(groupSize)), server_id(id), nGroups(1), udpServer(new UdpServer("localhost", serverPort)), udpClient(UdpClient()), pRecvBuf(new char[Message::messageSizeBytes], std::default_delete<char[]>()), privateKey(CKey()){
     nFaulty = (members.size() - 1)/3;
     std::cout << "CPbftSharding constructor. faulty nodes in a group =  "<< nFaulty << std::endl;
     privateKey.MakeNewKey(false);
@@ -57,7 +57,6 @@ CPbftSharding& CPbftSharding::operator = (const CPbftSharding& rhs){
     pRecvBuf = rhs.pRecvBuf;
     privateKey = rhs.privateKey;
     publicKey = rhs.publicKey; 
-    data = rhs.data; 
     return *this;
 }
 
@@ -80,7 +79,7 @@ void CPbftSharding::group(uint32_t randomNumber, uint32_t nBlocks, const CBlockI
 
 
 
-void interruptableReceive(CPbftSharding& pbftShardingObj){
+void interruptableReceiveSharding(CPbftSharding& pbftShardingObj){
     // Placeholder: broadcast myself pubkey, and request others' pubkey.
 //    pbftShardingObj.broadcastPubKey();
 //    pbftShardingObj.broadcastPubKeyReq(); // request peer publickey
@@ -139,14 +138,16 @@ void interruptableReceive(CPbftSharding& pbftShardingObj){
 	    }
 	    case PREPARE:
 	    {
-		Message pMsg(PbftShardingPhase::PREPARE, pbftShardingObj.server_id);
+		Message pMsg;
+		pMsg.phase = PbftShardingPhase::PREPARE;
 		pMsg.deserialize(iss);
 		pbftShardingObj.onReceivePrepare(pMsg, true);
 		break;
 	    } 
 	    case COMMIT:
 	    {
-		Message cMsg(PbftShardingPhase::COMMIT, pbftShardingObj.server_id);
+		Message cMsg;
+		cMsg.phase = PbftShardingPhase::COMMIT;
 		cMsg.deserialize(iss);
 		pbftShardingObj.onReceiveCommit(cMsg, true);
 		break;
@@ -160,7 +161,7 @@ void interruptableReceive(CPbftSharding& pbftShardingObj){
 
 
 void CPbftSharding::start(){
-    receiver = std::thread(interruptableReceive, std::ref(*this)); 
+    receiver = std::thread(interruptableReceiveSharding, std::ref(*this)); 
     receiver.join();
 }
 
@@ -178,19 +179,41 @@ bool CPbftSharding::onReceivePrePrepare(PrePrepareMsg& pre_prepare){
     /* check if at least 2f prepare has been received. If so, enter commit phase directly; otherwise, enter prepare phase.(The goal of this operation is to tolerate network reordering.)
      -----Placeholder: to tolerate faulty nodes, we must check if all prepare msg matches the pre-prepare.
      */
-    Message p = assembleMsg(PbftShardingPhase::PREPARE, pre_prepare.seq); 
-    broadcast(&p); 
-    if(log[pre_prepare.seq].prepareCount >= (nFaulty << 1)){
-	log[pre_prepare.seq].phase = PbftShardingPhase::COMMIT;
-	Message c = assembleMsg(PbftShardingPhase::COMMIT, pre_prepare.seq);
-	broadcast(&c);
+    // send prepare msg
+    if(pre_prepare.getVoteCommit() && (txProcessor.fetchCachedVerifyRes(pre_prepare.clientReq->GetHash()) == CachedVerifyRes::COMMITTED || txProcessor.verifyTx(pre_prepare.getTx(), pre_prepare.seq))){
+	    Message p = assembleMsg(PbftShardingPhase::PREPARE, pre_prepare.seq); 
+	    broadcast(&p); 
+	    // check if we have collected a PREPARE-CERTIFICATE to enter commit phase.
+	    if(log[pre_prepare.seq].prepareArray.size() >= (nFaulty << 1)){
+		log[pre_prepare.seq].phase = PbftShardingPhase::COMMIT;
+		Message c = assembleMsg(PbftShardingPhase::COMMIT, pre_prepare.seq);
+		broadcast(&c);
+	    } else {
+	#ifdef BASIC_PBFT
+		std::cout << "enter prepare phase. seq in pre-prepare = " << pre_prepare.seq << std::endl;
+	#endif
+		log[pre_prepare.seq].phase = PbftShardingPhase::PREPARE;
+	    }
+	    return true;
+    } else if (!pre_prepare.getVoteCommit() && (txProcessor.fetchCachedVerifyRes(pre_prepare.clientReq->GetHash()) == CachedVerifyRes::ABORTED || txProcessor.verifyTx(pre_prepare.getTx(),pre_prepare.seq))){
+	    Message p = assembleMsg(PbftShardingPhase::PREPARE, pre_prepare.seq); 
+	    broadcast(&p); 
+	    // check if we have collected a PREPARE-ABORT-CERTIFICATE to enter commit phase.
+	    if(log[pre_prepare.seq].prepareAbortArray.size() >= (nFaulty << 1)){
+		log[pre_prepare.seq].phase = PbftShardingPhase::COMMIT;
+		Message c = assembleMsg(PbftShardingPhase::COMMIT, pre_prepare.seq);
+		broadcast(&c);
+	    } else {
+	#ifdef BASIC_PBFT
+		std::cout << "enter prepare phase. seq in pre-prepare = " << pre_prepare.seq << std::endl;
+	#endif
+		log[pre_prepare.seq].phase = PbftShardingPhase::PREPARE;
+	    }
+	    return true;
     } else {
-#ifdef BASIC_PBFT
-	std::cout << "enter prepare phase. seq in pre-prepare = " << pre_prepare.seq << std::endl;
-#endif
-	log[pre_prepare.seq].phase = PbftShardingPhase::PREPARE;
+	std::cout << "received a pre-prepare msg of mismatching decision. Decision in pre-prepare = " << (pre_prepare.getVoteCommit() ? "commit" : "abort") << ", but local decision = " << txProcessor.fetchCachedVerifyRes(pre_prepare.clientReq->GetHash()) << std::endl;
+        return false;
     }
-    return true;
 }
 
 bool CPbftSharding::onReceivePrepare(Message& prepare, bool sanityCheck){
@@ -198,6 +221,8 @@ bool CPbftSharding::onReceivePrepare(Message& prepare, bool sanityCheck){
     std::cout << "server " <<server_id << " received prepare. seq = "  << prepare.seq << std::endl;
 #endif
     // sanity check for signature, seq, view.
+    /* TODO: should sanityCheck fail if prepare.getVoteCommit != pre_prepare.getVoteCommit?
+     */
     if(sanityCheck && !checkMsg(&prepare)){
 	return false;
     }
@@ -205,19 +230,43 @@ bool CPbftSharding::onReceivePrepare(Message& prepare, bool sanityCheck){
     //-----------add to log (currently use placeholder: should add the entire message to log and not increase re-count if the sender is the same. Also, if prepares are received earlier than pre-prepare, different prepare may have different digest. Should categorize buffered prepares based on digest.)
     //    log[prepare.seq].prepareArray.push_back(prepare);
     // count the number of prepare msg. enter commit if greater than 2f
-    log[prepare.seq].prepareCount++;
+    if (prepare.getVoteCommit())
+    	log[prepare.seq].prepareArray.push_back(prepare);
+    else 
+    	log[prepare.seq].prepareAbortArray.push_back(prepare);
     //use == (nFaulty << 1) instead of >= (nFaulty << 1) so that we do not re-send commit msg every time another prepare msg is received.  
-    if(log[prepare.seq].phase == PbftShardingPhase::PREPARE && log[prepare.seq].prepareCount == (nFaulty << 1)){
-	// enter commit phase
-#ifdef BASIC_PBFT
-	std::cout << "server " << server_id << " enter commit phase" << std::endl;
-#endif
-	log[prepare.seq].phase = PbftShardingPhase::COMMIT;
-	Message c = assembleMsg(PbftShardingPhase::COMMIT, prepare.seq); 
-	broadcast(&c);
-	return true;
-    }
+
+    /* In prepare phase gaurantees pre_prepare is not null*/
+    if(log[prepare.seq].phase == PbftShardingPhase::PREPARE) {
+	if (log[prepare.seq].pre_prepare.getVoteCommit() && log[prepare.seq].prepareArray.size() == (nFaulty << 1)){
+		// enter commit phase
+	#ifdef BASIC_PBFT
+		std::cout << "server " << server_id << " enter commit phase" << std::endl;
+	#endif
+		log[prepare.seq].phase = PbftShardingPhase::COMMIT;
+		Message c = assembleMsg(PbftShardingPhase::COMMIT, prepare.seq); 
+		broadcast(&c);
+		return true;
+	} else if (!log[prepare.seq].pre_prepare.getVoteCommit() && log[prepare.seq].prepareAbortArray.size() == (nFaulty << 1)) {
+		// enter commit phase
+	#ifdef BASIC_PBFT
+		std::cout << "server " << server_id << " enter commit phase" << std::endl;
+	#endif
+		log[prepare.seq].phase = PbftShardingPhase::COMMIT;
+		Message c = assembleMsg(PbftShardingPhase::COMMIT, prepare.seq); 
+		broadcast(&c);
+		return true;
+	}
+    } 
     return true;
+    /* TODO: it is possible that, due to network reodering, this replica finds 
+     * some input coins of the tx is in pending state so it did not send a 
+     * PREPARE msg but it collects 2f PREPARE msg from other replicas and 
+     * successfully enter commit phase. This does not violate safety. Once this
+     * replica receives 2f+1 commit messages, it will commit this tx and abort 
+     * all pending tx spending overlapping coins.
+     */
+   
 }
 
 bool CPbftSharding::onReceiveCommit(Message& commit, bool sanityCheck){
@@ -230,19 +279,38 @@ bool CPbftSharding::onReceiveCommit(Message& commit, bool sanityCheck){
     }
     
     // count the number of prepare msg. enter execute if greater than 2f+1
-    log[commit.seq].commitCount++;
-    if(log[commit.seq].phase == PbftShardingPhase::COMMIT && log[commit.seq].commitCount == (nFaulty << 1 ) + 1 ){ 
-	// enter execute phase
-#ifdef BASIC_PBFT
-	std::cout << "enter reply phase" << std::endl;
-#endif
-	log[commit.seq].phase = PbftShardingPhase::REPLY;
-	executeTransaction(commit.seq);
-	return true;
+    if (commit.getVoteCommit())
+        log[commit.seq].commitArray.push_back(commit);
+    else 
+        log[commit.seq].commitAbortArray.push_back(commit);
+
+    if(log[commit.seq].phase == PbftShardingPhase::COMMIT){
+	if (log[commit.seq].pre_prepare.getVoteCommit() && log[commit.seq].commitArray.size()== (nFaulty << 1 ) + 1 ){ 
+		// enter execute phase
+	#ifdef BASIC_PBFT
+		std::cout << "enter reply phase" << std::endl;
+	#endif
+		log[commit.seq].phase = PbftShardingPhase::REPLY;
+		txProcessor.executeTx(*log[commit.seq].pre_prepare.clientReq, commit.seq);
+		//TODO: abort all incompitable tx.
+		return true;
+	} else if (!log[commit.seq].pre_prepare.getVoteCommit() && log[commit.seq].commitAbortArray.size()== (nFaulty << 1 ) + 1) {
+		// enter execute phase
+	#ifdef BASIC_PBFT
+		std::cout << "enter reply phase" << std::endl;
+	#endif
+		log[commit.seq].phase = PbftShardingPhase::REPLY;
+		txProcessor.abortTx(*log[commit.seq].pre_prepare.clientReq, commit.seq);
+		/* TODO: unblock the next incompitable tx on each input coin waiting
+		 * list (these txs must be verified again and the replica should
+		 * multicast prepare msg if some of them are valid.)
+		 */
+		return true;
+	}
     }
-
-    //TODO: check if this transaction is a cross-shard one. If so, multicast commit or abort certificate and wait for other partitions decision if we vote commit.
-
+    /*TODO: check if this transaction is a cross-shard one. If so, multicast commit 
+     * or abort certificate and wait for other partitions decision if we vote commit.
+     */
     return true;
 }
 
@@ -301,6 +369,10 @@ PrePrepareMsg CPbftSharding::assemblePre_prepare(uint32_t seq, CDataStream& txnM
     localView = 0; // also change the local view, or the sanity check would fail.
     toSent.digest = toSent.clientReq->GetHash();
     txnMsg >> toSent.clientReq;
+    if(txProcessor.verifyTx(toSent.getTx(),seq))
+	toSent.setVoteCommit(true);
+    else 
+	toSent.setVoteCommit(false);
     uint256 hash;
     toSent.getHash(hash); // this hash is used for signature, so clientReq is not included in this hash.
     privateKey.Sign(hash, toSent.vchSig);
@@ -323,7 +395,7 @@ Reply CPbftSharding::assembleReply(uint32_t seq){
      */
     // the last field of a requst is the timestamp
     // TODO: update reply msg to reflect the execution result of the transaction
-    Reply toSent(seq, server_id, log[seq].result, log[seq].pre_prepare.digest, "m");
+    Reply toSent(seq, server_id, log[seq].result, log[seq].pre_prepare.digest);
     uint256 hash;
     toSent.getHash(hash);
     privateKey.Sign(hash, toSent.vchSig);

@@ -11,16 +11,19 @@
 #include "serialize.h"
 #include "primitives/transaction.h"
 
-Message::Message():phase(PbftShardingPhase::PRE_PREPARE), view(0), seq(0), senderId(0), digest(), vchSig(){
+Message::Message(): voteCommit(true), phase(PbftShardingPhase::PRE_PREPARE), view(0), seq(0), senderId(0), digest(), vchSig() {
 }
 
-Message::Message(uint32_t senderId):phase(PbftShardingPhase::PRE_PREPARE), view(0), seq(0), senderId(senderId), digest(), vchSig(){
+Message::Message(uint32_t senderId): voteCommit(true), phase(PbftShardingPhase::PRE_PREPARE), view(0), seq(0), senderId(senderId), digest(), vchSig() {
 }
 
-Message::Message(PbftShardingPhase p, uint32_t senderId):phase(p), view(0), seq(0), senderId(senderId), digest(), vchSig(){
+Message::Message(PbftShardingPhase p, uint32_t senderId, bool voteCommitIn): voteCommit(voteCommitIn), phase(p), view(0), seq(0), senderId(senderId), digest(), vchSig() {
 }
 
-Message::Message(PrePrepareMsg& pre_prepare, uint32_t senderId):phase(pre_prepare.phase), view(pre_prepare.view), seq(pre_prepare.seq), senderId(senderId), digest(pre_prepare.digest), vchSig(pre_prepare.vchSig){
+/* given a PRE-PREPARE message, we are able to assemble a PREPARE message or COMMIT message. 
+ * The phase of this message will be re-assigned the caller.
+ */
+Message::Message(PrePrepareMsg& pre_prepare, uint32_t senderId):voteCommit(pre_prepare.voteCommit), phase(PbftShardingPhase::PREPARE), view(pre_prepare.view), seq(pre_prepare.seq), senderId(senderId), digest(pre_prepare.digest), vchSig(pre_prepare.vchSig) {
 }
 
 void Message::serialize(std::ostringstream& s, CTransactionRef clientReq) const {
@@ -34,6 +37,8 @@ void Message::serialize(std::ostringstream& s, CTransactionRef clientReq) const 
     s << seq;
     s << " ";
     s << senderId;
+    s << " ";
+    s << voteCommit;
     s << " ";
     if(clientReq != nullptr){
 #ifdef SERIALIZATION
@@ -57,6 +62,7 @@ void Message::deserialize(std::istringstream& s, CTransactionRef clientReq) {
     s >> view;
     s >> seq;
     s >> senderId;
+    s >> voteCommit;
     if(clientReq != nullptr){
 	/* extract req string and convert it to a CDataStream, which is used to unserialize 
 	 * transactions.
@@ -93,6 +99,7 @@ void Message::getHash(uint256& result){
 	    .Write((const unsigned char*)&view, sizeof(view))
 	    .Write((const unsigned char*)&seq, sizeof(seq))
 	    .Write((const unsigned char*)&senderId, sizeof(senderId))
+	    .Write((const unsigned char*)&voteCommit, sizeof(voteCommit))
 	    .Write(digest.begin(), sizeof(digest))
 	    .Finalize((unsigned char*)&result);
 }
@@ -104,6 +111,7 @@ PrePrepareMsg::PrePrepareMsg(const Message& msg){
     senderId = msg.senderId;
     digest = msg.digest;
     vchSig = msg.vchSig;
+    this->setVoteCommit(msg.getVoteCommit());
 }
 
 void PrePrepareMsg::serialize(std::ostringstream& s) const{
@@ -121,11 +129,23 @@ void PrePrepareMsg::deserialize(std::istringstream& s){
 #endif
 }
 
-Reply::Reply(): phase(PbftShardingPhase::REPLY), seq(), senderId(), reply(), digest(), vchSig(){
+const CTransaction& PrePrepareMsg::getTx(){
+    return *clientReq;
 }
 
-Reply::Reply(uint32_t seqNum, const uint32_t sender, char rpl, const uint256& dgt, std::string ts): 
-phase(PbftShardingPhase::REPLY), seq(seqNum), senderId(sender), reply(rpl), timestamp(ts), digest(dgt), vchSig(){
+bool Message::getVoteCommit() const{
+    return voteCommit;
+}
+
+void Message::setVoteCommit(bool voteCommitIn){
+    voteCommit = voteCommitIn; 
+}
+
+Reply::Reply(): phase(PbftShardingPhase::REPLY), seq(), senderId(), reply(true), digest(), vchSig(){
+}
+
+Reply::Reply(uint32_t seqNum, const uint32_t sender, bool rpl, const uint256& dgt): 
+phase(PbftShardingPhase::REPLY), seq(seqNum), senderId(sender), reply(rpl), digest(dgt), vchSig(){
 }
 
 void Reply::serialize(std::ostringstream& s) const {
@@ -136,8 +156,6 @@ void Reply::serialize(std::ostringstream& s) const {
     s << senderId;
     s << " ";
     s << reply;
-    s << " ";
-    s << timestamp;
     s << " ";
     digest.Serialize(s);
     s << vchSig.size();
@@ -152,7 +170,6 @@ void Reply::deserialize(std::istringstream& s) {
     s >> seq;
     s >> senderId;
     s >> reply;
-    s >> timestamp;
     s.get(); // discard the delimiter after reply.
     digest.Unserialize(s); // 256 bits = 32 bytes
     size_t sigSize;
