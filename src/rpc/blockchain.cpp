@@ -26,6 +26,7 @@
 #include <hash.h>
 #include <validationinterface.h>
 #include <warnings.h>
+#include <snapshot/snapshot.h>
 
 #include <stdint.h>
 
@@ -1613,6 +1614,21 @@ UniValue savemempool(const JSONRPCRequest& request)
     return NullUniValue;
 }
 
+UniValue takesnapshot(const JSONRPCRequest& request)
+{
+    if (request.fHelp || request.params.size() != 0) {
+        throw std::runtime_error(
+            "takesnapshot\n"
+            "\ntake a snapshot of the current chainstate.\n"
+            "\nExamples:\n"
+            + HelpExampleCli("takesnapshot", "")
+            + HelpExampleRpc("takesnapshot", "")
+        );
+    }
+    psnapshot->initialLoad();
+    return psnapshot->ToString();
+}
+
 static const CRPCCommand commands[] =
 { //  category              name                      actor (function)         argNames
   //  --------------------- ------------------------  -----------------------  ----------
@@ -1637,6 +1653,7 @@ static const CRPCCommand commands[] =
     { "blockchain",         "verifychain",            &verifychain,            {"checklevel","nblocks"} },
 
     { "blockchain",         "preciousblock",          &preciousblock,          {"blockhash"} },
+    { "blockchain",         "takesnapshot",           &takesnapshot,           {} },
 
     /* Not shown in help */
     { "hidden",             "invalidateblock",        &invalidateblock,        {"blockhash"} },

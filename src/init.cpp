@@ -63,6 +63,8 @@
 #include <boost/thread.hpp>
 #include <openssl/crypto.h>
 
+#include "snapshot/snapshot.h"
+
 #if ENABLE_ZMQ
 #include <zmq/zmqnotificationinterface.h>
 #endif
@@ -247,6 +249,7 @@ void Shutdown()
         pcoinscatcher.reset();
         pcoinsdbview.reset();
         pblocktree.reset();
+	psnapshot.reset();
     }
 #ifdef ENABLE_WALLET
     StopWallets();
@@ -1426,6 +1429,7 @@ bool AppInitMain()
                 UnloadBlockIndex();
                 pcoinsTip.reset();
                 pcoinsdbview.reset();
+		psnapshot.reset();
                 pcoinscatcher.reset();
                 // new CBlockTreeDB tries to delete the existing file, which
                 // fails if it's still open from the previous loop. Close it first:
@@ -1509,6 +1513,9 @@ bool AppInitMain()
                     }
                     assert(chainActive.Tip() != nullptr);
                 }
+
+		/* create snapshot object*/
+		psnapshot.reset(new Snapshot);
 
                 if (!fReset) {
                     // Note that RewindBlockIndex MUST run even if we're about to -reindex-chainstate.
