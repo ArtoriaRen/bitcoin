@@ -239,6 +239,7 @@ extern const char *GETBLOCKTXN;
 extern const char *BLOCKTXN;
 
 extern const char *GETSNAPSHOT;
+extern const char *SNAPSHOT;
 };
 
 /* Get a vector of all valid message types (see above) */

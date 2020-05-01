@@ -15,12 +15,15 @@
 #define SNAPSHOT_H
 
 #include <unordered_map>
-#include "coins.h"
+#include <coins.h>
+#include <net_processing.h>
 
 class Snapshot{
 private:
     std::vector<COutPoint> unspent;
     std::vector<COutPoint> added;
+    uint256 merkleRoot;
+    uint32_t frequency; // in blocks
     // TODO: add a hasher in the template list.
     std::unordered_map<COutPoint, Coin, SaltedOutpointHasher> spent;
 public:
@@ -37,7 +40,7 @@ public:
     
     std::string ToString() const;
 
-    // serialization 
+    /* serialization */
 };
 
 extern std::unique_ptr<Snapshot> psnapshot;

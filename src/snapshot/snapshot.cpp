@@ -8,10 +8,29 @@
 #include <validation.h>
 #include <consensus/merkle.h>
 #include <txdb.h>
+#include <hash.h>
+#include <serialize.h>
+
+static void hashCoin(uint256& result, COutPoint key, Coin& coin){
+    std::stringstream ss;
+    key.Serialize(ss);
+    std::string key_str(ss.str());
+    std::cout << __func__ << "key str = " << key_str << std::endl;
+    coin.Serialize(ss);
+    std::string coin_str(ss.str());
+    std::cout << __func__ << "coin str = " << coin_str << std::endl;
+    CHash256().Write((const unsigned char*)&key_str, sizeof(key_str.size()))
+	    .Write((const unsigned char*)&coin_str, sizeof(coin_str.size()))
+	    .Finalize((unsigned char*)&result);
+}
 
 Snapshot::Snapshot() {
     unspent.reserve(pcoinsTip->GetCacheSize());
+/*default is take one snapshot per 10 blocks. In reality, this will cause too
+ * much overhead. Probably 1000 ~ 10000 is a good value. */
+    frequency = 10; 
 }
+
 void Snapshot::initialLoad() {
     std::unique_ptr<CCoinsViewCursor> pcursor(pcoinsdbview->Cursor());
     assert(pcursor);
@@ -49,9 +68,17 @@ uint256 Snapshot::takeSnapshot() {
     std::vector<uint256> leaves;
     leaves.reserve(unspent.size());
     for (uint i = 0; i < unspent.size(); i++) {
-	leaves.push_back(SerializeHash(unspent[i]));
+	COutPoint key = unspent[i];
+        Coin coin;
+        bool found = pcoinsTip->GetCoin(key, coin);
+	/* unspent coins must exist */
+	assert(found);
+	uint256 hash;
+	hashCoin(hash, key, coin);
+	leaves.push_back(hash);
     }
-    return  ComputeMerkleRoot(leaves, NULL);
+    merkleRoot = ComputeMerkleRoot(leaves, NULL); 
+    return merkleRoot;
 }
 
 void Snapshot::addOutPoint(COutPoint op){
@@ -69,17 +96,19 @@ void Snapshot::spendOutPoint(const COutPoint op){
 
 std::string Snapshot::ToString() const
 {
-    std::string ret("unspent = \n");
+    std::string ret("merkleroot = ");
+    ret.append(merkleRoot.GetHex());
+    ret.append("\nunspent = ");
     for(uint i = 0; i < unspent.size(); i++) {
 	ret.append(unspent[i].ToString());
 	ret.append(", ");
     }
-    ret.append("\nadded = \n");
+    ret.append("\nadded = ");
     for(uint i = 0; i < added.size(); i++) {
 	ret.append(added[i].ToString());
 	ret.append(", ");
     }
-    ret.append("\nspent = \n");
+    ret.append("\nspent = ");
     auto it = spent.begin();
     while(it != spent.end()) {
 	ret.append(it->first.ToString());

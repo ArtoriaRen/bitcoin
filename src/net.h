@@ -226,6 +226,8 @@ public:
         post();
     };
 
+    CNode* getFirstNode() const;
+
     // Addrman functions
     size_t GetAddressCount() const;
     void SetServices(const CService &addr, ServiceFlags nServices);

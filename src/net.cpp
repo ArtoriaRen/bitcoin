@@ -2460,6 +2460,16 @@ CConnman::~CConnman()
     Stop();
 }
 
+CNode* CConnman::getFirstNode() const
+{
+    if (vNodes.empty())
+    {
+	std::cout << __func__ << "no peers" << std::endl;
+	return nullptr;
+    }
+    return vNodes[0];
+}
+
 size_t CConnman::GetAddressCount() const
 {
     return addrman.size();

@@ -1629,6 +1629,21 @@ UniValue takesnapshot(const JSONRPCRequest& request)
     return psnapshot->ToString();
 }
 
+UniValue fetchsnapshot(const JSONRPCRequest& request)
+{
+    if (request.fHelp || request.params.size() != 0) {
+        throw std::runtime_error(
+            "takesnapshot\n"
+            "\ntake a snapshot of the current chainstate.\n"
+            "\nExamples:\n"
+            + HelpExampleCli("fetchsnapshot", "")
+            + HelpExampleRpc("fetchsnapshot", "")
+        );
+    }
+    
+    return "done";
+}
+
 static const CRPCCommand commands[] =
 { //  category              name                      actor (function)         argNames
   //  --------------------- ------------------------  -----------------------  ----------

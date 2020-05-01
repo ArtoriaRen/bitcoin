@@ -29,6 +29,7 @@
 #include <util.h>
 #include <utilmoneystr.h>
 #include <utilstrencodings.h>
+#include <snapshot/snapshot.h>
 
 #if defined(NDEBUG)
 # error "Bitcoin cannot be compiled without assertions."
@@ -1935,6 +1936,22 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         ProcessGetData(pfrom, chainparams.GetConsensus(), connman, interruptMsgProc);
     }
 
+    else if (strCommand == NetMsgType::GETSNAPSHOT)
+    {
+        connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::SNAPSHOT, psnapshot->getSnapshot()));
+    }
+
+    else if (strCommand == NetMsgType::SNAPSHOT)
+    {
+	/* sort all the <outpoint, coin> pair */
+	/* build a merkle tree with the pairs */
+	/* check if the merkle root is the same as the last snapshot*/
+
+
+	/* build a merkle tree*/
+	/* add all coins to coincache by calling AddCoins (check if we have to set coinEntry as dirty manually). */
+	/* initialize our snapshot data ( should do this from Cache since the disk is empty). */
+    }
 
     else if (strCommand == NetMsgType::GETBLOCKS)
     {
@@ -3155,6 +3172,14 @@ public:
         return mp->CompareDepthAndScore(*b, *a);
     }
 };
+
+void PeerLogicValidation::fetchSnapshot() {
+    CNode* firstNode = connman->getFirstNode();
+    if(firstNode == nullptr)
+	return;
+    const CNetMsgMaker msgMaker(firstNode->GetSendVersion());
+    connman->PushMessage(firstNode, msgMaker.Make(NetMsgType::GETSNAPSHOT));
+}
 
 bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptMsgProc)
 {

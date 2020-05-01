@@ -59,12 +59,15 @@ public:
     void Serialize(Stream &s) const {
         std::vector<unsigned char> compr;
         if (Compress(compr)) {
-            s << CFlatData(compr);
+            //s << CFlatData(compr);
+            CFlatData(compr).Serialize(s);
             return;
         }
         unsigned int nSize = script.size() + nSpecialScripts;
-        s << VARINT(nSize);
-        s << CFlatData(script);
+        //s << VARINT(nSize);
+        VARINT(nSize).Serialize(s);
+        //s << CFlatData(script);
+        CFlatData(compr).Serialize(s);
     }
 
     template<typename Stream>
