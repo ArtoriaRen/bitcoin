@@ -1625,11 +1625,11 @@ UniValue takesnapshot(const JSONRPCRequest& request)
             + HelpExampleRpc("takesnapshot", "")
         );
     }
-    psnapshot->initialLoad();
+    psnapshot->takeSnapshot();
     return psnapshot->ToString();
 }
 
-UniValue fetchsnapshot(const JSONRPCRequest& request)
+UniValue printsnapshot(const JSONRPCRequest& request)
 {
     if (request.fHelp || request.params.size() != 0) {
         throw std::runtime_error(
@@ -1640,8 +1640,7 @@ UniValue fetchsnapshot(const JSONRPCRequest& request)
             + HelpExampleRpc("fetchsnapshot", "")
         );
     }
-    
-    return "done";
+    return psnapshot->ToString();
 }
 
 static const CRPCCommand commands[] =
@@ -1669,6 +1668,7 @@ static const CRPCCommand commands[] =
 
     { "blockchain",         "preciousblock",          &preciousblock,          {"blockhash"} },
     { "blockchain",         "takesnapshot",           &takesnapshot,           {} },
+    { "blockchain",         "printsnapshot",           &printsnapshot,           {} },
 
     /* Not shown in help */
     { "hidden",             "invalidateblock",        &invalidateblock,        {"blockhash"} },

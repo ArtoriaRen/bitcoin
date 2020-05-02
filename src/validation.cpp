@@ -47,6 +47,8 @@
 #include <boost/algorithm/string/join.hpp>
 #include <boost/thread.hpp>
 
+#include <snapshot/snapshot.h>
+
 #if defined(NDEBUG)
 # error "Bitcoin cannot be compiled without assertions."
 #endif
@@ -1293,6 +1295,8 @@ void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txund
         txundo.vprevout.reserve(tx.vin.size());
         for (const CTxIn &txin : tx.vin) {
             txundo.vprevout.emplace_back();
+	    /* add the coin to snapshot spent map*/
+	    psnapshot->spendCoin(txin.prevout);
             bool is_spent = inputs.SpendCoin(txin.prevout, &txundo.vprevout.back());
             assert(is_spent);
         }
@@ -2349,6 +2353,7 @@ bool CChainState::ConnectTip(CValidationState& state, const CChainParams& chainp
         }
         nTime3 = GetTimeMicros(); nTimeConnectTotal += nTime3 - nTime2;
         LogPrint(BCLog::BENCH, "  - Connect total: %.2fms [%.2fs (%.2fms/blk)]\n", (nTime3 - nTime2) * MILLI, nTimeConnectTotal * MICRO, nTimeConnectTotal * MILLI / nBlocksTotal);
+	psnapshot->addCoins(view.getCachedCoins());
         bool flushed = view.Flush();
         assert(flushed);
     }

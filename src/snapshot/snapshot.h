@@ -22,21 +22,28 @@ class Snapshot{
 private:
     std::vector<COutPoint> unspent;
     std::vector<COutPoint> added;
-    uint256 merkleRoot;
-    uint32_t frequency; // in blocks
-    // TODO: add a hasher in the template list.
     std::unordered_map<COutPoint, Coin, SaltedOutpointHasher> spent;
 public:
-    /* load all OutPoints into unspent set. But how do I get all OutPoints? Some 
-     * of them are on disk and not in CoinsViewCache. Is there a way to read all
-     * of them from disk files?
-     */
+    uint256 lastSnapshotMerkleRoot;
+    uint32_t frequency; // in blocks
+
     Snapshot();
+
+    /* feed unspent vector with all outpoints in chainstate database.
+     * Strictly speaking, all the unspent, added, spent vectors to disk
+     * because otherwise we lose which coins are newly added since the 
+     * last snapshot, especially permantly lose the those coins spent 
+     * since the last snapshot. However, we only do in-memory test in
+     * our prototype: a snapshot is build after booting up. And this 
+     * snapshot becomes the latest snapshot, so the added and spent
+     * vector are expected to be empty.
+     */
     void initialLoad();
     std::vector<COutPoint> getSnapshot() const;
     uint256 takeSnapshot();
-    void addOutPoint(COutPoint op);
-    void spendOutPoint(const COutPoint op);
+    void addCoins(const CCoinsMap& mapCoins);
+    void spendCoin(const COutPoint& op);
+    void receiveSnapshot(CDataStream& vRecv);
     
     std::string ToString() const;
 

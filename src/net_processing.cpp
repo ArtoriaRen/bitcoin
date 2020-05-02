@@ -1943,14 +1943,18 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
     else if (strCommand == NetMsgType::SNAPSHOT)
     {
-	/* sort all the <outpoint, coin> pair */
-	/* build a merkle tree with the pairs */
+        psnapshot->receiveSnapshot(vRecv);
+	std::cout << psnapshot->ToString() << std::endl;
+
+	/* add all coins to coincache by calling AddCoins (check if we have to set coinEntry as dirty manually). */
+
+	/* initialize our snapshot data ( should do this from Cache since the disk is empty). */
+
+	/* take snapshot*/
+	
 	/* check if the merkle root is the same as the last snapshot*/
 
 
-	/* build a merkle tree*/
-	/* add all coins to coincache by calling AddCoins (check if we have to set coinEntry as dirty manually). */
-	/* initialize our snapshot data ( should do this from Cache since the disk is empty). */
     }
 
     else if (strCommand == NetMsgType::GETBLOCKS)

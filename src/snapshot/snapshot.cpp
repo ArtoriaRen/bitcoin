@@ -10,17 +10,17 @@
 #include <txdb.h>
 #include <hash.h>
 #include <serialize.h>
+#include <vector>
 
 static void hashCoin(uint256& result, COutPoint key, Coin& coin){
     std::stringstream ss;
     key.Serialize(ss);
     std::string key_str(ss.str());
-    std::cout << __func__ << "key str = " << key_str << std::endl;
+    ss.str("");
     coin.Serialize(ss);
     std::string coin_str(ss.str());
-    std::cout << __func__ << "coin str = " << coin_str << std::endl;
-    CHash256().Write((const unsigned char*)&key_str, sizeof(key_str.size()))
-	    .Write((const unsigned char*)&coin_str, sizeof(coin_str.size()))
+    CHash256().Write((const unsigned char*)key_str.c_str(), sizeof(key_str.size()))
+	    .Write((const unsigned char*)coin_str.c_str(), sizeof(coin_str.size()))
 	    .Finalize((unsigned char*)&result);
 }
 
@@ -48,6 +48,7 @@ void Snapshot::initialLoad() {
     }
 }
 
+/* TODO: send coins over as well. currently only send outpoints. */
 std::vector<COutPoint> Snapshot::getSnapshot() const {
     std::vector<COutPoint> snapshot(unspent);
     auto iter = spent.begin();
@@ -77,27 +78,58 @@ uint256 Snapshot::takeSnapshot() {
 	hashCoin(hash, key, coin);
 	leaves.push_back(hash);
     }
-    merkleRoot = ComputeMerkleRoot(leaves, NULL); 
-    return merkleRoot;
+    lastSnapshotMerkleRoot = ComputeMerkleRoot(leaves, NULL); 
+    return lastSnapshotMerkleRoot;
 }
 
-void Snapshot::addOutPoint(COutPoint op){
-    added.push_back(op);
+void Snapshot::addCoins(const CCoinsMap& mapCoins){
+    for (CCoinsMap::const_iterator it = mapCoins.begin(); it != mapCoins.end(); it++) {
+        // Ignore non-dirty entries.
+        if (!(it->second.flags & CCoinsCacheEntry::DIRTY)) {
+            continue;
+        }
+        std::vector<COutPoint>::iterator itUs = std::find(unspent.begin(), unspent.end(), it->first);
+        if (itUs == unspent.end()) {
+            // The unspent vector does not have an entry, while the mapCoins does
+            // We can ignore it if it's both FRESH and pruned (spent) in the mapCoins
+            if (!(it->second.flags & CCoinsCacheEntry::FRESH && it->second.coin.IsSpent())) {
+                // Otherwise we will need to create it in the added vector
+		added.emplace_back(it->first.hash, it->first.n);
+            }
+        } else {
+            // Found the entry in the parent cache
+            if (it->second.coin.IsSpent()) {
+		// move it from the unspent vector to the spent map
+		spent.insert(std::make_pair(std::move(*itUs), it->second.coin));
+		unspent.erase(itUs);
+            } else {
+                // A normal modification.
+		/* when will this happen? Why a coin is modified? */
+            }
+        }
+    }
 }
 
-void Snapshot::spendOutPoint(const COutPoint op){
+void Snapshot::spendCoin(const COutPoint& op){
     auto it = std::find(unspent.begin(), unspent.end(), op);
     assert(it != unspent.end());
-    unspent.erase(it);
     Coin coin;
-    pcoinsTip->GetCoin(op, coin);
-    spent.insert(std::make_pair(op, coin));
+    pcoinsTip->GetCoin(*it, coin);
+    spent.insert(std::make_pair(std::move(*it), coin));
+    unspent.erase(it);
+}
+
+void Snapshot::receiveSnapshot(CDataStream& vRecv) {
+    if(unspent.empty())
+	vRecv >> unspent;
 }
 
 std::string Snapshot::ToString() const
 {
-    std::string ret("merkleroot = ");
-    ret.append(merkleRoot.GetHex());
+    std::string ret("lastSnapshotMerkleRoot = ");
+    ret.append(lastSnapshotMerkleRoot.GetHex());
+    ret.append("\nunspent.size() = ");
+    ret.append(std::to_string(unspent.size()));
     ret.append("\nunspent = ");
     for(uint i = 0; i < unspent.size(); i++) {
 	ret.append(unspent[i].ToString());

@@ -1515,7 +1515,9 @@ bool AppInitMain()
                 }
 
 		/* create snapshot object*/
-		psnapshot.reset(new Snapshot);
+		psnapshot.reset(new Snapshot());
+		psnapshot->initialLoad(); // load from pcoinsdbview
+
 
                 if (!fReset) {
                     // Note that RewindBlockIndex MUST run even if we're about to -reindex-chainstate.
