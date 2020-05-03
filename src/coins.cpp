@@ -70,13 +70,27 @@ void CCoinsViewCache::AddCoin(const COutPoint &outpoint, Coin&& coin, bool possi
     bool inserted;
     std::tie(it, inserted) = cacheCoins.emplace(std::piecewise_construct, std::forward_as_tuple(outpoint), std::tuple<>());
     bool fresh = false;
+    /* An entry with the same outpoint as key exists. Deduct the memory usage
+     * here so that when we add usage later, we do not double-count the memory
+     * size.
+     */
     if (!inserted) {
         cachedCoinsUsage -= it->second.coin.DynamicMemoryUsage();
     }
+
+    /* if possible_overwrite is true, there must exist an entry with the same 
+     * outpoint in the coinsMap of the current view, there is no need to change
+     * the FRESH flag since it has been set when the entry if first created. 
+     * It is also possible that the coin is coinbase output. 
+     */
+    /* we are not sure if coin overwrites any existing entry with the same outpoint. */
     if (!possible_overwrite) {
         if (!it->second.coin.IsSpent()) {
             throw std::logic_error("Adding new coin that replaces non-pruned entry");
         }
+	/* The coin has been spent, or the view does not have this outpoint. 
+	 * In the first case, unless the entry is dirty, we can mark it as not 
+	 * exist in the parent. */
         fresh = !(it->second.flags & CCoinsCacheEntry::DIRTY);
     }
     it->second.coin = std::move(coin);

@@ -41,8 +41,8 @@ public:
     void initialLoad();
     std::vector<COutPoint> getSnapshot() const;
     uint256 takeSnapshot();
-    void addCoins(const CCoinsMap& mapCoins);
-    void spendCoin(const COutPoint& op);
+    void updateCoins(const CCoinsMap& mapCoins);
+//    void spendCoin(const COutPoint& op);
     void receiveSnapshot(CDataStream& vRecv);
     
     std::string ToString() const;

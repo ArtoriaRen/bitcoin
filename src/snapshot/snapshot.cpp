@@ -26,15 +26,15 @@ static void hashCoin(uint256& result, COutPoint key, Coin& coin){
 
 Snapshot::Snapshot() {
     unspent.reserve(pcoinsTip->GetCacheSize());
-/*default is take one snapshot per 10 blocks. In reality, this will cause too
- * much overhead. Probably 1000 ~ 10000 is a good value. */
+    /*default is take one snapshot per 10 blocks. In reality, this will cause too
+     * much overhead. Probably 1000 ~ 10000 is a good value. */
     frequency = 10; 
 }
 
 void Snapshot::initialLoad() {
     std::unique_ptr<CCoinsViewCursor> pcursor(pcoinsdbview->Cursor());
     assert(pcursor);
-
+    
     // iterate chain state database
     while (pcursor->Valid()) {
         boost::this_thread::interruption_point();
@@ -82,42 +82,116 @@ uint256 Snapshot::takeSnapshot() {
     return lastSnapshotMerkleRoot;
 }
 
-void Snapshot::addCoins(const CCoinsMap& mapCoins){
+void Snapshot::updateCoins(const CCoinsMap& mapCoins){
     for (CCoinsMap::const_iterator it = mapCoins.begin(); it != mapCoins.end(); it++) {
         // Ignore non-dirty entries.
         if (!(it->second.flags & CCoinsCacheEntry::DIRTY)) {
             continue;
         }
+
+	/* dirty, fresh and spent. No need to add it to the added set. */
+	/* why is it dirty? */
+        if (it->second.flags & CCoinsCacheEntry::FRESH && it->second.coin.IsSpent()) {
+	    continue;
+	}
+	
+	/* dirty, fresh, but not spent yet */
+	if (it->second.flags & CCoinsCacheEntry::FRESH) {
+	    added.emplace_back(it->first.hash, it->first.n);
+	    continue;
+	}
+
+	bool isCoinInLastSnapshot = false;
         std::vector<COutPoint>::iterator itUs = std::find(unspent.begin(), unspent.end(), it->first);
-        if (itUs == unspent.end()) {
-            // The unspent vector does not have an entry, while the mapCoins does
-            // We can ignore it if it's both FRESH and pruned (spent) in the mapCoins
-            if (!(it->second.flags & CCoinsCacheEntry::FRESH && it->second.coin.IsSpent())) {
-                // Otherwise we will need to create it in the added vector
-		added.emplace_back(it->first.hash, it->first.n);
-            }
-        } else {
-            // Found the entry in the parent cache
-            if (it->second.coin.IsSpent()) {
-		// move it from the unspent vector to the spent map
-		spent.insert(std::make_pair(std::move(*itUs), it->second.coin));
+	if (itUs != unspent.end()){
+	    isCoinInLastSnapshot = true;
+	} else {
+	    itUs = std::find(added.begin(), added.end(), it->first);
+	}
+
+
+	/* dirty, not fresh, spent. */
+        if (it->second.coin.IsSpent()) {
+	    if (isCoinInLastSnapshot) {
+		/* move it from the unspent vector to the spent map. Note that
+		 * we must copy the original coin from pcoinsTip because pcoinsTip
+		 * is updated after snapshot and has the original coin.
+		 * Note that a spent coin will not be moved to the spent set more
+		 * than once because we erase it in the unspent set once it is 
+		 * spent the first time.
+		 */
+		Coin coin;
+		pcoinsTip->GetCoin(*itUs, coin);
+		spent.insert(std::make_pair(std::move(*itUs), coin));
 		unspent.erase(itUs);
-            } else {
-                // A normal modification.
-		/* when will this happen? Why a coin is modified? */
-            }
-        }
+	    } else {
+		added.erase(itUs);
+	    }
+	    continue;
+	}
+
+	/* dirty, not fresh, not spent */
+	/* when will this happen? */
+        if (isCoinInLastSnapshot) {
+		/* move it from the unspent vector to the spent map. Note that
+		 * we must copy the original coin from pcoinsTip because pcoinsTip
+		 * is updated after snapshot and has the original coin. */
+		Coin coin;
+		pcoinsTip->GetCoin(*itUs, coin);
+		spent.insert(std::make_pair(std::move(*itUs), coin));
+		unspent.erase(itUs);
+	}
+	/* record the change in the added set (the current code will allow one 
+	 * coin to be insert more than once if it is changed more than once.)*/
+	added.emplace_back(it->first.hash, it->first.n);
+
+//        std::vector<COutPoint>::iterator itUs = std::find(unspent.begin(), unspent.end(), it->first);
+//        if (itUs == unspent.end()) {
+//            // The unspent vector does not have an entry, while the mapCoins does
+//            // We can ignore it if it's both FRESH and pruned (spent) in the mapCoins
+//            if (!(it->second.flags & CCoinsCacheEntry::FRESH && it->second.coin.IsSpent())) {
+//                // Otherwise we will need to create it in the added vector
+//		/* The entry may have the same outpoint as some entry in the
+//		 * unspent dataset. Should let this entry overwrite the entry 
+//		 * in the unspent dataset when merge them when taking snapshot.
+//		 * Will entry als overwrite another entry in the added set?
+//		 */
+//		added.emplace_back(it->first.hash, it->first.n);
+//            } 
+//        } else {
+//            // Found the entry in the parent cache
+//            if (it->second.coin.IsSpent()) {
+//		// move it from the unspent vector to the spent map
+//		spent.insert(std::make_pair(std::move(*itUs), it->second.coin));
+//		unspent.erase(itUs);
+//            } else {
+//                // A normal modification.
+//		/* when will this happen? Why a coin is modified? */
+//            }
+//        }
+
+	
     }
 }
 
-void Snapshot::spendCoin(const COutPoint& op){
-    auto it = std::find(unspent.begin(), unspent.end(), op);
-    assert(it != unspent.end());
-    Coin coin;
-    pcoinsTip->GetCoin(*it, coin);
-    spent.insert(std::make_pair(std::move(*it), coin));
-    unspent.erase(it);
-}
+//void Snapshot::spendCoin(const COutPoint& op){
+//    std::cout << __func__ << ": " << op.ToString() << std::endl;
+//    auto it = std::find(unspent.begin(), unspent.end(), op);
+//    if(it != unspent.end()){
+//	Coin coin;
+//	pcoinsTip->GetCoin(*it, coin);
+//	spent.insert(std::make_pair(std::move(*it), coin));
+//	unspent.erase(it);
+//	return;
+//    }
+//    /* The coin is not in the unspent set, it must be in the added set. 
+//     * Then there is not need to move it to the spent set because it is not
+//     * in the last snapshot.
+//     */
+//    auto itAdded = std::find(added.begin(), added.end(), op);
+//    assert (itAdded != added.end());
+//    added.erase(itAdded);
+//}
 
 void Snapshot::receiveSnapshot(CDataStream& vRecv) {
     if(unspent.empty())
@@ -128,6 +202,7 @@ std::string Snapshot::ToString() const
 {
     std::string ret("lastSnapshotMerkleRoot = ");
     ret.append(lastSnapshotMerkleRoot.GetHex());
+
     ret.append("\nunspent.size() = ");
     ret.append(std::to_string(unspent.size()));
     ret.append("\nunspent = ");
@@ -135,11 +210,17 @@ std::string Snapshot::ToString() const
 	ret.append(unspent[i].ToString());
 	ret.append(", ");
     }
+
+    ret.append("\nadded.size() = ");
+    ret.append(std::to_string(added.size()));
     ret.append("\nadded = ");
     for(uint i = 0; i < added.size(); i++) {
 	ret.append(added[i].ToString());
 	ret.append(", ");
     }
+
+    ret.append("\nspent.size() = ");
+    ret.append(std::to_string(spent.size()));
     ret.append("\nspent = ");
     auto it = spent.begin();
     while(it != spent.end()) {
