@@ -17,6 +17,37 @@
 #include <unordered_map>
 #include <coins.h>
 #include <net_processing.h>
+#include <chain.h>
+
+//class OutpointCoinPair{
+//public:
+//    COutPoint op;
+//    Coin coin;
+//    template<typename Stream>
+//    void Serialize(Stream &s) const {
+//	op.Serialize(s);
+//	coin.Serialize(s);
+//    }
+//    template<typename Stream>
+//    void Unserialize(Stream &s) {
+//	op.Unserialize(s);
+//	coin.Unserialize(s);
+//    }
+//};
+
+class BlockHeaderAndHeight{
+public:
+    CBlockHeader header;
+    int height;
+    
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        READWRITE(header);
+        READWRITE(height);
+    }
+};
 
 class Snapshot{
 private:
@@ -24,6 +55,7 @@ private:
     std::vector<COutPoint> added;
     std::unordered_map<COutPoint, Coin, SaltedOutpointHasher> spent;
 public:
+    CBlockIndex blkinfo;
     uint256 lastSnapshotMerkleRoot;
     uint32_t frequency; // in blocks
 

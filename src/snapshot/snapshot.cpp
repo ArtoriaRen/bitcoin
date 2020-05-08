@@ -51,9 +51,15 @@ void Snapshot::initialLoad() {
 /* TODO: send coins over as well. currently only send outpoints. */
 std::vector<COutPoint> Snapshot::getSnapshot() const {
     std::vector<COutPoint> snapshot(unspent);
+    //std::vector<OutpointCoinPair> snapshot;
+    // snapshot.reserve(unspent.size() + spent.size());
+    //for (COutPoint o: unspent){
+    //   TODO emplace op, coin
+    //}
     auto iter = spent.begin();
     while (iter != spent.end()) {
 	snapshot.push_back(iter->first);
+	//snapshot.emplace_back(iter->first, iter->second);
 	iter++;
     }
     return snapshot;
@@ -79,6 +85,10 @@ uint256 Snapshot::takeSnapshot() {
 	leaves.push_back(hash);
     }
     lastSnapshotMerkleRoot = ComputeMerkleRoot(leaves, NULL); 
+    // note down which block encloses the snapshot
+    if (chainActive.Tip()){
+	 blkinfo = *chainActive.Tip();
+    }
     return lastSnapshotMerkleRoot;
 }
 
@@ -132,6 +142,8 @@ void Snapshot::updateCoins(const CCoinsMap& mapCoins){
 
 	/* dirty, not fresh, not spent */
 	/* when will this happen? */
+	std::cout << "dirty, not fresh, not spent coin = " << it->first.ToString()
+		<< std::endl;
         if (isCoinInLastSnapshot) {
 		/* move it from the unspent vector to the spent map. Note that
 		 * we must copy the original coin from pcoinsTip because pcoinsTip
@@ -200,7 +212,16 @@ void Snapshot::receiveSnapshot(CDataStream& vRecv) {
 
 std::string Snapshot::ToString() const
 {
-    std::string ret("lastSnapshotMerkleRoot = ");
+	std::string ret;
+    if (blkinfo.phashBlock != nullptr) {
+		ret.append("snapshot block = ");
+		ret.append(blkinfo.phashBlock->GetHex());
+		ret.append("\nheight = ");
+		ret.append(std::to_string(blkinfo.nHeight));
+		ret.append("\n");
+    } 
+
+    ret.append("lastsnapshotmerkleroot = ");
     ret.append(lastSnapshotMerkleRoot.GetHex());
 
     ret.append("\nunspent.size() = ");

@@ -484,9 +484,14 @@ void FindNextBlocksToDownload(NodeId nodeid, unsigned int count, std::vector<con
         state->pindexLastCommonBlock = chainActive[std::min(state->pindexBestKnownBlock->nHeight, chainActive.Height())];
     }
 
-    // If the peer reorganized, our previous pindexLastCommonBlock may not be an ancestor
-    // of its current tip anymore. Go back enough to fix that.
-    state->pindexLastCommonBlock = LastCommonAncestor(state->pindexLastCommonBlock, state->pindexBestKnownBlock);
+    /* if pindexLastCommonBlock is the snapshot block, it must be common, so no need
+     * to walk back more blocks. 
+     */
+    if(state->pindexLastCommonBlock != &psnapshot->blkinfo) {
+        // If the peer reorganized, our previous pindexLastCommonBlock may not be an ancestor
+        // of its current tip anymore. Go back enough to fix that.
+        state->pindexLastCommonBlock = LastCommonAncestor(state->pindexLastCommonBlock, state->pindexBestKnownBlock);
+    }
     if (state->pindexLastCommonBlock == state->pindexBestKnownBlock)
         return;
 
@@ -1299,6 +1304,7 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, const std::ve
         //   nUnconnectingHeaders gets reset back to 0.
         if (mapBlockIndex.find(headers[0].hashPrevBlock) == mapBlockIndex.end() && nCount < MAX_BLOCKS_TO_ANNOUNCE) {
             nodestate->nUnconnectingHeaders++;
+	    std::cout << "line 1302 : pindexBestHeader = " << pindexBestHeader->phashBlock->GetHex() << std::endl;
             connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GETHEADERS, chainActive.GetLocator(pindexBestHeader), uint256()));
             LogPrint(BCLog::NET, "received header %s: missing prev block %s, sending getheaders (%d) to end (peer=%d, nUnconnectingHeaders=%d)\n",
                     headers[0].GetHash().ToString(),
@@ -1888,13 +1894,15 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             }
 
             if (inv.type == MSG_BLOCK) {
+		std::cout << __func__ << ": block inv = " << inv.hash.GetHex() << std::endl;
                 UpdateBlockAvailability(pfrom->GetId(), inv.hash);
                 if (!fAlreadyHave && !fImporting && !fReindex && !mapBlocksInFlight.count(inv.hash)) {
                     // We used to request the full block here, but since headers-announcements are now the
                     // primary method of announcement on the network, and since, in the case that a node
                     // fell back to inv we probably have a reorg which we should get the headers for first,
                     // we now only provide a getheaders response here. When we receive the headers, we will
-                    // then ask for the blocks we need.
+                    // then ask for the blocks we need.;
+		    std::cout << "getheaders pindexBestHeader = " << pindexBestHeader->ToString() << std::endl;
                     connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GETHEADERS, chainActive.GetLocator(pindexBestHeader), inv.hash));
                     LogPrint(BCLog::NET, "getheaders (%d) %s to peer=%d\n", pindexBestHeader->nHeight, inv.hash.ToString(), pfrom->GetId());
                 }
@@ -1938,7 +1946,35 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
     else if (strCommand == NetMsgType::GETSNAPSHOT)
     {
+	/* send block header of the last snapshot block.*/
+        BlockHeaderAndHeight headerNheight;
+	headerNheight.header = psnapshot->blkinfo.GetBlockHeader();
+        headerNheight.height = psnapshot->blkinfo.nHeight;
+        connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::SNAPSHOT_BLK_HEADER, headerNheight));
+	/* send snapshot */
         connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::SNAPSHOT, psnapshot->getSnapshot()));
+    }
+
+    else if (strCommand == NetMsgType::SNAPSHOT_BLK_HEADER){
+        BlockHeaderAndHeight headerNheight;
+	vRecv >> headerNheight;
+	psnapshot->blkinfo = static_cast<CBlockIndex>(headerNheight.header);
+	psnapshot->blkinfo.phashBlock = new uint256(headerNheight.header.GetHash());
+	psnapshot->blkinfo.nHeight = headerNheight.height;
+	/* set block index fields accordingly to pass CheckBlockIndex() */
+        //psnapshot->blkinfo.nTx = 1;
+	// nChainTx != 0 is used to signal that all parent blocks have been processed
+	// (but may have been pruned).
+        psnapshot->blkinfo.nChainTx = 1;
+
+	/* set the state of global variables to be as if we have already had a chain
+	 * up to the snapshot block. 
+	 */
+        pindexBestHeader = &(psnapshot->blkinfo);
+	//std::cout << "--- snapshot hdr hash = " << pindexBestHeader->phashBlock->GetHex() 
+		//<< std::endl;
+	chainActive.SetTipWithoutSync(&(psnapshot->blkinfo));
+        mapBlockIndex.emplace(*psnapshot->blkinfo.phashBlock, &psnapshot->blkinfo);
     }
 
     else if (strCommand == NetMsgType::SNAPSHOT)
@@ -3291,7 +3327,14 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
                     pindexStart = pindexStart->pprev;
                 LogPrint(BCLog::NET, "initial getheaders (%d) to peer=%d (startheight:%d)\n", pindexStart->nHeight, pto->GetId(), pto->nStartingHeight);
                 //connman->PushMessage(pto, msgMaker.Make(NetMsgType::GETHEADERS, chainActive.GetLocator(pindexStart), uint256()));
-                connman->PushMessage(pto, msgMaker.Make(NetMsgType::GETSNAPSHOT, chainActive.GetLocator(pindexStart), uint256()));
+
+		/* Only ask for snapshot if we are a new peer.*/
+		if (chainActive.Height() < 1) {
+		    /* we have no more block other than the genesis, thus a new peer,
+		     * ask for system state from peer.
+		     */
+                    connman->PushMessage(pto, msgMaker.Make(NetMsgType::GETSNAPSHOT, chainActive.GetLocator(pindexStart), uint256()));
+		}
             }
         }
 
@@ -3410,6 +3453,7 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
                         LogPrint(BCLog::NET, "%s: sending header %s to peer=%d\n", __func__,
                                 vHeaders.front().GetHash().ToString(), pto->GetId());
                     }
+		    std::cout << __func__ << "send header = " << vHeaders[0].ToString() << std::endl;
                     connman->PushMessage(pto, msgMaker.Make(NetMsgType::HEADERS, vHeaders));
                     state.pindexBestHeaderSent = pBestIndex;
                 } else

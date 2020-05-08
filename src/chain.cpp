@@ -4,6 +4,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <chain.h>
+#include <snapshot/snapshot.h>
 
 /**
  * CChain implementation
@@ -17,6 +18,17 @@ void CChain::SetTip(CBlockIndex *pindex) {
     while (pindex && vChain[pindex->nHeight] != pindex) {
         vChain[pindex->nHeight] = pindex;
         pindex = pindex->pprev;
+    }
+}
+
+void CChain::SetTipWithoutSync(CBlockIndex *pindex) {
+    if (pindex == nullptr) {
+        vChain.clear();
+        return;
+    }
+    vChain.resize(pindex->nHeight + 1);
+    if (pindex && vChain[pindex->nHeight] != pindex) {
+        vChain[pindex->nHeight] = pindex;
     }
 }
 
@@ -114,8 +126,14 @@ CBlockIndex* CBlockIndex::GetAncestor(int height)
 
 void CBlockIndex::BuildSkip()
 {
-    if (pprev)
-        pskip = pprev->GetAncestor(GetSkipHeight(nHeight));
+    if (pprev) {
+	int jumpToHeight = GetSkipHeight(nHeight);
+	if (psnapshot && nHeight > psnapshot->blkinfo.nHeight) {
+	    /* do not go back further than the snapshot block. */
+	    jumpToHeight  = std::max(jumpToHeight, psnapshot->blkinfo.nHeight);
+	}
+        pskip = pprev->GetAncestor(jumpToHeight);
+    }
 }
 
 arith_uint256 GetBlockProof(const CBlockIndex& block)

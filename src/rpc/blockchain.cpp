@@ -652,6 +652,8 @@ UniValue getblockhash(const JSONRPCRequest& request)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Block height out of range");
 
     CBlockIndex* pblockindex = chainActive[nHeight];
+    if (pblockindex == nullptr)
+	return std::string("Not synced block");
     return pblockindex->GetBlockHash().GetHex();
 }
 
