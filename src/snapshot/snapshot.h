@@ -19,26 +19,33 @@
 #include <net_processing.h>
 #include <chain.h>
 
-//class OutpointCoinPair{
-//public:
-//    COutPoint op;
-//    Coin coin;
-//    template<typename Stream>
-//    void Serialize(Stream &s) const {
-//	op.Serialize(s);
-//	coin.Serialize(s);
-//    }
-//    template<typename Stream>
-//    void Unserialize(Stream &s) {
-//	op.Unserialize(s);
-//	coin.Unserialize(s);
-//    }
-//};
+class OutpointCoinPair{
+public:
+    COutPoint op;
+    Coin coin;
+
+    // empty constructor
+    OutpointCoinPair();
+
+    OutpointCoinPair(COutPoint opIn, Coin coinIn);
+
+    template<typename Stream>
+    void Serialize(Stream &s) const {
+	op.Serialize(s);
+	coin.Serialize(s);
+    }
+    template<typename Stream>
+    void Unserialize(Stream &s) {
+	op.Unserialize(s);
+	coin.Unserialize(s);
+    }
+};
 
 class BlockHeaderAndHeight{
 public:
     CBlockHeader header;
     int height;
+    uint256 snapshotMerkleRoot;
     
     ADD_SERIALIZE_METHODS;
 
@@ -46,6 +53,7 @@ public:
     inline void SerializationOp(Stream& s, Operation ser_action) {
         READWRITE(header);
         READWRITE(height);
+        READWRITE(snapshotMerkleRoot);
     }
 };
 
@@ -55,7 +63,8 @@ private:
     std::vector<COutPoint> added;
     std::unordered_map<COutPoint, Coin, SaltedOutpointHasher> spent;
 public:
-    CBlockIndex blkinfo;
+    BlockHeaderAndHeight headerNheight;
+    uint256 snapshotBlockHash;
     uint256 lastSnapshotMerkleRoot;
     uint32_t frequency; // in blocks
 
@@ -71,8 +80,8 @@ public:
      * vector are expected to be empty.
      */
     void initialLoad();
-    std::vector<COutPoint> getSnapshot() const;
-    uint256 takeSnapshot();
+    std::vector<OutpointCoinPair> getSnapshot() const;
+    uint256 takeSnapshot(bool updateBlkInfo = true);
     void updateCoins(const CCoinsMap& mapCoins);
 //    void spendCoin(const COutPoint& op);
     void receiveSnapshot(CDataStream& vRecv);

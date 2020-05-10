@@ -12,6 +12,10 @@
 #include <serialize.h>
 #include <vector>
 
+OutpointCoinPair::OutpointCoinPair(){ }
+
+OutpointCoinPair::OutpointCoinPair(COutPoint opIn, Coin coinIn): op(opIn), coin(coinIn){ }
+
 static void hashCoin(uint256& result, COutPoint key, Coin& coin){
     std::stringstream ss;
     key.Serialize(ss);
@@ -49,23 +53,25 @@ void Snapshot::initialLoad() {
 }
 
 /* TODO: send coins over as well. currently only send outpoints. */
-std::vector<COutPoint> Snapshot::getSnapshot() const {
-    std::vector<COutPoint> snapshot(unspent);
-    //std::vector<OutpointCoinPair> snapshot;
-    // snapshot.reserve(unspent.size() + spent.size());
-    //for (COutPoint o: unspent){
-    //   TODO emplace op, coin
-    //}
+std::vector<OutpointCoinPair> Snapshot::getSnapshot() const {
+    std::vector<OutpointCoinPair> snapshot;
+    snapshot.reserve(unspent.size() + spent.size());
+    for (COutPoint op: unspent){
+        Coin coin;
+        bool found = pcoinsTip->GetCoin(op, coin);
+	/* unspent coins must exist */
+	assert(found);
+	snapshot.emplace_back(op, coin);
+    }
     auto iter = spent.begin();
     while (iter != spent.end()) {
-	snapshot.push_back(iter->first);
-	//snapshot.emplace_back(iter->first, iter->second);
+	snapshot.emplace_back(iter->first, iter->second);
 	iter++;
     }
     return snapshot;
 }
 
-uint256 Snapshot::takeSnapshot() {
+uint256 Snapshot::takeSnapshot(bool updateBlkInfo) {
     /* Should use lock to stop other threads reading snaphshot, but in current test,
      * we only get snapshot after we know one has been generate.*/
     unspent.insert(unspent.end(), added.begin(), added.end());
@@ -85,9 +91,16 @@ uint256 Snapshot::takeSnapshot() {
 	leaves.push_back(hash);
     }
     lastSnapshotMerkleRoot = ComputeMerkleRoot(leaves, NULL); 
-    // note down which block encloses the snapshot
-    if (chainActive.Tip()){
-	 blkinfo = *chainActive.Tip();
+    /* note down which block encloses the snapshot. We only do this if we are an
+     * old peer and is producing snapshot. For new peer using this function 
+     * calculating snapshot merkle root, there is no need to update.*/
+    if (updateBlkInfo && chainActive.Tip()){
+	headerNheight.header = chainActive.Tip()->GetBlockHeader();
+        headerNheight.height = chainActive.Tip()->nHeight;
+	headerNheight.snapshotMerkleRoot = lastSnapshotMerkleRoot;
+	snapshotBlockHash = headerNheight.header.GetHash();
+    } else if (!updateBlkInfo && chainActive.Tip()) {
+	assert(headerNheight.height == chainActive.Tip()->nHeight);
     }
     return lastSnapshotMerkleRoot;
 }
@@ -206,18 +219,37 @@ void Snapshot::updateCoins(const CCoinsMap& mapCoins){
 //}
 
 void Snapshot::receiveSnapshot(CDataStream& vRecv) {
-    if(unspent.empty())
-	vRecv >> unspent;
+    /* Step 1: update snapshot data and the coins view cache in memory */
+    std::vector<OutpointCoinPair> snapshot;
+    vRecv >> snapshot;
+    /* only a new peer ask for snapshot */
+    assert(unspent.empty());
+    for(auto p: snapshot) {
+	unspent.push_back(p.op);
+	pcoinsTip->AddCoin(p.op, std::move(p.coin), false);
+    }
+
+    /* Step 2: build the snapshot merkle root and compare it to the one received. 
+     * if they are the same, we are good to go to step 3; otherwise, either we
+     * unserialize the data wrong or the peer we contact has lied. 
+     */
+    takeSnapshot(false);
+    assert(lastSnapshotMerkleRoot == headerNheight.snapshotMerkleRoot);
+
+    /* Step 3: update the best coin in the coins view cache.
+     */
+    assert(!snapshotBlockHash.IsNull()); // snapshot block hash should have been updated in the SNAPSHOT_BLK_HEADER message
+    pcoinsTip->SetBestBlock(snapshotBlockHash);
 }
 
 std::string Snapshot::ToString() const
 {
-	std::string ret;
-    if (blkinfo.phashBlock != nullptr) {
+    std::string ret;
+    if (!snapshotBlockHash.IsNull()) {
 		ret.append("snapshot block = ");
-		ret.append(blkinfo.phashBlock->GetHex());
+		ret.append(snapshotBlockHash.GetHex());
 		ret.append("\nheight = ");
-		ret.append(std::to_string(blkinfo.nHeight));
+		ret.append(std::to_string(headerNheight.height));
 		ret.append("\n");
     } 
 

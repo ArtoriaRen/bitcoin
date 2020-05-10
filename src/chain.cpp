@@ -128,9 +128,9 @@ void CBlockIndex::BuildSkip()
 {
     if (pprev) {
 	int jumpToHeight = GetSkipHeight(nHeight);
-	if (psnapshot && nHeight > psnapshot->blkinfo.nHeight) {
+	if (psnapshot && nHeight > psnapshot->headerNheight.height) {
 	    /* do not go back further than the snapshot block. */
-	    jumpToHeight  = std::max(jumpToHeight, psnapshot->blkinfo.nHeight);
+	    jumpToHeight  = std::max(jumpToHeight, psnapshot->headerNheight.height);
 	}
         pskip = pprev->GetAncestor(jumpToHeight);
     }

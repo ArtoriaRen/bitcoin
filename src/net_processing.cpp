@@ -487,7 +487,7 @@ void FindNextBlocksToDownload(NodeId nodeid, unsigned int count, std::vector<con
     /* if pindexLastCommonBlock is the snapshot block, it must be common, so no need
      * to walk back more blocks. 
      */
-    if(state->pindexLastCommonBlock != &psnapshot->blkinfo) {
+    if(*state->pindexLastCommonBlock->phashBlock != psnapshot->snapshotBlockHash) {
         // If the peer reorganized, our previous pindexLastCommonBlock may not be an ancestor
         // of its current tip anymore. Go back enough to fix that.
         state->pindexLastCommonBlock = LastCommonAncestor(state->pindexLastCommonBlock, state->pindexBestKnownBlock);
@@ -1947,34 +1947,28 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     else if (strCommand == NetMsgType::GETSNAPSHOT)
     {
 	/* send block header of the last snapshot block.*/
-        BlockHeaderAndHeight headerNheight;
-	headerNheight.header = psnapshot->blkinfo.GetBlockHeader();
-        headerNheight.height = psnapshot->blkinfo.nHeight;
-        connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::SNAPSHOT_BLK_HEADER, headerNheight));
+        connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::SNAPSHOT_BLK_HEADER, psnapshot->headerNheight));
 	/* send snapshot */
         connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::SNAPSHOT, psnapshot->getSnapshot()));
     }
 
     else if (strCommand == NetMsgType::SNAPSHOT_BLK_HEADER){
-        BlockHeaderAndHeight headerNheight;
-	vRecv >> headerNheight;
-	psnapshot->blkinfo = static_cast<CBlockIndex>(headerNheight.header);
-	psnapshot->blkinfo.phashBlock = new uint256(headerNheight.header.GetHash());
-	psnapshot->blkinfo.nHeight = headerNheight.height;
-	/* set block index fields accordingly to pass CheckBlockIndex() */
-        //psnapshot->blkinfo.nTx = 1;
-	// nChainTx != 0 is used to signal that all parent blocks have been processed
-	// (but may have been pruned).
-        psnapshot->blkinfo.nChainTx = 1;
+	vRecv >> psnapshot->headerNheight;
+	psnapshot->snapshotBlockHash = psnapshot->headerNheight.header.GetHash();
+	std::cout << "snap shot block hash = " << psnapshot->snapshotBlockHash.GetHex()
+		<< std::endl;
 
 	/* set the state of global variables to be as if we have already had a chain
 	 * up to the snapshot block. 
 	 */
-        pindexBestHeader = &(psnapshot->blkinfo);
-	//std::cout << "--- snapshot hdr hash = " << pindexBestHeader->phashBlock->GetHex() 
-		//<< std::endl;
-	chainActive.SetTipWithoutSync(&(psnapshot->blkinfo));
-        mapBlockIndex.emplace(*psnapshot->blkinfo.phashBlock, &psnapshot->blkinfo);
+	LoadSnapshotBlockHeader(chainparams);
+        //pindexBestHeader = &(psnapshot->blkinfo);
+	std::cout << "--- snapshot hdr hash = " << pindexBestHeader->phashBlock->GetHex() 
+	<< std::endl;
+	assert(mapBlockIndex.find(psnapshot->snapshotBlockHash) != mapBlockIndex.end());
+	chainActive.SetTipWithoutSync(mapBlockIndex[psnapshot->snapshotBlockHash]);
+//        mapBlockIndex.emplace(*psnapshot->blkinfo.phashBlock, &psnapshot->blkinfo);
+
     }
 
     else if (strCommand == NetMsgType::SNAPSHOT)
@@ -3329,7 +3323,7 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
                 //connman->PushMessage(pto, msgMaker.Make(NetMsgType::GETHEADERS, chainActive.GetLocator(pindexStart), uint256()));
 
 		/* Only ask for snapshot if we are a new peer.*/
-		if (chainActive.Height() < 1) {
+		if (psnapshot->snapshotBlockHash.IsNull()) {
 		    /* we have no more block other than the genesis, thus a new peer,
 		     * ask for system state from peer.
 		     */
