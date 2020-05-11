@@ -46,6 +46,11 @@ public:
     CBlockHeader header;
     int height;
     uint256 snapshotMerkleRoot;
+    // Maximum nTime in the chain up to and including this block.
+    unsigned int timeMax;
+    // Total amount of work (expected number of hashes) in the chain up to and including this block
+    uint256 chainWork;
+    unsigned int chainTx;
     
     ADD_SERIALIZE_METHODS;
 
@@ -54,6 +59,9 @@ public:
         READWRITE(header);
         READWRITE(height);
         READWRITE(snapshotMerkleRoot);
+        READWRITE(timeMax);
+        READWRITE(chainWork);
+        READWRITE(chainTx);
     }
 };
 
@@ -87,6 +95,10 @@ public:
     void receiveSnapshot(CDataStream& vRecv);
     
     std::string ToString() const;
+
+//    inline bool valid(){
+//	return !lastSnapshotMerkleRoot.IsNull();
+//    }
 
     /* serialization */
 };

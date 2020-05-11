@@ -97,6 +97,9 @@ uint256 Snapshot::takeSnapshot(bool updateBlkInfo) {
     if (updateBlkInfo && chainActive.Tip()){
 	headerNheight.header = chainActive.Tip()->GetBlockHeader();
         headerNheight.height = chainActive.Tip()->nHeight;
+	headerNheight.timeMax = chainActive.Tip()->nTimeMax;
+	headerNheight.chainWork = ArithToUint256(chainActive.Tip()->nChainWork);
+	headerNheight.chainTx = chainActive.Tip()->nChainTx;
 	headerNheight.snapshotMerkleRoot = lastSnapshotMerkleRoot;
 	snapshotBlockHash = headerNheight.header.GetHash();
     } else if (!updateBlkInfo && chainActive.Tip()) {

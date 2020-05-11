@@ -1963,7 +1963,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	 */
 	LoadSnapshotBlockHeader(chainparams);
         //pindexBestHeader = &(psnapshot->blkinfo);
-	std::cout << "--- snapshot hdr hash = " << pindexBestHeader->phashBlock->GetHex() 
+	std::cout << "--- pindexBestHeader = " << pindexBestHeader->phashBlock->GetHex() 
 	<< std::endl;
 	assert(mapBlockIndex.find(psnapshot->snapshotBlockHash) != mapBlockIndex.end());
 	chainActive.SetTipWithoutSync(mapBlockIndex[psnapshot->snapshotBlockHash]);
