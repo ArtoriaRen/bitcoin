@@ -222,6 +222,8 @@ size_t nCoinCacheUsage = 5000 * 300;
 uint64_t nPruneTarget = 0;
 int64_t nMaxTipAge = DEFAULT_MAX_TIP_AGE;
 bool fEnableReplacement = DEFAULT_ENABLE_REPLACEMENT;
+int syncStartTime = 0;
+int syncEndTime = 0;
 
 uint256 hashAssumeValid;
 arith_uint256 nMinimumChainWork;
@@ -2795,10 +2797,10 @@ CBlockIndex* CChainState::AddToBlockIndex(const CBlockHeader& block)
     // competitive advantage.
     pindexNew->nSequenceId = 0;
     BlockMap::iterator mi = mapBlockIndex.insert(std::make_pair(hash, pindexNew)).first;
-    std::cout << "----" << __func__ << ": hash = " << hash.GetHex() << ", prevhash ="
-	    << block.hashPrevBlock.GetHex() << ", merkleRoot = "
-	    << block.hashMerkleRoot.GetHex() 
-	    << ", map size = " << mapBlockIndex.size() << std::endl;
+//    std::cout << "----" << __func__ << ": hash = " << hash.GetHex() << ", prevhash ="
+//	    << block.hashPrevBlock.GetHex() << ", merkleRoot = "
+//	    << block.hashMerkleRoot.GetHex() 
+//	    << ", map size = " << mapBlockIndex.size() << std::endl;
     pindexNew->phashBlock = &((*mi).first);
     if (psnapshot && hash == psnapshot->snapshotBlockHash) {
         pindexNew->nHeight = psnapshot->headerNheight.height;
@@ -2854,7 +2856,7 @@ bool CChainState::ReceivedBlockTransactions(const CBlock &block, CValidationStat
 		 * using the field from old peer. 
 		 */
 		pindex->nChainTx = psnapshot->headerNheight.chainTx;
-		std::cout << "--- " << __func__ << ": snap shot block nchainTx = " << pindex->nChainTx << std::endl;
+		//std::cout << "--- " << __func__ << ": snap shot block nchainTx = " << pindex->nChainTx << std::endl;
 	    } else {
 		pindex->nChainTx = (pindex->pprev ? pindex->pprev->nChainTx : 0) + pindex->nTx;
 	    }
@@ -3690,8 +3692,8 @@ CBlockIndex * CChainState::InsertBlockIndex(const uint256& hash)
     // Create new
     CBlockIndex* pindexNew = new CBlockIndex();
     mi = mapBlockIndex.insert(std::make_pair(hash, pindexNew)).first;
-    std::cout << "----" << __func__ << ": hash = " << hash.GetHex()
-	    << ",  mapBlockIndex.size() = "<< mapBlockIndex.size()<< std::endl; 
+//    std::cout << "----" << __func__ << ": hash = " << hash.GetHex()
+//	    << ",  mapBlockIndex.size() = "<< mapBlockIndex.size()<< std::endl; 
     pindexNew->phashBlock = &((*mi).first);
 
     return pindexNew;
@@ -4246,11 +4248,11 @@ bool CChainState::LoadSnapshotBlockHeader(const CChainParams& chainparams)
     try {
 	/* create a dummy block from the snapshot block header. */
 	const CBlock block(psnapshot->headerNheight.header);
-    std::cout << "----" << __func__ << ": hash = " << block.GetHash().GetHex() << ", prevhash ="
-	    << block.hashPrevBlock.GetHex() << ", merkleRoot = "
-	    << block.hashMerkleRoot.GetHex()
-	    << ",height = " << psnapshot->headerNheight.height 
-	    << std::endl;
+//    std::cout << "----" << __func__ << ": hash = " << block.GetHash().GetHex() << ", prevhash ="
+//	    << block.hashPrevBlock.GetHex() << ", merkleRoot = "
+//	    << block.hashMerkleRoot.GetHex()
+//	    << ",height = " << psnapshot->headerNheight.height 
+//	    << std::endl;
         CDiskBlockPos blockPos = SaveBlockToDisk(block, psnapshot->headerNheight.height, chainparams, nullptr);
         if (blockPos.IsNull())
             return error("%s: writing genesis block to disk failed", __func__);
@@ -4406,13 +4408,13 @@ void CChainState::CheckBlockIndex(const Consensus::Params& consensusParams)
     // Build forward-pointing map of the entire block tree.
     std::multimap<CBlockIndex*,CBlockIndex*> forward;
     for (auto& entry : mapBlockIndex) {
-	std::cout << "--- forward pointing map, entry.second = " 
-		<< entry.second
-		<< ", block hash = "
-		<< entry.first.GetHex()
-	        << ", forward pointing map, entry.height = "
-		<< entry.second->nHeight
-		<< std::endl;
+//	std::cout << "--- forward pointing map, entry.second = " 
+//		<< entry.second
+//		<< ", block hash = "
+//		<< entry.first.GetHex()
+//	        << ", forward pointing map, entry.height = "
+//		<< entry.second->nHeight
+//		<< std::endl;
         forward.insert(std::make_pair(entry.second->pprev, entry.second));
     }
 
@@ -4455,13 +4457,13 @@ void CChainState::CheckBlockIndex(const Consensus::Params& consensusParams)
 
 	assert(pindex == mapBlockIndex[psnapshot->snapshotBlockHash]);
     }
-    std::cout << "--- distance = " << std::distance(rangeGenesis.first, rangeGenesis.second) 
-	    << ", rangeGenesis.first->second->height = " << rangeGenesis.first->second->nHeight
-	    << ", psnapshot->blkinfo.height = " << psnapshot->headerNheight.height
-	    << ", rangeGenesis.first->second = "<< rangeGenesis.first->second 
-	    << ", pindex->height = " << pindex->nHeight 
-	    << ", pindex = " << pindex 
-	    << std::endl;
+//    std::cout << "--- distance = " << std::distance(rangeGenesis.first, rangeGenesis.second) 
+//	    << ", rangeGenesis.first->second->height = " << rangeGenesis.first->second->nHeight
+//	    << ", psnapshot->blkinfo.height = " << psnapshot->headerNheight.height
+//	    << ", rangeGenesis.first->second = "<< rangeGenesis.first->second 
+//	    << ", pindex->height = " << pindex->nHeight 
+//	    << ", pindex = " << pindex 
+//	    << std::endl;
     // Iterate over the entire block tree, using depth-first search.
     // Along the way, remember whether there are blocks on the path from genesis
     // block being explored which are the first to have certain properties.
@@ -4475,7 +4477,7 @@ void CChainState::CheckBlockIndex(const Consensus::Params& consensusParams)
     CBlockIndex* pindexFirstNotChainValid = nullptr; // Oldest ancestor of pindex which does not have BLOCK_VALID_CHAIN (regardless of being valid or not).
     CBlockIndex* pindexFirstNotScriptsValid = nullptr; // Oldest ancestor of pindex which does not have BLOCK_VALID_SCRIPTS (regardless of being valid or not).
     while (pindex != nullptr) {
-	std::cout << "--- pindex height = " << pindex->nHeight <<std::endl;
+//	std::cout << "--- pindex height = " << pindex->nHeight <<std::endl;
 	/* because pindex points to the snapshot block before entering this loop,
 	 * , we must have iterate over all the children of snapshot block by the
 	 * time we encounter the genesis block because genesis block is a sibling
@@ -4522,9 +4524,9 @@ void CChainState::CheckBlockIndex(const Consensus::Params& consensusParams)
 	    // All parents having had data (at some point) is equivalent to all parents being VALID_TRANSACTIONS, which is equivalent to nChainTx being set.
 	    assert((pindexFirstNeverProcessed != nullptr) == (pindex->nChainTx == 0)); // nChainTx != 0 is used to signal that all parent blocks have been processed (but may have been pruned).
 	    assert((pindexFirstNotTransactionsValid != nullptr) == (pindex->nChainTx == 0));
-	    std::cout << "pindex->nHeight = " << pindex->nHeight 
-		    << ", nHeight = " << nHeight
-		    << std::endl;
+//	    std::cout << "pindex->nHeight = " << pindex->nHeight 
+//		    << ", nHeight = " << nHeight
+//		    << std::endl;
 	    assert(pindex->nHeight == nHeight); // nHeight must be consistent.
 	    assert(pindex->pprev == nullptr || pindex->nChainWork >= pindex->pprev->nChainWork); // For every block except the genesis block, the chainwork must be larger than the parent's.
 	    assert(nHeight < 2 || (pindex->pskip && (pindex->pskip->nHeight < nHeight))); // The pskip pointer must point back for all but the first 2 blocks.

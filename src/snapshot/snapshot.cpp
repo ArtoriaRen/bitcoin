@@ -12,6 +12,8 @@
 #include <serialize.h>
 #include <vector>
 
+extern BlockMap& mapBlockIndex;
+
 OutpointCoinPair::OutpointCoinPair(){ }
 
 OutpointCoinPair::OutpointCoinPair(COutPoint opIn, Coin coinIn): op(opIn), coin(coinIn){ }
@@ -158,8 +160,8 @@ void Snapshot::updateCoins(const CCoinsMap& mapCoins){
 
 	/* dirty, not fresh, not spent */
 	/* when will this happen? */
-	std::cout << "dirty, not fresh, not spent coin = " << it->first.ToString()
-		<< std::endl;
+//	std::cout << "dirty, not fresh, not spent coin = " << it->first.ToString()
+//		<< std::endl;
         if (isCoinInLastSnapshot) {
 		/* move it from the unspent vector to the spent map. Note that
 		 * we must copy the original coin from pcoinsTip because pcoinsTip
@@ -243,6 +245,15 @@ void Snapshot::receiveSnapshot(CDataStream& vRecv) {
      */
     assert(!snapshotBlockHash.IsNull()); // snapshot block hash should have been updated in the SNAPSHOT_BLK_HEADER message
     pcoinsTip->SetBestBlock(snapshotBlockHash);
+
+    /* global coin cache should have the same number of output coins as in the snapshot.*/
+    assert(pcoinsTip->GetCacheSize() == unspent.size());
+    //pcoinsTip->Flush();
+}
+
+bool Snapshot::IsNewPeerWithValidSnapshot() const {
+    return mapBlockIndex.find(psnapshot->snapshotBlockHash) != mapBlockIndex.end() &&
+		mapBlockIndex[psnapshot->snapshotBlockHash]->pprev == nullptr;
 }
 
 std::string Snapshot::ToString() const

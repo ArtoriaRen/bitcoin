@@ -110,7 +110,12 @@ const CBlockIndex* CBlockIndex::GetAncestor(int height) const
             // Only follow pskip if pprev->pskip isn't better than pskip->pprev.
             pindexWalk = pindexWalk->pskip;
             heightWalk = heightSkip;
-        } else {
+        } else if (pindexWalk->pprev == nullptr && psnapshot->IsNewPeerWithValidSnapshot()) {
+	    /* We are a new peer and pindexWalk is trying to access block eariler than the 
+	     * snapshot block. */
+	    break;
+	}
+	else {
             assert(pindexWalk->pprev);
             pindexWalk = pindexWalk->pprev;
             heightWalk--;

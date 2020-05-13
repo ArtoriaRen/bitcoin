@@ -30,6 +30,7 @@
 #include <utilmoneystr.h>
 #include <utilstrencodings.h>
 #include <snapshot/snapshot.h>
+#include <time.h>
 
 #if defined(NDEBUG)
 # error "Bitcoin cannot be compiled without assertions."
@@ -1304,7 +1305,7 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, const std::ve
         //   nUnconnectingHeaders gets reset back to 0.
         if (mapBlockIndex.find(headers[0].hashPrevBlock) == mapBlockIndex.end() && nCount < MAX_BLOCKS_TO_ANNOUNCE) {
             nodestate->nUnconnectingHeaders++;
-	    std::cout << "line 1302 : pindexBestHeader = " << pindexBestHeader->phashBlock->GetHex() << std::endl;
+	    //std::cout << "line 1302 : pindexBestHeader = " << pindexBestHeader->phashBlock->GetHex() << std::endl;
             connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GETHEADERS, chainActive.GetLocator(pindexBestHeader), uint256()));
             LogPrint(BCLog::NET, "received header %s: missing prev block %s, sending getheaders (%d) to end (peer=%d, nUnconnectingHeaders=%d)\n",
                     headers[0].GetHash().ToString(),
@@ -1500,7 +1501,7 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, const std::ve
 
 bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman* connman, const std::atomic<bool>& interruptMsgProc)
 {
-    std::cout << __func__ << ": " << strCommand << std::endl;
+    //std::cout << __func__ << ": " << strCommand << std::endl;
     LogPrint(BCLog::NET, "received: %s (%u bytes) peer=%d\n", SanitizeString(strCommand), vRecv.size(), pfrom->GetId());
     if (gArgs.IsArgSet("-dropmessagestest") && GetRand(gArgs.GetArg("-dropmessagestest", 0)) == 0)
     {
@@ -1894,7 +1895,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             }
 
             if (inv.type == MSG_BLOCK) {
-		std::cout << __func__ << ": block inv = " << inv.hash.GetHex() << std::endl;
+		//std::cout << __func__ << ": block inv = " << inv.hash.GetHex() << std::endl;
                 UpdateBlockAvailability(pfrom->GetId(), inv.hash);
                 if (!fAlreadyHave && !fImporting && !fReindex && !mapBlocksInFlight.count(inv.hash)) {
                     // We used to request the full block here, but since headers-announcements are now the
@@ -1902,7 +1903,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                     // fell back to inv we probably have a reorg which we should get the headers for first,
                     // we now only provide a getheaders response here. When we receive the headers, we will
                     // then ask for the blocks we need.;
-		    std::cout << "getheaders pindexBestHeader = " << pindexBestHeader->ToString() << std::endl;
+		    //std::cout << "getheaders pindexBestHeader = " << pindexBestHeader->ToString() << std::endl;
                     connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GETHEADERS, chainActive.GetLocator(pindexBestHeader), inv.hash));
                     LogPrint(BCLog::NET, "getheaders (%d) %s to peer=%d\n", pindexBestHeader->nHeight, inv.hash.ToString(), pfrom->GetId());
                 }
@@ -1955,16 +1956,16 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     else if (strCommand == NetMsgType::SNAPSHOT_BLK_HEADER){
 	vRecv >> psnapshot->headerNheight;
 	psnapshot->snapshotBlockHash = psnapshot->headerNheight.header.GetHash();
-	std::cout << "snap shot block hash = " << psnapshot->snapshotBlockHash.GetHex()
-		<< std::endl;
+//	std::cout << "snap shot block hash = " << psnapshot->snapshotBlockHash.GetHex()
+//		<< std::endl;
 
 	/* set the state of global variables to be as if we have already had a chain
 	 * up to the snapshot block. 
 	 */
 	LoadSnapshotBlockHeader(chainparams);
         //pindexBestHeader = &(psnapshot->blkinfo);
-	std::cout << "--- pindexBestHeader = " << pindexBestHeader->phashBlock->GetHex() 
-	<< std::endl;
+//	std::cout << "--- pindexBestHeader = " << pindexBestHeader->phashBlock->GetHex() 
+//	<< std::endl;
 	assert(mapBlockIndex.find(psnapshot->snapshotBlockHash) != mapBlockIndex.end());
 	chainActive.SetTipWithoutSync(mapBlockIndex[psnapshot->snapshotBlockHash]);
 //        mapBlockIndex.emplace(*psnapshot->blkinfo.phashBlock, &psnapshot->blkinfo);
@@ -1974,7 +1975,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     else if (strCommand == NetMsgType::SNAPSHOT)
     {
         psnapshot->receiveSnapshot(vRecv);
-	std::cout << psnapshot->ToString() << std::endl;
+	syncEndTime = time(NULL);
+	LogPrintf("snapshot sync completes. ending height (%d). Time = %d. syncing takes %d seconds.\n", chainActive.Tip()->nHeight, time(NULL), syncEndTime - syncStartTime);
+	//std::cout << psnapshot->ToString() << std::endl;
 
 	/* add all coins to coincache by calling AddCoins (check if we have to set coinEntry as dirty manually). */
 
@@ -3319,7 +3322,7 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
                    got back an empty response.  */
                 if (pindexStart->pprev)
                     pindexStart = pindexStart->pprev;
-                LogPrint(BCLog::NET, "initial getheaders (%d) to peer=%d (startheight:%d)\n", pindexStart->nHeight, pto->GetId(), pto->nStartingHeight);
+                //LogPrint(BCLog::NET, "initial getheaders (%d) to peer=%d (startheight:%d)\n", pindexStart->nHeight, pto->GetId(), pto->nStartingHeight);
                 //connman->PushMessage(pto, msgMaker.Make(NetMsgType::GETHEADERS, chainActive.GetLocator(pindexStart), uint256()));
 
 		/* Only ask for snapshot if we are a new peer.*/
@@ -3327,6 +3330,8 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
 		    /* we have no more block other than the genesis, thus a new peer,
 		     * ask for system state from peer.
 		     */
+		    LogPrintf("get snapshot starting height (%d) to peer=%d (startheight:%d). Time = %d \n", pindexStart->nHeight, pto->GetId(), pto->nStartingHeight, time(NULL));
+		    syncStartTime = time(NULL);
                     connman->PushMessage(pto, msgMaker.Make(NetMsgType::GETSNAPSHOT, chainActive.GetLocator(pindexStart), uint256()));
 		}
             }
@@ -3447,7 +3452,7 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
                         LogPrint(BCLog::NET, "%s: sending header %s to peer=%d\n", __func__,
                                 vHeaders.front().GetHash().ToString(), pto->GetId());
                     }
-		    std::cout << __func__ << "send header = " << vHeaders[0].ToString() << std::endl;
+		    //std::cout << __func__ << "send header = " << vHeaders[0].ToString() << std::endl;
                     connman->PushMessage(pto, msgMaker.Make(NetMsgType::HEADERS, vHeaders));
                     state.pindexBestHeaderSent = pBestIndex;
                 } else

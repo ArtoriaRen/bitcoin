@@ -94,6 +94,11 @@ public:
 //    void spendCoin(const COutPoint& op);
     void receiveSnapshot(CDataStream& vRecv);
     
+    /* determine if we are a new peer with a valid snapshot base on if pprev 
+     * of the snapshot block index is nullptr. 
+     */
+    bool IsNewPeerWithValidSnapshot() const;
+
     std::string ToString() const;
 
 //    inline bool valid(){
