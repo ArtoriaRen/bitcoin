@@ -3291,6 +3291,10 @@ bool ProcessNewBlockHeaders(const std::vector<CBlockHeader>& headers, CValidatio
             if (ppindex) {
                 *ppindex = pindex;
             }
+
+	    /* Only process headers to the height we need. */
+	    if (pindex->nHeight >= syncToHeight)
+		break;
         }
     }
     NotifyHeaderTip();
