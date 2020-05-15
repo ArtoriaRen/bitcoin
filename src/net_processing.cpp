@@ -472,8 +472,10 @@ void FindNextBlocksToDownload(NodeId nodeid, unsigned int count, std::vector<con
     // Make sure pindexBestKnownBlock is up to date, we'll need it.
     ProcessBlockAvailability(nodeid);
 
-    if (state->pindexBestKnownBlock == nullptr || state->pindexBestKnownBlock->nChainWork < chainActive.Tip()->nChainWork || state->pindexBestKnownBlock->nChainWork < nMinimumChainWork) {
+    //if (state->pindexBestKnownBlock == nullptr || state->pindexBestKnownBlock->nChainWork < chainActive.Tip()->nChainWork || state->pindexBestKnownBlock->nChainWork < nMinimumChainWork) {
+    if (state->pindexBestKnownBlock == nullptr || state->pindexBestKnownBlock->nChainWork < chainActive.Tip()->nChainWork || state->pindexBestKnownBlock->nHeight < syncToHeight) {
         // This peer has nothing interesting.
+        /* We do not start downloading until we know the peer has all blocks we need to sync.*/
         return;
     }
 
@@ -2645,6 +2647,12 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             LOCK(cs_main);
             mapBlockSource.erase(pblock->GetHash());
         }
+
+        if (chainActive.Tip()->nHeight == syncToHeight) {
+            syncEndTime = time(NULL);
+            LogPrintf("complete sync. end at height %d. syncing takes %d seconds. \n", chainActive.Tip()->nHeight, syncEndTime - syncStartTime);
+	    StartShutdown();
+        }
     }
 
 
@@ -3259,7 +3267,8 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
                    got back an empty response.  */
                 if (pindexStart->pprev)
                     pindexStart = pindexStart->pprev;
-                LogPrint(BCLog::NET, "initial getheaders (%d) to peer=%d (startheight:%d)\n", pindexStart->nHeight, pto->GetId(), pto->nStartingHeight);
+		LogPrintf("sync starts. getheaders (%d) to peer=%d (startheight:%d). start at time %d.\n", pindexStart->nHeight, pto->GetId(), pto->nStartingHeight, time(NULL));
+                syncStartTime = time(NULL);
                 connman->PushMessage(pto, msgMaker.Make(NetMsgType::GETHEADERS, chainActive.GetLocator(pindexStart), uint256()));
             }
         }

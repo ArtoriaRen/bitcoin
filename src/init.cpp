@@ -803,6 +803,10 @@ void InitParameterInteraction()
             LogPrintf("%s: Ignoring blockmaxsize setting which is overridden by blockmaxweight", __func__);
         }
     }
+
+    if (gArgs.IsArgSet("-synctoheight")) {
+        syncToHeight = gArgs.GetArg("-synctoheight", 10);
+    }
 }
 
 static std::string ResolveErrMsg(const char * const optname, const std::string& strBind)

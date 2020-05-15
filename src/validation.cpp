@@ -218,6 +218,9 @@ size_t nCoinCacheUsage = 5000 * 300;
 uint64_t nPruneTarget = 0;
 int64_t nMaxTipAge = DEFAULT_MAX_TIP_AGE;
 bool fEnableReplacement = DEFAULT_ENABLE_REPLACEMENT;
+int syncStartTime = 0;
+int syncEndTime = 0;
+int syncToHeight = 50;
 
 uint256 hashAssumeValid;
 arith_uint256 nMinimumChainWork;
