@@ -14,6 +14,8 @@
 
 extern BlockMap& mapBlockIndex;
 
+uint32_t MAX_COIN_NUM_PER_MSG = 50000;
+
 OutpointCoinPair::OutpointCoinPair(){ }
 
 OutpointCoinPair::OutpointCoinPair(COutPoint opIn, Coin coinIn): op(opIn), coin(coinIn){ }
@@ -54,29 +56,31 @@ void Snapshot::initialLoad() {
     }
 }
 
-/* TODO: send coins over as well. currently only send outpoints. */
 void Snapshot::sendSnapshot(CNode* pfrom, const CNetMsgMaker& msgMaker, CConnman* connman) const {
-    std::vector<OutpointCoinPair> snapshot;
-    snapshot.reserve(unspent.size() + spent.size());
-    for (COutPoint op: unspent){
-        Coin coin;
-        bool found = pcoinsTip->GetCoin(op, coin);
-        /* unspent coins must exist */
-        assert(found);
-        snapshot.emplace_back(op, coin);
-    }
-    auto iter = spent.begin();
-    while (iter != spent.end()) {
-	snapshot.emplace_back(iter->first, iter->second);
-	iter++;
+    std::vector<OutpointCoinPair> chunk;
+    assert(chunkCnt < headerNheight.numChunks);
+    uint32_t startIdx = chunkCnt * MAX_COIN_NUM_PER_MSG;
+    uint64_t stopIdx = snapshotOutpointArray.size() < (chunkCnt + 1) * MAX_COIN_NUM_PER_MSG ? snapshotOutpointArray.size() : (chunkCnt + 1) * MAX_COIN_NUM_PER_MSG;
+    chunk.reserve(stopIdx - startIdx);
+    for (uint32_t i = startIdx; i < stopIdx; i++){
+        auto it = spent.find(snapshotOutpointArray[i]); 
+        if ( it != spent.end()){
+            /* The coin is in the spent set. */
+            chunk.emplace_back(it->first, it->second);
+        } else {
+            /* Have to fetch the coin from the current coins view. */
+            Coin coin;
+            bool found = pcoinsTip->GetCoin(snapshotOutpointArray[i], coin);
+            /* unspent coins must exist */
+            assert(found);
+            //OutpointCoinPair coinPair(snapshotOutpointArray[i], std::move(coin));
+            chunk.emplace_back(snapshotOutpointArray[i], std::move(coin));
+        }
     }
 
-    for (uint32_t i = 0; i < headerNheight.numChunks; i++) {
-        uint32_t startIdx = i * MAX_COIN_NUM_PER_MSG;
-        uint64_t stopIdx = snapshot.size() < (i + 1) * MAX_COIN_NUM_PER_MSG ? snapshot.size() : (i + 1) * MAX_COIN_NUM_PER_MSG;
-        std::vector<OutpointCoinPair> slice(snapshot.begin() + startIdx, snapshot.begin() + stopIdx);
-        connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::SNAPSHOT, slice));
-    }
+    connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::SNAPSHOT, chunk));
+    LogPrint(BCLog::NET, "send chunk: startIdx=%d, endIdx=%d, total coin num =%d.\n", startIdx, stopIdx - 1, snapshotOutpointArray.size());
+    chunkCnt++;
 }
 
 uint256 Snapshot::takeSnapshot(bool updateBlkInfo) {
@@ -85,7 +89,18 @@ uint256 Snapshot::takeSnapshot(bool updateBlkInfo) {
     unspent.insert(unspent.end(), added.begin(), added.end());
     added.clear();
     spent.clear();
-    std::sort(unspent.begin(), unspent.end());
+    if (updateBlkInfo) {
+        /* only sort the unspent set when we are creating a snapshot, not when we are
+         * verifying a snapshot receivd from an old peer, because an peers send us 
+         * outpoints in sorted order using snapshot chunks.
+         */
+        std::sort(unspent.begin(), unspent.end());
+    }
+    /* keep a copy of the outpoints we used to create the snapshot, so that when
+     * we sends the snapshot to a new peer in the future, we can easily cut a 
+     * snapshot into chunks because we know all the order of the outpoints.
+     */
+    snapshotOutpointArray = unspent; 
     std::vector<uint256> leaves;
     leaves.reserve(unspent.size());
     for (uint i = 0; i < unspent.size(); i++) {

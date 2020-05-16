@@ -9,6 +9,7 @@
 #include <primitives/transaction.h>
 #include <script/script.h>
 #include <serialize.h>
+#include <util.h>
 
 class CKeyID;
 class CPubKey;
@@ -67,7 +68,7 @@ public:
         //s << VARINT(nSize);
         VARINT(nSize).Serialize(s);
         //s << CFlatData(script);
-        CFlatData(compr).Serialize(s);
+        CFlatData(script).Serialize(s);
     }
 
     template<typename Stream>
@@ -83,6 +84,7 @@ public:
         nSize -= nSpecialScripts;
         if (nSize > MAX_SCRIPT_SIZE) {
             // Overly long script, replace with a short invalid one
+            LogPrintf("%s: nSize = %d.\n", __func__, nSize);
             script << OP_RETURN;
             s.ignore(nSize);
         } else {

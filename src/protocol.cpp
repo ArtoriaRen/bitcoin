@@ -40,6 +40,7 @@ const char *CMPCTBLOCK="cmpctblock";
 const char *GETBLOCKTXN="getblocktxn";
 const char *BLOCKTXN="blocktxn";
 const char *GETSNAPSHOT="getsnapshot";
+const char *MORE_SNAPSHOT_CHUNK="morechunk";
 const char *SNAPSHOT="snapshot";
 const char *SNAPSHOT_BLK_HEADER="snapshotHdr";
 const char *SNAPSHOT_COINS="ssCoins";
@@ -76,6 +77,7 @@ const static std::string allNetMessageTypes[] = {
     NetMsgType::GETBLOCKTXN,
     NetMsgType::BLOCKTXN,
     NetMsgType::GETSNAPSHOT,
+    NetMsgType::MORE_SNAPSHOT_CHUNK,
     NetMsgType::SNAPSHOT,
     NetMsgType::SNAPSHOT_BLK_HEADER,
     NetMsgType::SNAPSHOT_COINS

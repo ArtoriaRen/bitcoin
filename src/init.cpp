@@ -806,6 +806,11 @@ void InitParameterInteraction()
             LogPrintf("%s: Ignoring blockmaxsize setting which is overridden by blockmaxweight", __func__);
         }
     }
+
+    /* a snapshot will be cut into chunks, each of which contains chunksize coins. */
+    if (gArgs.IsArgSet("-chunksize")) {
+         MAX_COIN_NUM_PER_MSG = gArgs.GetArg("-chunksize", 0);
+    }
 }
 
 static std::string ResolveErrMsg(const char * const optname, const std::string& strBind)

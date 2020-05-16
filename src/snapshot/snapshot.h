@@ -20,6 +20,8 @@
 #include <chain.h>
 #include <netmessagemaker.h>
 
+extern uint32_t MAX_COIN_NUM_PER_MSG;
+
 class OutpointCoinPair{
 public:
     COutPoint op;
@@ -78,12 +80,12 @@ public:
      * because message size in Bitcoin currently has an uplimit of 4MB, and we
      * believe 100k coins will not exceed the limit.
      */
-    const uint32_t MAX_COIN_NUM_PER_MSG = 100000;
     BlockHeaderAndHeight headerNheight;
     uint256 snapshotBlockHash;
     uint256 lastSnapshotMerkleRoot;
     uint32_t frequency; // in blocks
-    uint32_t chunkCnt; // count how many snapshot chunks have been added to the unspent set.
+    mutable uint32_t chunkCnt; // count how many snapshot chunks have been sent or received.
+    std::vector<COutPoint> snapshotOutpointArray;
 
     Snapshot();
 
@@ -110,6 +112,10 @@ public:
      * of the snapshot block index is nullptr. 
      */
     bool IsNewPeerWithValidSnapshot() const;
+
+    inline size_t getSnapshotSize(){
+	return unspent.size();
+    }
 
     std::string ToString() const;
 

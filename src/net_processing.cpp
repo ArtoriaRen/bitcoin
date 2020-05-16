@@ -1949,8 +1949,15 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     {
 	/* send block header of the last snapshot block.*/
         connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::SNAPSHOT_BLK_HEADER, psnapshot->headerNheight));
-	/* send snapshot */
+	/* send the first snapshot chunk.*/
 	psnapshot->sendSnapshot(pfrom, msgMaker, connman);
+    }
+    
+    else if (strCommand == NetMsgType::MORE_SNAPSHOT_CHUNK){
+	/* send following snapshot chunks if we have not done it yet.*/
+	if (psnapshot->chunkCnt < psnapshot->headerNheight.numChunks) {
+	    psnapshot->sendSnapshot(pfrom, msgMaker, connman);
+	}
     }
 
     else if (strCommand == NetMsgType::SNAPSHOT_BLK_HEADER){
@@ -1976,12 +1983,18 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     {
         psnapshot->receiveSnapshot(vRecv);
         LogPrintf("synced snapshot to %d/%d chunks.\n", psnapshot->chunkCnt, psnapshot->headerNheight.numChunks);
-	if (psnapshot->chunkCnt == psnapshot->headerNheight.numChunks) {
+	if (psnapshot->chunkCnt < psnapshot->headerNheight.numChunks) {
+	    /* send block header of the last snapshot block.*/
+	    connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::MORE_SNAPSHOT_CHUNK));
+	} else {
+	    assert(psnapshot->chunkCnt == psnapshot->headerNheight.numChunks);
 	    assert(psnapshot->verifySnapshot());
 	    syncEndTime = time(NULL);
-	    LogPrintf("snapshot sync completes. ending height (%d). Time = %d. syncing takes %d seconds.\n", chainActive.Tip()->nHeight, time(NULL), syncEndTime - syncStartTime);
+	    LogPrintf("snapshot sync completes. ending height (%d). Time = %d. syncing takes %d seconds. The snapshot has %d coins.\n", chainActive.Tip()->nHeight, time(NULL), syncEndTime - syncStartTime, psnapshot->getSnapshotSize());
+	    /* To collect accurate number of bytes exchanged during sync, shut down as soon 
+	     * as we finished syncing. */
+            StartShutdown();
 	}
-        StartShutdown();
 	
 	//std::cout << psnapshot->ToString() << std::endl;
 
@@ -3336,7 +3349,7 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
 		    /* we have no more block other than the genesis, thus a new peer,
 		     * ask for system state from peer.
 		     */
-		    LogPrintf("get snapshot starting height (%d) to peer=%d (startheight:%d). Time = %d \n", pindexStart->nHeight, pto->GetId(), pto->nStartingHeight, time(NULL));
+		    LogPrintf("sync starting height (%d) to peer=%d (startheight:%d). Time = %d \n", pindexStart->nHeight, pto->GetId(), pto->nStartingHeight, time(NULL));
 		    syncStartTime = time(NULL);
                     connman->PushMessage(pto, msgMaker.Make(NetMsgType::GETSNAPSHOT, chainActive.GetLocator(pindexStart), uint256()));
 		}
