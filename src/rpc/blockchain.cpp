@@ -1628,7 +1628,8 @@ UniValue takesnapshot(const JSONRPCRequest& request)
         );
     }
     psnapshot->takeSnapshot();
-    return psnapshot->ToString();
+    //return psnapshot->ToString();
+    return NullUniValue;
 }
 
 UniValue printsnapshot(const JSONRPCRequest& request)

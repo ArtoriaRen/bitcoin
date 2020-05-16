@@ -30,7 +30,7 @@ static void hashCoin(uint256& result, COutPoint key, Coin& coin){
 	    .Finalize((unsigned char*)&result);
 }
 
-Snapshot::Snapshot() {
+Snapshot::Snapshot(): chunkCnt(0) {
     unspent.reserve(pcoinsTip->GetCacheSize());
     /*default is take one snapshot per 10 blocks. In reality, this will cause too
      * much overhead. Probably 1000 ~ 10000 is a good value. */
@@ -55,22 +55,28 @@ void Snapshot::initialLoad() {
 }
 
 /* TODO: send coins over as well. currently only send outpoints. */
-std::vector<OutpointCoinPair> Snapshot::getSnapshot() const {
+void Snapshot::sendSnapshot(CNode* pfrom, const CNetMsgMaker& msgMaker, CConnman* connman) const {
     std::vector<OutpointCoinPair> snapshot;
     snapshot.reserve(unspent.size() + spent.size());
     for (COutPoint op: unspent){
         Coin coin;
         bool found = pcoinsTip->GetCoin(op, coin);
-	/* unspent coins must exist */
-	assert(found);
-	snapshot.emplace_back(op, coin);
+        /* unspent coins must exist */
+        assert(found);
+        snapshot.emplace_back(op, coin);
     }
     auto iter = spent.begin();
     while (iter != spent.end()) {
 	snapshot.emplace_back(iter->first, iter->second);
 	iter++;
     }
-    return snapshot;
+
+    for (uint32_t i = 0; i < headerNheight.numChunks; i++) {
+        uint32_t startIdx = i * MAX_COIN_NUM_PER_MSG;
+        uint64_t stopIdx = snapshot.size() < (i + 1) * MAX_COIN_NUM_PER_MSG ? snapshot.size() : (i + 1) * MAX_COIN_NUM_PER_MSG;
+        std::vector<OutpointCoinPair> slice(snapshot.begin() + startIdx, snapshot.begin() + stopIdx);
+        connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::SNAPSHOT, slice));
+    }
 }
 
 uint256 Snapshot::takeSnapshot(bool updateBlkInfo) {
@@ -103,6 +109,7 @@ uint256 Snapshot::takeSnapshot(bool updateBlkInfo) {
 	headerNheight.chainWork = ArithToUint256(chainActive.Tip()->nChainWork);
 	headerNheight.chainTx = chainActive.Tip()->nChainTx;
 	headerNheight.snapshotMerkleRoot = lastSnapshotMerkleRoot;
+	headerNheight.numChunks = (unspent.size() + MAX_COIN_NUM_PER_MSG - 1) / MAX_COIN_NUM_PER_MSG ;
 	snapshotBlockHash = headerNheight.header.GetHash();
     } else if (!updateBlkInfo && chainActive.Tip()) {
 	assert(headerNheight.height == chainActive.Tip()->nHeight);
@@ -227,19 +234,25 @@ void Snapshot::receiveSnapshot(CDataStream& vRecv) {
     /* Step 1: update snapshot data and the coins view cache in memory */
     std::vector<OutpointCoinPair> snapshot;
     vRecv >> snapshot;
-    /* only a new peer ask for snapshot */
-    assert(unspent.empty());
+    if (chunkCnt == 0) {
+    /* if this is the first chunk we have received, the unspent set must be empty.*/
+        assert(unspent.empty());
+    }
     for(auto p: snapshot) {
 	unspent.push_back(p.op);
 	pcoinsTip->AddCoin(p.op, std::move(p.coin), false);
     }
+    chunkCnt++;
+}
 
+bool Snapshot::verifySnapshot() {
     /* Step 2: build the snapshot merkle root and compare it to the one received. 
      * if they are the same, we are good to go to step 3; otherwise, either we
      * unserialize the data wrong or the peer we contact has lied. 
      */
     takeSnapshot(false);
-    assert(lastSnapshotMerkleRoot == headerNheight.snapshotMerkleRoot);
+    bool ret = lastSnapshotMerkleRoot == headerNheight.snapshotMerkleRoot;
+    assert(ret);
 
     /* Step 3: update the best coin in the coins view cache.
      */
@@ -249,6 +262,8 @@ void Snapshot::receiveSnapshot(CDataStream& vRecv) {
     /* global coin cache should have the same number of output coins as in the snapshot.*/
     assert(pcoinsTip->GetCacheSize() == unspent.size());
     //pcoinsTip->Flush();
+
+    return ret;
 }
 
 bool Snapshot::IsNewPeerWithValidSnapshot() const {

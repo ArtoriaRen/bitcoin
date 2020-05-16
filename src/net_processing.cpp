@@ -1950,7 +1950,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	/* send block header of the last snapshot block.*/
         connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::SNAPSHOT_BLK_HEADER, psnapshot->headerNheight));
 	/* send snapshot */
-        connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::SNAPSHOT, psnapshot->getSnapshot()));
+	psnapshot->sendSnapshot(pfrom, msgMaker, connman);
     }
 
     else if (strCommand == NetMsgType::SNAPSHOT_BLK_HEADER){
@@ -1975,8 +1975,14 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     else if (strCommand == NetMsgType::SNAPSHOT)
     {
         psnapshot->receiveSnapshot(vRecv);
-	syncEndTime = time(NULL);
-	LogPrintf("snapshot sync completes. ending height (%d). Time = %d. syncing takes %d seconds.\n", chainActive.Tip()->nHeight, time(NULL), syncEndTime - syncStartTime);
+        LogPrintf("synced snapshot to %d/%d chunks.\n", psnapshot->chunkCnt, psnapshot->headerNheight.numChunks);
+	if (psnapshot->chunkCnt == psnapshot->headerNheight.numChunks) {
+	    assert(psnapshot->verifySnapshot());
+	    syncEndTime = time(NULL);
+	    LogPrintf("snapshot sync completes. ending height (%d). Time = %d. syncing takes %d seconds.\n", chainActive.Tip()->nHeight, time(NULL), syncEndTime - syncStartTime);
+	}
+        StartShutdown();
+	
 	//std::cout << psnapshot->ToString() << std::endl;
 
 	/* add all coins to coincache by calling AddCoins (check if we have to set coinEntry as dirty manually). */

@@ -18,6 +18,7 @@
 #include <coins.h>
 #include <net_processing.h>
 #include <chain.h>
+#include <netmessagemaker.h>
 
 class OutpointCoinPair{
 public:
@@ -51,6 +52,7 @@ public:
     // Total amount of work (expected number of hashes) in the chain up to and including this block
     uint256 chainWork;
     unsigned int chainTx;
+    unsigned int numChunks;
     
     ADD_SERIALIZE_METHODS;
 
@@ -62,6 +64,7 @@ public:
         READWRITE(timeMax);
         READWRITE(chainWork);
         READWRITE(chainTx);
+        READWRITE(numChunks);
     }
 };
 
@@ -71,10 +74,16 @@ private:
     std::vector<COutPoint> added;
     std::unordered_map<COutPoint, Coin, SaltedOutpointHasher> spent;
 public:
+    /* restrict the number of coins transferred in a SNAPSHOT message to 100k
+     * because message size in Bitcoin currently has an uplimit of 4MB, and we
+     * believe 100k coins will not exceed the limit.
+     */
+    const uint32_t MAX_COIN_NUM_PER_MSG = 100000;
     BlockHeaderAndHeight headerNheight;
     uint256 snapshotBlockHash;
     uint256 lastSnapshotMerkleRoot;
     uint32_t frequency; // in blocks
+    uint32_t chunkCnt; // count how many snapshot chunks have been added to the unspent set.
 
     Snapshot();
 
@@ -88,11 +97,14 @@ public:
      * vector are expected to be empty.
      */
     void initialLoad();
-    std::vector<OutpointCoinPair> getSnapshot() const;
+    // std::vector<OutpointCoinPair> getSnapshot(int idx) const;
+    void sendSnapshot(CNode* pfrom, const CNetMsgMaker& msgMaker, CConnman* connman) const;
     uint256 takeSnapshot(bool updateBlkInfo = true);
     void updateCoins(const CCoinsMap& mapCoins);
 //    void spendCoin(const COutPoint& op);
     void receiveSnapshot(CDataStream& vRecv);
+
+    bool verifySnapshot();
     
     /* determine if we are a new peer with a valid snapshot base on if pprev 
      * of the snapshot block index is nullptr. 
