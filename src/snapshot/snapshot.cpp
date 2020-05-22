@@ -47,12 +47,45 @@ void Snapshot::initialLoad() {
     while (pcursor->Valid()) {
         boost::this_thread::interruption_point();
         COutPoint key;
+	Coin coin;
+
         if (pcursor->GetKey(key)) {
-            unspent.push_back(std::move(key));
+	    pcursor->GetValue(coin);
+	    std::stringstream ss, ss_key;
+	    coin.Serialize(ss);
+	    key.Serialize(ss_key);
+//	    std::cout << "OutPoint size = "  << sizeof(key) 
+//		    << ", Coin size = " << sizeof(coin) 
+//		    << ", coin dynamic memory usage = " << coin.DynamicMemoryUsage()
+//		    << ", serialized coin size = " << ss.str().size()
+//		    << ", coin id = " << key.hash.GetHex() << "[" << key.n << "]"
+//		    << ", outpoint serialized size = " << ss_key.str().size()
+//		    << std::endl;
+	    /* count the number of coins of size 0~10 bytes, 10~20 bytes, ... */
+	    coinSizeMap[(sizeof(coin) + coin.DynamicMemoryUsage())/10]++;
+	    serializedCoinSizeMap[ss.str().size()/10]++;
         } else {
             std::cout << __func__ << ": unable to read key" << std::endl;
         }
         pcursor->Next();
+    }
+
+    /* print script length distribution. */
+    std::cout << "coin in-memory size: \n";
+    for (mapCoinSizeCount::value_type& entry: coinSizeMap){
+        std::cout << entry.first * 10 << " <= size < " 
+	    << (entry.first + 1) * 10 << ": " 
+	    << entry.second
+	    << std::endl;
+    }
+    
+    std::cout << std::endl;
+    std::cout << "coin serialized size: \n";
+    for (mapCoinSizeCount::value_type& entry: serializedCoinSizeMap){
+        std::cout << entry.first * 10 << " <= size < " 
+	    << (entry.first + 1) * 10 << ": " 
+	    << entry.second
+	    << std::endl;
     }
 }
 

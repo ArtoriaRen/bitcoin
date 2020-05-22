@@ -22,6 +22,8 @@
 
 extern uint32_t MAX_COIN_NUM_PER_MSG;
 
+typedef std::map<uint32_t, uint64_t> mapCoinSizeCount; //coin size, count 
+
 class OutpointCoinPair{
 public:
     COutPoint op;
@@ -86,6 +88,9 @@ public:
     uint32_t frequency; // in blocks
     mutable uint32_t chunkCnt; // count how many snapshot chunks have been sent or received.
     std::vector<COutPoint> snapshotOutpointArray;
+
+    mapCoinSizeCount coinSizeMap;
+    mapCoinSizeCount serializedCoinSizeMap;
 
     Snapshot();
 
