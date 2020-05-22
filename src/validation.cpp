@@ -221,6 +221,8 @@ bool fEnableReplacement = DEFAULT_ENABLE_REPLACEMENT;
 int syncStartTime = 0;
 int syncEndTime = 0;
 int syncToHeight = 50;
+std::vector<int> logAtHeights{10000, 100000, 200000, 300000, 400000, 500000, 600000} ;
+int heightIdx = 0;
 
 uint256 hashAssumeValid;
 arith_uint256 nMinimumChainWork;

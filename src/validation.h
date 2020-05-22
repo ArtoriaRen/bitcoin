@@ -185,7 +185,8 @@ extern bool fEnableReplacement;
 extern int syncStartTime;
 extern int syncEndTime;
 extern int syncToHeight;
-
+extern std::vector<int> logAtHeights;
+extern int heightIdx;
 /** Block hash whose ancestors we will assume to have valid scripts without checking them. */
 extern uint256 hashAssumeValid;
 

@@ -2648,10 +2648,14 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             mapBlockSource.erase(pblock->GetHash());
         }
 
-        if (chainActive.Tip()->nHeight == syncToHeight) {
+        if (chainActive.Tip()->nHeight == logAtHeights[heightIdx]) {
             syncEndTime = time(NULL);
-            LogPrintf("complete sync. end at height %d. syncing takes %d seconds. \n", chainActive.Tip()->nHeight, syncEndTime - syncStartTime);
-	    StartShutdown();
+	    std::vector<CNodeStats> vstats;
+	    g_connman->GetNodeStats(vstats);
+            LogPrintf("sync to height %d. syncing takes %d seconds. sent %lu bytes, received %lu bytes.\n", chainActive.Tip()->nHeight, syncEndTime - syncStartTime, vstats[0].nSendBytes, vstats[0].nRecvBytes);
+	    if(heightIdx < logAtHeights.size() -1)
+		heightIdx++;
+	    //StartShutdown();
         }
     }
 
