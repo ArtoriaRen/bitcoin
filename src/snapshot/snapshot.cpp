@@ -16,20 +16,13 @@ extern BlockMap& mapBlockIndex;
 
 uint32_t MAX_COIN_NUM_PER_MSG = 50000;
 
+static uint32_t MAX_COIN_NUM_PER_MERKLE_LEAF = 50000;
+
 OutpointCoinPair::OutpointCoinPair(){ }
 
 OutpointCoinPair::OutpointCoinPair(COutPoint opIn, Coin coinIn): op(opIn), coin(coinIn){ }
 
 static void hashCoin(uint256& result, COutPoint key, Coin& coin){
-    std::stringstream ss;
-    key.Serialize(ss);
-    std::string key_str(ss.str());
-    ss.str("");
-    coin.Serialize(ss);
-    std::string coin_str(ss.str());
-    CHash256().Write((const unsigned char*)key_str.c_str(), sizeof(key_str.size()))
-	    .Write((const unsigned char*)coin_str.c_str(), sizeof(coin_str.size()))
-	    .Finalize((unsigned char*)&result);
 }
 
 Snapshot::Snapshot(): chunkCnt(0) {
@@ -102,15 +95,31 @@ uint256 Snapshot::takeSnapshot(bool updateBlkInfo) {
      */
     snapshotOutpointArray = unspent; 
     std::vector<uint256> leaves;
-    leaves.reserve(unspent.size());
-    for (uint i = 0; i < unspent.size(); i++) {
-	COutPoint key = unspent[i];
-        Coin coin;
-        bool found = pcoinsTip->GetCoin(key, coin);
-	/* unspent coins must exist */
-	assert(found);
+    uint num_chunks = (unspent.size() + MAX_COIN_NUM_PER_MERKLE_LEAF - 1) / MAX_COIN_NUM_PER_MERKLE_LEAF;
+    leaves.reserve(num_chunks);
+    for (uint i = 0; i < num_chunks; i++) {
+	std::stringstream ss;
+	CHash256 hasher; 	
 	uint256 hash;
-	hashCoin(hash, key, coin);
+	uint end = (i == num_chunks -1) ? unspent.size() : (i + 1) * MAX_COIN_NUM_PER_MERKLE_LEAF;
+	/* hash the concatenation of all coins in a chunk. */
+	for (uint j = i * MAX_COIN_NUM_PER_MERKLE_LEAF; j < end; j++) {
+	    COutPoint key = unspent[j];
+	    Coin coin;
+	    bool found = pcoinsTip->GetCoin(key, coin);
+	    /* unspent coins must exist */
+	    assert(found);
+
+	    ss.str("");
+	    key.Serialize(ss);
+	    std::string key_str(ss.str());
+	    ss.str("");
+	    coin.Serialize(ss);
+	    std::string coin_str(ss.str());
+	    hasher.Write((const unsigned char*)key_str.c_str(), sizeof(key_str.size()))
+		    .Write((const unsigned char*)coin_str.c_str(), sizeof(coin_str.size()));
+	}
+	hasher.Finalize((unsigned char*)&hash);
 	leaves.push_back(hash);
     }
     lastSnapshotMerkleRoot = ComputeMerkleRoot(leaves, NULL); 

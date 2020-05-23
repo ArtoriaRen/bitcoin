@@ -1990,10 +1990,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    assert(psnapshot->chunkCnt == psnapshot->headerNheight.numChunks);
 	    assert(psnapshot->verifySnapshot());
 	    syncEndTime = time(NULL);
-	    LogPrintf("snapshot sync completes. ending height (%d). Time = %d. syncing takes %d seconds. The snapshot has %d coins.\n", chainActive.Tip()->nHeight, time(NULL), syncEndTime - syncStartTime, psnapshot->getSnapshotSize());
-	    /* To collect accurate number of bytes exchanged during sync, shut down as soon 
-	     * as we finished syncing. */
-            StartShutdown();
+	    std::vector<CNodeStats> vstats;
+            g_connman->GetNodeStats(vstats);
+	    LogPrintf("snapshot sync completes. ending height (%d). Time = %d. syncing takes %d seconds. The snapshot has %d coins. sent %lu bytes, received %lu bytes.\n", chainActive.Tip()->nHeight, time(NULL), syncEndTime - syncStartTime, psnapshot->getSnapshotSize(), vstats[0].nSendBytes, vstats[0].nRecvBytes);
 	}
 	
 	//std::cout << psnapshot->ToString() << std::endl;
