@@ -11,6 +11,7 @@
 #include <hash.h>
 #include <serialize.h>
 #include <vector>
+#include <fstream>
 
 extern BlockMap& mapBlockIndex;
 
@@ -334,6 +335,47 @@ std::string Snapshot::ToString() const
 	it++;
     }
     return ret;
+}
+
+void Snapshot::Write2File() const
+{
+    std::ofstream file;
+    file.open("snapshot.out");
+    if (!snapshotBlockHash.IsNull()) {
+		file << "snapshot block = ";
+		file << snapshotBlockHash.GetHex();
+		file << "\nheight = ";
+		file << std::to_string(headerNheight.height);
+		file << "\n";
+    } 
+
+    file << "lastsnapshotmerkleroot = ";
+    file << lastSnapshotMerkleRoot.GetHex();
+
+    file << "\nunspent.size() = ";
+    file << std::to_string(unspent.size());
+    file << "\nunspent = ";
+    for(uint i = 0; i < unspent.size(); i++) {
+	file << unspent[i].ToString();
+	file << ", ";
+    }
+
+    file << "\nadded.size() = ";
+    file << std::to_string(added.size());
+    file << "\nadded = ";
+    for(uint i = 0; i < added.size(); i++) {
+	file << added[i].ToString();
+	file << ", ";
+    }
+
+    file << "\nspent.size() = ";
+    file << std::to_string(spent.size());
+    file << "\nspent = ";
+    auto it = spent.begin();
+    while(it != spent.end()) {
+	file << it->first.ToString();
+	it++;
+    }
 }
 
 std::unique_ptr<Snapshot> psnapshot;

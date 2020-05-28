@@ -1643,7 +1643,9 @@ UniValue printsnapshot(const JSONRPCRequest& request)
             + HelpExampleRpc("fetchsnapshot", "")
         );
     }
-    return psnapshot->ToString();
+    //return psnapshot->ToString();
+    psnapshot->Write2File();
+    return NullUniValue;
 }
 
 static const CRPCCommand commands[] =

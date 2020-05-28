@@ -118,6 +118,7 @@ public:
     }
 
     std::string ToString() const;
+    void Write2File() const;
 
 //    inline bool valid(){
 //	return !lastSnapshotMerkleRoot.IsNull();
