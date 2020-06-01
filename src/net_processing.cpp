@@ -31,6 +31,7 @@
 #include <utilstrencodings.h>
 #include <snapshot/snapshot.h>
 #include <time.h>
+#include <sys/time.h>
 
 #if defined(NDEBUG)
 # error "Bitcoin cannot be compiled without assertions."
@@ -1989,10 +1990,11 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	} else {
 	    assert(psnapshot->chunkCnt == psnapshot->headerNheight.numChunks);
 	    assert(psnapshot->verifySnapshot());
-	    syncEndTime = time(NULL);
+	    //syncEndTime = time(NULL);
+            gettimeofday(&syncEndTime , NULL);
 	    std::vector<CNodeStats> vstats;
             g_connman->GetNodeStats(vstats);
-	    LogPrintf("snapshot sync completes. ending height (%d). Time = %d. syncing takes %d seconds. The snapshot has %d coins. sent %lu bytes, received %lu bytes.\n", chainActive.Tip()->nHeight, time(NULL), syncEndTime - syncStartTime, psnapshot->getSnapshotSize(), vstats[0].nSendBytes, vstats[0].nRecvBytes);
+	    LogPrintf("snapshot sync completes. ending height (%d). Time = %d. syncing takes %lu milliseconds. The snapshot has %d coins. sent %lu bytes, received %lu bytes.\n", chainActive.Tip()->nHeight, time(NULL), (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000, psnapshot->getSnapshotSize(), vstats[0].nSendBytes, vstats[0].nRecvBytes);
 	}
 	
 	//std::cout << psnapshot->ToString() << std::endl;
@@ -3349,7 +3351,8 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
 		     * ask for system state from peer.
 		     */
 		    LogPrintf("sync starting height (%d) to peer=%d (startheight:%d). Time = %d \n", pindexStart->nHeight, pto->GetId(), pto->nStartingHeight, time(NULL));
-		    syncStartTime = time(NULL);
+		    //syncStartTime = time(NULL);
+		    gettimeofday(&syncStartTime, NULL);
                     connman->PushMessage(pto, msgMaker.Make(NetMsgType::GETSNAPSHOT, chainActive.GetLocator(pindexStart), uint256()));
 		}
             }
