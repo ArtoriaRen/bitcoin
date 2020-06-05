@@ -63,6 +63,7 @@
 #include <boost/thread.hpp>
 #include <openssl/crypto.h>
 #include "pbft/pbft.h"
+#include "tx_placement/tx_placer.h"
 
 #if ENABLE_ZMQ
 #include <zmq/zmqnotificationinterface.h>
