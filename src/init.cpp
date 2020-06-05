@@ -62,6 +62,7 @@
 #include <boost/interprocess/sync/file_lock.hpp>
 #include <boost/thread.hpp>
 #include <openssl/crypto.h>
+#include "tx_placement/tx_placer.h"
 
 #if ENABLE_ZMQ
 #include <zmq/zmqnotificationinterface.h>
@@ -1748,5 +1749,6 @@ bool AppInitMain()
     StartWallets(scheduler);
 #endif
 
+    placeTxInBlocks(103, 104);
     return true;
 }
