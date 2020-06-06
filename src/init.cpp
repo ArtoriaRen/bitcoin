@@ -804,6 +804,16 @@ void InitParameterInteraction()
             LogPrintf("%s: Ignoring blockmaxsize setting which is overridden by blockmaxweight", __func__);
         }
     }
+
+    if (gArgs.IsArgSet("-startblock")) {
+         blockStart = gArgs.GetArg("-startblock", 600000);
+    }
+    if (gArgs.IsArgSet("-endblock")) {
+         blockEnd = gArgs.GetArg("-endblock", 600001);
+    }
+    if (gArgs.IsArgSet("-numcommittees")) {
+         num_committees = gArgs.GetArg("-numcommittees", 2);
+    }
 }
 
 static std::string ResolveErrMsg(const char * const optname, const std::string& strBind)
@@ -1749,6 +1759,6 @@ bool AppInitMain()
     StartWallets(scheduler);
 #endif
 
-    placeTxInBlocks(103, 104);
+    placeTxInBlocks();
     return true;
 }

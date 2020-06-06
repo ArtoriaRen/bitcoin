@@ -16,11 +16,12 @@
 
 #include <primitives/transaction.h>
 
+extern uint32_t blockStart;
+extern uint32_t blockEnd;
+extern uint32_t num_committees;
+
 class TxPlacer{
 public:
-    uint32_t num_committees;
-
-    TxPlacer(uint32_t numCommitteesIn = 2);
     /* return the number of shards that input UTXOs and output UTXOs span */
     int randomPlaceTxidIndex(CTransactionRef tx);
     int randomPlaceTxid(CTransactionRef tx);
@@ -28,7 +29,7 @@ public:
 };
 
 
-void placeTxInBlocks(uint blockStart, uint blockEnd);
+void placeTxInBlocks();
 
 #endif /* TX_PLACER_H */
 

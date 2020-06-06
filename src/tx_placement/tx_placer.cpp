@@ -12,9 +12,9 @@
 #include "validation.h"
 #include "chainparams.h"
 
-TxPlacer::TxPlacer(uint32_t numCommitteesIn){
-    num_committees = numCommitteesIn;
-}
+uint32_t blockStart;
+uint32_t blockEnd;
+uint32_t num_committees;
 
 int TxPlacer::randomPlaceTxidIndex(CTransactionRef tx){
     return 0;
@@ -43,13 +43,13 @@ int TxPlacer::smartPlace(CTransactionRef tx){
     return 0;
 }
 
-void placeTxInBlocks(uint blockStart, uint blockEnd){
-    TxPlacer txPlacer(2);
+void placeTxInBlocks(){
+    TxPlacer txPlacer;
     std::map<uint, uint> shardCntMap; // key is shard count, value is tx count
     uint totalTxNum = 0;
     for (uint i = blockStart; i < blockEnd; i++){
 	CBlockIndex* pblockindex = chainActive[i];
-	totalTxNum += pblockindex->nTx;
+	totalTxNum += pblockindex->nTx - 1; // exclude the coinbase tx
 	CBlock block;
 	if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus()))
 	    // Block not found on disk. This could be because we have the block
@@ -61,12 +61,16 @@ void placeTxInBlocks(uint blockStart, uint blockEnd){
 	
 	/* start from the second transaction to exclude coinbase tx */
 	for (uint j = 1; j < block.vtx.size(); j++) {
-	    std::cout << txPlacer.randomPlaceTxid(block.vtx[j])
-		    << "-shard tx: " << block.vtx[j]->GetHash().GetHex()  << std::endl;
+//	    std::cout << txPlacer.randomPlaceTxid(block.vtx[j])
+//		    << "-shard tx: " << block.vtx[j]->GetHash().GetHex()  << std::endl;
 
 	    shardCntMap[txPlacer.randomPlaceTxid(block.vtx[j])]++;
-	    
 	}
-	
+    }
+    std::cout << "total tx num = " << totalTxNum << std::endl;
+    std::cout << "tx shard num stats : " << std::endl;
+    for(auto entry: shardCntMap) {
+	std::cout << entry.first << "-shard tx count = "
+		<< entry.second << std::endl;
     }
 }
