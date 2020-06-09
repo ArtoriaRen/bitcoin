@@ -1764,8 +1764,8 @@ bool AppInitMain()
      * !!! NOTE: must comment out " ::Unserialize(s, shardAffinity); " in the
      * Unserialize method of Coin class because coins on disk have no such 
      * attribute yet. */
-    assignShardAffinity();
-    //printShardAffinity();
+    //assignShardAffinity();
+    printShardAffinity();
     //randomPlaceTxInBlock();
     return true;
 }

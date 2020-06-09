@@ -35,6 +35,7 @@
 
 #include <mutex>
 #include <condition_variable>
+#include <tx_placement/tx_placer.h>
 
 struct CUpdatedBlock
 {
@@ -1496,6 +1497,7 @@ UniValue reconsiderblock(const JSONRPCRequest& request)
     std::string strHash = request.params[0].get_str();
     uint256 hash(uint256S(strHash));
 
+    std::shared_ptr<CBlock> pblock = std::make_shared<CBlock>();
     {
         LOCK(cs_main);
         if (mapBlockIndex.count(hash) == 0)
@@ -1503,8 +1505,12 @@ UniValue reconsiderblock(const JSONRPCRequest& request)
 
         CBlockIndex* pblockindex = mapBlockIndex[hash];
         ResetBlockFailureFlags(pblockindex);
+	if (!ReadBlockFromDisk(*pblock, pblockindex, Params().GetConsensus())) {
+	    std::cerr << "Block not found on disk" << std::endl;
+	}
     }
 
+    smartPlaceTxInBlock(pblock);
     CValidationState state;
     ActivateBestChain(state, Params());
 
