@@ -1759,8 +1759,13 @@ bool AppInitMain()
     StartWallets(scheduler);
 #endif
 
-    //assignShardAffinity();
-    printChainAffinity();
+    /* Used to create a shardAffnity field to Coins in the chainstate database.
+     * Coins are evenly distributed to all shards.
+     * !!! NOTE: must comment out " ::Unserialize(s, shardAffinity); " in the
+     * Unserialize method of Coin class because coins on disk have no such 
+     * attribute yet. */
+    assignShardAffinity();
+    //printShardAffinity();
     //randomPlaceTxInBlock();
     return true;
 }

@@ -37,7 +37,7 @@ public:
  */
 void randomPlaceTxInBlock();
 void assignShardAffinity();
-void printChainAffinity();
+void printShardAffinity();
 //void smartPlaceTxInBlocks();
 
 /* place tx in the newly generated or received block. This only work for 

@@ -85,6 +85,7 @@ int TxPlacer::smartPlace(CTransactionRef tx){
 
 void assignShardAffinity(){
     std::cout << "Assigning shard affinity for all UTXOs..." << std::endl;
+    std::map<uint, uint> affinityCntMap; // key is shard count, value is tx count
     std::unique_ptr<CCoinsViewCursor> pcursor(pcoinsdbview->Cursor());
     assert(pcursor);
 
@@ -104,15 +105,22 @@ void assignShardAffinity(){
 //	    std::cout << "chain affinity of " << key.ToString() 
 //		    << " = " << coin.chainAffinity 
 //		    << std::endl;
+	    affinityCntMap[coin.shardAffinity]++;
         } else {
             std::cout << __func__ << ": unable to read coin" << std::endl;
         }
         pcursor->Next();
     }
     pcoinsTip->Flush();
+
+    std::cout << "chain affinity stats : " << std::endl;
+    for(auto entry: affinityCntMap) {
+	std::cout << "affinity = " << entry.first << " count : "
+		<< entry.second << std::endl;
+    }
 }
 
-void printChainAffinity(){
+void printShardAffinity(){
     std::unique_ptr<CCoinsViewCursor> pcursor(pcoinsdbview->Cursor());
     assert(pcursor);
 
