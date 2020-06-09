@@ -29,6 +29,7 @@
 #include <util.h>
 #include <utilmoneystr.h>
 #include <utilstrencodings.h>
+#include <tx_placement/tx_placer.h>
 
 #if defined(NDEBUG)
 # error "Bitcoin cannot be compiled without assertions."

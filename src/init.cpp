@@ -1759,6 +1759,8 @@ bool AppInitMain()
     StartWallets(scheduler);
 #endif
 
-    placeTxInBlocks();
+    //assignShardAffinity();
+    printChainAffinity();
+    //randomPlaceTxInBlock();
     return true;
 }
