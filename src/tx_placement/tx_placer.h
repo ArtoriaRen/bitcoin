@@ -16,19 +16,26 @@
 
 #include <primitives/transaction.h>
 #include <primitives/block.h>
+#include <coins.h>
 
-extern uint32_t blockStart;
+extern uint32_t randomPlaceBlock;
 extern uint32_t blockEnd;
 extern uint32_t num_committees;
+extern int lastAssignedAffinity;
 
-//extern int lastAssignedAffinity;
-
+/* place txs in a block */
 class TxPlacer{
 public:
+    std::map<uint, std::map<uint, uint>> shardCntMap; // < input_utxo_count, shard_count, tx_count>
+    uint totalTxNum = 0;
+
     /* return the number of shards that input UTXOs and output UTXOs span */
-//    int randomPlaceTxidIndex(CTransactionRef tx);
-    int randomPlaceTxid(CTransactionRef tx);
-    int smartPlace(CTransactionRef tx);
+    TxPlacer(const CBlock& block);
+
+    /* return the output shard id */
+    int32_t randomPlaceTxid(CTransactionRef tx);
+    int32_t smartPlace(const CTransaction& tx, CCoinsViewCache& cache);
+    void printPlaceResult();
     // TODO: smartPlaceSorted
 };
 
@@ -37,6 +44,7 @@ public:
  */
 void randomPlaceTxInBlock();
 void assignShardAffinity();
+void incrementalAssignShardAffinity();
 void printShardAffinity();
 //void smartPlaceTxInBlocks();
 
@@ -45,7 +53,7 @@ void printShardAffinity();
  * historical tx since they had been spent and not exist in chainstate.
  */
 void smartPlaceTxInBlock(const std::shared_ptr<const CBlock> pblock);
-int32_t getShardAffinityForTx(const CTransaction& tx);
+int32_t getShardAffinityForTx(CCoinsViewCache& cache, const CTransaction& tx);
 
 #endif /* TX_PLACER_H */
 

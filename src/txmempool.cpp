@@ -895,14 +895,7 @@ bool CCoinsViewMemPool::GetCoin(const COutPoint &outpoint, Coin &coin) const {
     CTransactionRef ptx = mempool.get(outpoint.hash);
     if (ptx) {
         if (outpoint.n < ptx->vout.size()) {
-	    /* TODO: use most frequent shardAffinity instead of the shardAffinity
-	     * of the first input. */
-	    const Coin firstInput = pcoinsTip->AccessCoin(ptx->vin[0].prevout);
-	    if (firstInput.IsSpent()){
-		std::cout << __func__ << " : first tx input not found." << std::endl;
-	    }
-	   
-            coin = Coin(ptx->vout[outpoint.n], MEMPOOL_HEIGHT, false, firstInput.shardAffinity);
+            coin = Coin(ptx->vout[outpoint.n], MEMPOOL_HEIGHT, false, -1);
             return true;
         } else {
             return false;

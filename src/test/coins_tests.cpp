@@ -15,9 +15,10 @@
 #include <map>
 
 #include <boost/test/unit_test.hpp>
+#include <tx_placement/tx_placer.h>
 
 int ApplyTxInUndo(Coin&& undo, CCoinsViewCache& view, const COutPoint& out);
-void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo, int nHeight);
+void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo, int nHeight, TxPlacer* txPlacer);
 
 namespace
 {
@@ -376,7 +377,7 @@ BOOST_AUTO_TEST_CASE(updatecoins_simulation_test)
 
             // Call UpdateCoins on the top cache
             CTxUndo undo;
-            UpdateCoins(tx, *(stack.back()), undo, height);
+            UpdateCoins(tx, *(stack.back()), undo, height, nullptr);
 
             // Update the utxo set for future spends
             utxoset.insert(outpoint);

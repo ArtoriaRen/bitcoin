@@ -806,7 +806,7 @@ void InitParameterInteraction()
     }
 
     if (gArgs.IsArgSet("-startblock")) {
-         blockStart = gArgs.GetArg("-startblock", 600000);
+         randomPlaceBlock = gArgs.GetArg("-startblock", 600000);
     }
     if (gArgs.IsArgSet("-endblock")) {
          blockEnd = gArgs.GetArg("-endblock", 600001);
@@ -1759,13 +1759,15 @@ bool AppInitMain()
     StartWallets(scheduler);
 #endif
 
-    /* Used to create a shardAffnity field to Coins in the chainstate database.
+    /* Create or re-assign a shardAffnity field to Coins in the chainstate database.
      * Coins are evenly distributed to all shards.
-     * !!! NOTE: must comment out " ::Unserialize(s, shardAffinity); " in the
-     * Unserialize method of Coin class because coins on disk have no such 
-     * attribute yet. */
+     * !!! NOTE: When creating shardAffinity field for the first time, must comment out 
+     * 1. " ::Unserialize(s, shardAffinity); " in the Unserialize method of Coin class 
+     * 2. " ::Unserialize(s, txout->shardAffinity); " in the Unserialize method of 
+     *     TxInUndoDeserializer class
+     * because coins on disk have no such attribute yet. */
     //assignShardAffinity();
-    printShardAffinity();
-    //randomPlaceTxInBlock();
+    //printShardAffinity();
+    randomPlaceTxInBlock();
     return true;
 }

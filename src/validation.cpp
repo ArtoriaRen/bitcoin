@@ -1287,10 +1287,19 @@ void CChainState::InvalidBlockFound(CBlockIndex *pindex, const CValidationState 
     }
 }
 
-void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo, int nHeight)
+void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo, int nHeight, TxPlacer* txPlacer)
 {
     /* get the shard affinity for output UTXOs*/
-    int32_t shardAffinity = getShardAffinityForTx(tx);
+    int32_t outputShard = -1;
+    /* txPlacer may be null if UpdateCoins is called from checkmempool */
+    if (txPlacer != nullptr){
+	if (tx.IsCoinBase()){
+	    lastAssignedAffinity = (lastAssignedAffinity + 1) % num_committees;
+	    outputShard = lastAssignedAffinity;
+	} else {
+	    outputShard = txPlacer->smartPlace(tx, inputs);
+	}
+    }
 
     // mark inputs spent
     if (!tx.IsCoinBase()) {
@@ -1298,17 +1307,18 @@ void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txund
         for (const CTxIn &txin : tx.vin) {
             txundo.vprevout.emplace_back();
             bool is_spent = inputs.SpendCoin(txin.prevout, &txundo.vprevout.back());
+//	    std::cout << __func__ << " txundo.prevout shardAffinity = " << txundo.vprevout.back().shardAffinity  << ", height = " << txundo.vprevout.back().nHeight << std::endl;
             assert(is_spent);
         }
     }
     // add outputs
-    AddCoins(inputs, tx, nHeight, shardAffinity);
+    AddCoins(inputs, tx, nHeight, outputShard);
 }
 
 void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, int nHeight)
 {
     CTxUndo txundo;
-    UpdateCoins(tx, inputs, txundo, nHeight);
+    UpdateCoins(tx, inputs, txundo, nHeight, nullptr);
 }
 
 bool CScriptCheck::operator()() {
@@ -1593,6 +1603,7 @@ DisconnectResult CChainState::DisconnectBlock(const CBlock& block, const CBlockI
             }
             for (unsigned int j = tx.vin.size(); j-- > 0;) {
                 const COutPoint &out = tx.vin[j].prevout;
+//		std::cout << __func__ << " txundo.prevout shardAffinity = " << txundo.vprevout[j].shardAffinity << std::endl;
                 int res = ApplyTxInUndo(std::move(txundo.vprevout[j]), view, out);
                 if (res == DISCONNECT_FAILED) return DISCONNECT_FAILED;
                 fClean = fClean && res != DISCONNECT_UNCLEAN;
@@ -1901,6 +1912,12 @@ bool CChainState::ConnectBlock(const CBlock& block, CValidationState& state, CBl
     blockundo.vtxundo.reserve(block.vtx.size() - 1);
     std::vector<PrecomputedTransactionData> txdata;
     txdata.reserve(block.vtx.size()); // Required so that pointers to individual PrecomputedTransactionData don't get invalidated
+
+    /* data structures for smart tx placement */
+    //std::cout << "SMART place block " << chainActive.Height() + 1 << std::endl;
+    std::cout << "SMART place block " << pindex->nHeight << std::endl;
+    TxPlacer txPlacer(block);
+
     for (unsigned int i = 0; i < block.vtx.size(); i++)
     {
         const CTransaction &tx = *(block.vtx[i]);
@@ -1957,8 +1974,11 @@ bool CChainState::ConnectBlock(const CBlock& block, CValidationState& state, CBl
         if (i > 0) {
             blockundo.vtxundo.push_back(CTxUndo());
         }
-        UpdateCoins(tx, view, i == 0 ? undoDummy : blockundo.vtxundo.back(), pindex->nHeight);
+        UpdateCoins(tx, view, i == 0 ? undoDummy : blockundo.vtxundo.back(), pindex->nHeight, &txPlacer);
     }
+
+    txPlacer.printPlaceResult();
+    
     int64_t nTime3 = GetTimeMicros(); nTimeConnect += nTime3 - nTime2;
     LogPrint(BCLog::BENCH, "      - Connect %u transactions: %.2fms (%.3fms/tx, %.3fms/txin) [%.2fs (%.2fms/blk)]\n", (unsigned)block.vtx.size(), MILLI * (nTime3 - nTime2), MILLI * (nTime3 - nTime2) / block.vtx.size(), nInputs <= 1 ? 0 : MILLI * (nTime3 - nTime2) / (nInputs-1), nTimeConnect * MICRO, nTimeConnect * MILLI / nBlocksTotal);
 
@@ -3401,7 +3421,7 @@ bool CChainState::AcceptBlock(const std::shared_ptr<const CBlock>& pblock, CVali
 
 bool ProcessNewBlock(const CChainParams& chainparams, const std::shared_ptr<const CBlock> pblock, bool fForceProcessing, bool *fNewBlock)
 {
-    smartPlaceTxInBlock(pblock);
+    //smartPlaceTxInBlock(pblock);
     AssertLockNotHeld(cs_main);
 
     {
@@ -3928,7 +3948,7 @@ bool CChainState::RollforwardBlock(const CBlockIndex* pindex, CCoinsViewCache& i
 
     for (const CTransactionRef& tx : block.vtx) {
 	/* get the shard affinity for output UTXOs*/
-	int32_t shardAffinity = getShardAffinityForTx(*tx);
+	int32_t shardAffinity = getShardAffinityForTx(inputs, *tx);
 
         if (!tx->IsCoinBase()) {
             for (const CTxIn &txin : tx->vin) {
