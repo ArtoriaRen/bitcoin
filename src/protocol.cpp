@@ -39,6 +39,10 @@ const char *SENDCMPCT="sendcmpct";
 const char *CMPCTBLOCK="cmpctblock";
 const char *GETBLOCKTXN="getblocktxn";
 const char *BLOCKTXN="blocktxn";
+const char *PBFT_PP="pbftpp"; // pbft pre-prepare
+const char *PBFTP="pbftp"; // pbft prepare
+const char *PBFTC="pbftc"; // pbft commit
+const char *PBFT_TX="pbfttx"; // use to differentiate pbft tx from normal tx
 } // namespace NetMsgType
 
 /** All known message types. Keep this in the same order as the list of
@@ -71,6 +75,10 @@ const static std::string allNetMessageTypes[] = {
     NetMsgType::CMPCTBLOCK,
     NetMsgType::GETBLOCKTXN,
     NetMsgType::BLOCKTXN,
+    NetMsgType::PBFT_PP, // pbft pre-prepare
+    NetMsgType::PBFTP, // pbft prepare
+    NetMsgType::PBFTC, // pbft commit
+    NetMsgType::PBFT_TX // use to differentiate pbft tx from normal tx
 };
 const static std::vector<std::string> allNetMessageTypesVec(allNetMessageTypes, allNetMessageTypes+ARRAYLEN(allNetMessageTypes));
 
