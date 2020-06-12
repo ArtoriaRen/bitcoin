@@ -19,6 +19,7 @@
 #include <scheduler.h>
 #include <ui_interface.h>
 #include <utilstrencodings.h>
+#include <pbft/pbft.h>
 
 #ifdef WIN32
 #include <string.h>
@@ -1145,6 +1146,7 @@ void CConnman::AcceptConnection(const ListenSocket& hListenSocket) {
     {
         LOCK(cs_vNodes);
         vNodes.push_back(pnode);
+	//g_pbft->otherMember.push_back(pnode);
     }
 }
 
@@ -1988,6 +1990,7 @@ void CConnman::OpenNetworkConnection(const CAddress& addrConnect, bool fCountFai
     {
         LOCK(cs_vNodes);
         vNodes.push_back(pnode);
+	//g_pbft->otherMember.push_back(pnode);
     }
 }
 
@@ -2799,7 +2802,7 @@ bool CConnman::NodeFullyConnected(const CNode* pnode)
 
 void CConnman::PushMessage(CNode* pnode, CSerializedNetMsg&& msg)
 {
-    //std::cout << __func__ << ": " << msg.command << std::endl;
+    std::cout << __func__ << ": " << msg.command << std::endl;
     size_t nMessageSize = msg.data.size();
     size_t nTotalSize = nMessageSize + CMessageHeader::HEADER_SIZE;
     LogPrint(BCLog::NET, "sending %s (%d bytes) peer=%d\n",  SanitizeString(msg.command.c_str()), nMessageSize, pnode->GetId());

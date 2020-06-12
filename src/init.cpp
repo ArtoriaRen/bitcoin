@@ -62,6 +62,7 @@
 #include <boost/interprocess/sync/file_lock.hpp>
 #include <boost/thread.hpp>
 #include <openssl/crypto.h>
+#include "pbft/pbft.h"
 
 #if ENABLE_ZMQ
 #include <zmq/zmqnotificationinterface.h>
@@ -195,6 +196,7 @@ void Shutdown()
 #endif
     MapPort(false);
 
+    g_pbft.reset();
     // Because these depend on each-other, we make sure that neither can be
     // using the other before destroying them.
     if (peerLogic) UnregisterValidationInterface(peerLogic.get());
@@ -809,6 +811,9 @@ void InitParameterInteraction()
     if (gArgs.IsArgSet("-synctoheight")) {
         syncToHeight = gArgs.GetArg("-synctoheight", 10);
     }
+    if (gArgs.IsArgSet("-ispbftclient")) {
+         fIsClient = gArgs.GetBoolArg("-ispbftclient", false);
+    }
 }
 
 static std::string ResolveErrMsg(const char * const optname, const std::string& strBind)
@@ -1292,9 +1297,14 @@ bool AppInitMain()
 
     assert(!g_connman);
     g_connman = std::unique_ptr<CConnman>(new CConnman(GetRand(std::numeric_limits<uint64_t>::max()), GetRand(std::numeric_limits<uint64_t>::max())));
+    assert(!g_pbft);
+    g_pbft = std::unique_ptr<CPbft>(new CPbft());
+    if (fIsClient){
+	/* We are a pbft client. */
+	g_pbft_client = std::unique_ptr<CPbftClient>(new CPbftClient());
+    }
     CConnman& connman = *g_connman;
-
-    peerLogic.reset(new PeerLogicValidation(&connman, scheduler));
+    peerLogic.reset(new PeerLogicValidation(&connman, g_pbft.get(), scheduler));
     RegisterValidationInterface(peerLogic.get());
 
     // sanitize comments per BIP-0014, format user agent and check total size
@@ -1754,5 +1764,15 @@ bool AppInitMain()
     StartWallets(scheduler);
 #endif
 
+    /* Create or re-assign a shardAffnity field to Coins in the chainstate database.
+     * Coins are evenly distributed to all shards.
+     * !!! NOTE: When creating shardAffinity field for the first time, must comment out 
+     * 1. " ::Unserialize(s, shardAffinity); " in the Unserialize method of Coin class 
+     * 2. " ::Unserialize(s, txout->shardAffinity); " in the Unserialize method of 
+     *     TxInUndoDeserializer class
+     * because coins on disk have no such attribute yet. */
+    //assignShardAffinity();
+    //printShardAffinity();
+    //randomPlaceTxInBlock();
     return true;
 }

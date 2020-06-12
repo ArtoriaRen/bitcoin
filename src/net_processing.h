@@ -9,6 +9,7 @@
 #include <net.h>
 #include <validationinterface.h>
 #include <consensus/params.h>
+#include <pbft/pbft.h>
 
 /** Default for -maxorphantx, maximum number of orphan transactions kept in memory */
 static const unsigned int DEFAULT_MAX_ORPHAN_TRANSACTIONS = 100;
@@ -38,9 +39,10 @@ static constexpr int64_t MINIMUM_CONNECT_TIME = 30;
 class PeerLogicValidation : public CValidationInterface, public NetEventsInterface {
 private:
     CConnman* const connman;
+    CPbft* const pbft;
 
 public:
-    explicit PeerLogicValidation(CConnman* connman, CScheduler &scheduler);
+    explicit PeerLogicValidation(CConnman* connman, CPbft* pbft, CScheduler &scheduler);
 
     void BlockConnected(const std::shared_ptr<const CBlock>& pblock, const CBlockIndex* pindexConnected, const std::vector<CTransactionRef>& vtxConflicted) override;
     void UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlockIndex *pindexFork, bool fInitialDownload) override;
