@@ -1857,6 +1857,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
     else if (strCommand == NetMsgType::PBFT_PP) {
         CPre_prepare ppMsg;
+	std::cout << __func__ << ": about to deserialize vRecv" <<std::endl;
         vRecv >> ppMsg;
 	pbft->ProcessPP(pfrom, ppMsg);
 

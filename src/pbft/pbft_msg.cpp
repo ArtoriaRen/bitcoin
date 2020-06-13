@@ -11,6 +11,7 @@
 //#include "pbft/debug_flag_pbft.h"
 
 CPbftMessage::CPbftMessage(): view(0), seq(0), digest(), vchSig(){
+    vchSig.reserve(72); // the expected sig size is 72 bytes.
 }
 
 void CPbftMessage::getHash(uint256& result){
