@@ -14,7 +14,7 @@
 
 bool fIsClient; // if this node is a pbft client.
 
-CPbft::CPbft() : groupSize(4), localView(0), nextSeq(0), lastExecutedIndex(-1), privateKey(CKey()){
+CPbft::CPbft() : groupSize(4), localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedIndex(-1), privateKey(CKey()){
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
 }
@@ -254,6 +254,7 @@ bool CPbft::checkMsg(CNode* pfrom, CPbftMessage* msg) {
         std::cerr << "verification sig fail" << std::endl;
         return false;
     }
+    std::cerr << "sig ok" << std::endl;
     // server should be in the view
     if (localView != msg->view) {
         std::cerr << "server view = " << localView << ", but msg view = " << msg->view << std::endl;
@@ -284,8 +285,9 @@ CPre_prepare CPbft::assemblePPMsg(const CTransaction& tx) {
     toSent.digest = tx.GetHash();
     toSent.tx = CMutableTransaction(tx);
     uint256 hash;
-    toSent.getHash(hash); // this hash is used for signature, so clientReq is not included in this hash.
+    toSent.getHash(hash); // this hash is used for signature, so client tx is not included in this hash.
     privateKey.Sign(hash, toSent.vchSig);
+    toSent.sigSize = toSent.vchSig.size();
     return toSent;
 }
 
