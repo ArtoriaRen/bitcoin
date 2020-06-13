@@ -45,8 +45,8 @@ public:
     
     template<typename Stream>
     void Unserialize(Stream& s) {
-	s.read((char*)view, sizeof(view));
-	s.read((char*)seq, sizeof(seq));
+	s.read((char*)&view, sizeof(view));
+	s.read((char*)&seq, sizeof(seq));
 	s.read((char*)digest.begin(), digest.size());
 	s.read((char*)vchSig.data(), vchSig.size());
     }
@@ -75,7 +75,7 @@ public:
     template<typename Stream>
     void Unserialize(Stream& s) {
 	CPbftMessage::Unserialize(s);
-	tx.Unserialize(deserialize, s);
+	tx.Unserialize(s);
     }
 
     CMutableTransaction tx;

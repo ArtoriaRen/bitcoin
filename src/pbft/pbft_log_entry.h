@@ -19,7 +19,7 @@
 
 class CPbftLogEntry{
 public:
-    CPre_prepare pre_prepare;
+    CPre_prepare ppMsg;
     // Prepare and Commit vectors are only used in view change. For normal operation, we use the count instead.
 //    std::vector<CPrepare> prepareArray;
 //    std::vector<CCommit> commitArray;
@@ -35,7 +35,7 @@ public:
     CPbftLogEntry(): prepareCount(0), commitCount(0), phase(PbftPhase::pre_prepare){}
     
     CPbftLogEntry(const CPre_prepare& pp):prepareCount(0), commitCount(0){
-//	pre_prepare = pp;
+//	ppMsg = pp;
 	// log for a pre-prepare message will not be created if the sig is wrong, so the protocol for this entry directly enter Prepare phase once created.
 	phase = PbftPhase::prepare;
     }
