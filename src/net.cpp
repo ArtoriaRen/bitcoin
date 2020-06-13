@@ -1146,7 +1146,7 @@ void CConnman::AcceptConnection(const ListenSocket& hListenSocket) {
     {
         LOCK(cs_vNodes);
         vNodes.push_back(pnode);
-	//g_pbft->otherMember.push_back(pnode);
+	g_pbft->otherMembers.push_back(pnode);
     }
 }
 
@@ -1990,7 +1990,7 @@ void CConnman::OpenNetworkConnection(const CAddress& addrConnect, bool fCountFai
     {
         LOCK(cs_vNodes);
         vNodes.push_back(pnode);
-	//g_pbft->otherMember.push_back(pnode);
+	g_pbft->otherMembers.push_back(pnode);
     }
 }
 

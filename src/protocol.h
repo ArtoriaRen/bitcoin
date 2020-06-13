@@ -242,6 +242,7 @@ extern const char *PBFT_PP; // pbft pre-prepare
 extern const char *PBFTP; // pbft prepare
 extern const char *PBFTC; // pbft commit
 extern const char *PBFT_TX; // use to differentiate pbft tx from normal tx
+extern const char *PBFT_PUBKEY; 
 };
 
 /* Get a vector of all valid message types (see above) */

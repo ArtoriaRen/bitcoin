@@ -14,7 +14,10 @@
 
 bool fIsClient; // if this node is a pbft client.
 
-CPbft::CPbft() : groupSize(4), localView(0), nextSeq(0), lastExecutedIndex(-1) { }
+CPbft::CPbft() : groupSize(4), localView(0), nextSeq(0), lastExecutedIndex(-1), privateKey(CKey()){
+    privateKey.MakeNewKey(false);
+    myPubKey= privateKey.GetPubKey();
+}
 
 //CPbft& CPbft::operator=(const CPbft& rhs) {
 //    if (this == &rhs)
@@ -134,31 +137,37 @@ CPbft::CPbft() : groupSize(4), localView(0), nextSeq(0), lastExecutedIndex(-1) {
 //    receiver.join();
 //}
 
-bool CPbft::ProcessPP(CPre_prepare& ppMsg) {
+bool CPbft::ProcessPP(CNode* pfrom, CPre_prepare& ppMsg) {
 //#ifdef BASIC_PBFT
 //    std::cout << "server " << server_id << "received pre-prepare, seq = " << pre_prepare.seq << std::endl;
 //#endif
-//    // sanity check for signature, seq, view, digest.
-//    /*Faulty nodes may proceed even if the sanity check fails*/
-//    if (!checkMsg(&pre_prepare)) {
-//        return false;
-//    }
-//    // add to log
-//    log[pre_prepare.seq].pre_prepare = pre_prepare;
-//    /* check if at least 2f prepare has been received. If so, enter commit phase directly; otherwise, enter prepare phase.(The goal of this operation is to tolerate network reordering.)
-//     -----Placeholder: to tolerate faulty nodes, we must check if all prepare msg matches the pre-prepare.
-//     */
-//    CPbftMessage p = assembleMsg(PbftPhase::prepare, pre_prepare.seq);
+    // sanity check for signature, seq, view, digest.
+    /*Faulty nodes may proceed even if the sanity check fails*/
+    if (!checkMsg(pfrom, &ppMsg)) {
+        return false;
+    }
+
+    // check if the digest matches client req
+    if (ppMsg.digest != ppMsg.tx.GetHash()) {
+	std::cerr << "digest does not match client tx. Client txid = " << ppMsg.tx.GetHash().GetHex() << ", but digest = " << ppMsg.digest.GetHex() << std::endl;
+	return false;
+    }
+    // add to log
+    log[ppMsg.seq].ppMsg = ppMsg;
+    /* check if at least 2f prepare has been received. If so, enter commit phase directly; otherwise, enter prepare phase.(The goal of this operation is to tolerate network reordering.)
+     -----Placeholder: to tolerate faulty nodes, we must check if all prepare msg matches the pre-prepare.
+     */
+//    CPbftMessage p = assembleMsg(PbftPhase::prepare, ppMsg.seq);
 //    broadcast(&p);
-//    if (log[pre_prepare.seq].prepareCount >= (nFaulty << 1)) {
-//        log[pre_prepare.seq].phase = PbftPhase::commit;
-//        CPbftMessage c = assembleMsg(PbftPhase::commit, pre_prepare.seq);
+//    if (log[ppMsg.seq].prepareCount >= (nFaulty << 1)) {
+//        log[ppMsg.seq].phase = PbftPhase::commit;
+//        CPbftMessage c = assembleMsg(PbftPhase::commit, ppMsg.seq);
 //        broadcast(&c);
 //    } else {
 //#ifdef BASIC_PBFT
-//        std::cout << "enter prepare phase. seq in pre-prepare = " << pre_prepare.seq << std::endl;
+//        std::cout << "enter prepare phase. seq in pre-prepare = " << ppMsg.seq << std::endl;
 //#endif
-//        log[pre_prepare.seq].phase = PbftPhase::prepare;
+//        log[ppMsg.seq].phase = PbftPhase::prepare;
 //    }
     std::cout << "digest = " << ppMsg.digest.GetHex() << std::endl;
     return true;
@@ -171,6 +180,15 @@ bool CPbft::ProcessP(CPbftMessage& prepare, bool sanityCheck) {
 //    // sanity check for signature, seq, view.
 //    if (sanityCheck && !checkMsg(&prepare)) {
 //        return false;
+//    }
+
+//    // if phase is prepare or commit, also need to check view 
+//    if (msg->phase == PbftPhase::prepare || msg->phase == PbftPhase::commit) {
+//
+//        if (log[msg->seq].pre_prepare.view != msg->view) {
+//            std::cerr << "log entry view = " << log[msg->seq].pre_prepare.view << ", but msg view = " << msg->view << std::endl;
+//            return false;
+//        }
 //    }
 //
 //    //-----------add to log (currently use placeholder: should add the entire message to log and not increase re-count if the sender is the same. Also, if prepares are received earlier than pre-prepare, different prepare may have different digest. Should categorize buffered prepares based on digest.)
@@ -199,6 +217,15 @@ bool CPbft::ProcessC(CPbftMessage& commit, bool sanityCheck) {
 //    if (sanityCheck && !checkMsg(&commit)) {
 //        return false;
 //    }
+
+//    // if phase is prepare or commit, also need to check view 
+//    if (msg->phase == PbftPhase::prepare || msg->phase == PbftPhase::commit) {
+//
+//        if (log[msg->seq].pre_prepare.view != msg->view) {
+//            std::cerr << "log entry view = " << log[msg->seq].pre_prepare.view << ", but msg view = " << msg->view << std::endl;
+//            return false;
+//        }
+//    }
 //
 //    // count the number of prepare msg. enter execute if greater than 2f+1
 //    log[commit.seq].commitCount++;
@@ -214,53 +241,36 @@ bool CPbft::ProcessC(CPbftMessage& commit, bool sanityCheck) {
     return true;
 }
 
-//bool CPbft::checkMsg(CPbftMessage* msg) {
-//    // verify signature and return wrong if sig is wrong
-//    if (peers.find(msg->senderId) == peers.end()) {
-//        std::cerr << "no pub key for the sender" << std::endl;
-//        return false;
-//    }
-//    uint256 msgHash;
-//    msg->getHash(msgHash);
-//    if (!peers[msg->senderId].pk.Verify(msgHash, msg->vchSig)) {
-//        std::cerr << "verification sig fail" << std::endl;
-//        return false;
-//    }
-//    // server should be in the view
-//    if (localView != msg->view) {
-//        std::cerr << "server view = " << localView << ", but msg view = " << msg->view << std::endl;
-//        return false;
-//    }
-//
-//    /* check if the seq is alreadly attached to another digest. Checking if log entry is null is necessary b/c prepare msgs may arrive earlier than pre-prepare.
-//     * Placeholder: Faulty followers may accept.
-//     */
-//    if (!log[msg->seq].pre_prepare.digest.IsNull() && log[msg->seq].pre_prepare.digest != msg->digest) {
-//        std::cerr << "digest error for log entry " << msg->seq << ". digest in log = " << log[msg->seq].pre_prepare.digest.GetHex() << ", but msg->digest = " << msg->digest.GetHex() << std::endl;
-//        return false;
-//    }
-//
-//    // if phase is pre-prepare, check if the digest matches client req
-//    if (msg->phase == PbftPhase::pre_prepare) {
-//        std::string req = ((CPre_prepare*) msg)->clientReq;
-//
-//        if (msg->digest != Hash(req.begin(), req.end())) {
-//            std::cerr << "digest does not match client request. Client req = " << req << ", but digest = " << msg->digest.GetHex() << std::endl;
-//            return false;
-//
-//        }
-//    }
-//
-//    // if phase is prepare or commit, also need to check view 
-//    if (msg->phase == PbftPhase::prepare || msg->phase == PbftPhase::commit) {
-//
-//        if (log[msg->seq].pre_prepare.view != msg->view) {
-//            std::cerr << "log entry view = " << log[msg->seq].pre_prepare.view << ", but msg view = " << msg->view << std::endl;
-//            return false;
-//        }
-//    }
-//    return true;
-//}
+bool CPbft::checkMsg(CNode* pfrom, CPbftMessage* msg) {
+    // verify signature and return wrong if sig is wrong
+    auto it = pubKeyMap.find(pfrom->addr.ToStringIPPort());
+    if (it == pubKeyMap.end()) {
+        std::cerr << "no pub key for the sender" << std::endl;
+        return false;
+    }
+    uint256 msgHash;
+    msg->getHash(msgHash);
+    if (!it->second.Verify(msgHash, msg->vchSig)) {
+        std::cerr << "verification sig fail" << std::endl;
+        return false;
+    }
+    // server should be in the view
+    if (localView != msg->view) {
+        std::cerr << "server view = " << localView << ", but msg view = " << msg->view << std::endl;
+        return false;
+    }
+
+    /* check if the seq is alreadly attached to another digest. Checking if log entry is null is necessary b/c prepare msgs may arrive earlier than pre-prepare.
+     * Placeholder: Faulty followers may accept.
+     */
+    if (!log[msg->seq].ppMsg.digest.IsNull() && log[msg->seq].ppMsg.digest != msg->digest) {
+        std::cerr << "digest error for log entry " << msg->seq << ". digest in log = " << log[msg->seq].ppMsg.digest.GetHex() << ", but msg->digest = " << msg->digest.GetHex() << std::endl;
+        return false;
+    }
+
+
+    return true;
+}
 
 CPre_prepare CPbft::assemblePPMsg(const CTransaction& tx) {
 #ifdef MSG_ASSEMBLE

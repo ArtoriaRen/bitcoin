@@ -30,6 +30,7 @@
 #include <utilmoneystr.h>
 #include <utilstrencodings.h>
 #include <tx_placement/tx_placer.h>
+#include <pubkey.h>
 
 #if defined(NDEBUG)
 # error "Bitcoin cannot be compiled without assertions."
@@ -1517,21 +1518,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         }
     }
 
-    /* The pbft leader receiving a tx will assemble pp message. */
-    if (strCommand == NetMsgType::PBFT_TX) {
-        CTransactionRef ptx;
-        vRecv >> ptx;
-        const CTransaction& tx = *ptx;
-	CPre_prepare ppMsg = pbft->assemblePPMsg(tx);
-	const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
-	std::cout << __func__ << ": received tx = " << tx.ToString() << std::endl;
-	for (CNode* node: pbft->otherMember) {
-	    /* since we are the leader, we do not care to exclude the leader from 
-	     * the otherMember vector because ourself is not in the vector. */
-	    connman->PushMessage(node, msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
-	}
-    }
-
 //    if (strCommand == NetMsgType::PBFT_PP) {
 //	CPre_prepare ppMsg;
 //	ppMsg.Unserialize(vRecv)
@@ -1764,6 +1750,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                       (fLogIPs ? strprintf(", peeraddr=%s", pfrom->addr.ToString()) : ""));
         }
 
+	connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::PBFT_PUBKEY, pbft->myPubKey));
+
 //        if (pfrom->nVersion >= SENDHEADERS_VERSION) {
 //            // Tell our peer we prefer to receive headers rather than inv's
 //            // We send this to non-NODE NETWORK peers as well, because even
@@ -1843,6 +1831,45 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             pfrom->fGetAddr = false;
         if (pfrom->fOneShot)
             pfrom->fDisconnect = true;
+    }
+
+    else if (strCommand == NetMsgType::PBFT_PUBKEY)
+    {
+	CPubKey peerPubKey;
+	vRecv >> peerPubKey;
+	pbft->pubKeyMap.insert(std::make_pair(pfrom->addr.ToStringIPPort(), std::move(peerPubKey)));
+    }
+
+    /* The pbft leader receiving a tx will assemble pp message. */
+    else if (strCommand == NetMsgType::PBFT_TX) {
+        CTransactionRef ptx;
+        vRecv >> ptx;
+        const CTransaction& tx = *ptx;
+	CPre_prepare ppMsg = pbft->assemblePPMsg(tx);
+	const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
+	std::cout << __func__ << ": received tx = " << tx.ToString()
+		<< ", otherMember.size = " << pbft->otherMembers.size() << std::endl;
+	for (CNode* node: pbft->otherMembers) {
+	    /* since we are the leader, we do not care to exclude the leader from 
+	     * the otherMember vector because ourself is not in the vector. */
+	    connman->PushMessage(node, msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
+	}
+    }
+
+    else if (strCommand == NetMsgType::PBFT_PP) {
+        CPre_prepare ppMsg;
+        vRecv >> ppMsg;
+	pbft->ProcessPP(pfrom, ppMsg);
+
+//	CPre_prepare ppMsg = pbft->assemblePPMsg(tx);
+//	const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
+//	std::cout << __func__ << ": received tx = " << tx.ToString()
+//		<< ", otherMember.size = " << pbft->otherMembers.size() << std::endl;
+//	for (CNode* node: pbft->otherMembers) {
+//	    /* since we are the leader, we do not care to exclude the leader from 
+//	     * the otherMember vector because ourself is not in the vector. */
+//	    connman->PushMessage(node, msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
+//	}
     }
 
     else if (strCommand == NetMsgType::SENDHEADERS)
@@ -3269,6 +3296,8 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
 	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	    /* the client should connect to only the PBFT leader to make sure 
 	     * that pto is the leader. */
+	    std::cout << __func__ << ": sending message = " << tx.ToString()
+		    << std::endl;
 	    connman->PushMessage(pto, msgMaker.Make(NetMsgType::PBFT_TX, tx));
 	    g_pbft_client->nTxSent++;
 	}
