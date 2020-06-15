@@ -237,6 +237,7 @@ extern const char *GETBLOCKTXN;
  * @since protocol version 70014 as described by BIP 152
  */
 extern const char *BLOCKTXN;
+extern const char *PBFT_TX; // use to differentiate pbft tx from normal tx
 };
 
 /* Get a vector of all valid message types (see above) */
