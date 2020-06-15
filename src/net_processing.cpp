@@ -1846,6 +1846,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         vRecv >> ptx;
         const CTransaction& tx = *ptx;
 	CPre_prepare ppMsg = pbft->assemblePPMsg(tx);
+	/* add the ppMsg to the leader's own log. */
+	pbft->log[ppMsg.seq].ppMsg = ppMsg;
 	const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
 	std::cout << __func__ << ": received tx = " << tx.ToString()
 		<< ", otherMember.size = " << pbft->otherMembers.size() << std::endl;
@@ -1858,18 +1860,62 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
     else if (strCommand == NetMsgType::PBFT_PP) {
         CPre_prepare ppMsg;
-	std::cout << __func__ << ": about to deserialize vRecv" <<std::endl;
         vRecv >> ppMsg;
-	pbft->ProcessPP(pfrom, ppMsg);
+	if(!pbft->ProcessPP(pfrom, ppMsg)) {
+	    std::cout << __func__ << ": process ppMsg failed" <<std::endl;
+	}
 
-//	CPre_prepare ppMsg = pbft->assemblePPMsg(tx);
-//	const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
-//	std::cout << __func__ << ": received tx = " << tx.ToString()
-//		<< ", otherMember.size = " << pbft->otherMembers.size() << std::endl;
-//	for (CNode* node: pbft->otherMembers) {
-//	    /* since we are the leader, we do not care to exclude the leader from 
-//	     * the otherMember vector because ourself is not in the vector. */
-//	    connman->PushMessage(node, msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
+	/* send a pMsg */
+	CPbftMessage pMsg = pbft->assembleMsg(ppMsg.seq);
+	const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
+	for (CNode* node: pbft->otherMembers) {
+	    connman->PushMessage(node, msgMaker.Make(NetMsgType::PBFT_P, pMsg));
+	}
+
+	/* if this node is the 2n-th one receiving the ppMsg, it should enter commit
+	 * phase. */
+	if (pbft->log[ppMsg.seq].phase == PbftPhase::commit) {
+	    CPbftMessage cMsg = pbft->assembleMsg(ppMsg.seq);
+	    const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
+	    /* send commit msg to all other members including the leader. */
+	    connman->PushMessage(pbft->leader, msgMaker.Make(NetMsgType::PBFT_C, cMsg));
+	    for (CNode* node: pbft->otherMembers) {
+		connman->PushMessage(node, msgMaker.Make(NetMsgType::PBFT_C, cMsg));
+	    }
+	}
+    }
+
+    else if (strCommand == NetMsgType::PBFT_P) {
+        CPbftMessage pMsg;
+        vRecv >> pMsg;
+	bool fEnterCommitPhase = false;
+	if(!pbft->ProcessP(pfrom, pMsg, &fEnterCommitPhase)) {
+	    std::cout << __func__ << ": process pMsg failed" <<std::endl;
+	}
+	if(fEnterCommitPhase) {
+	    /* send a cMsg */
+	    CPbftMessage cMsg = pbft->assembleMsg(pMsg.seq);
+	    const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
+	    for (CNode* node: pbft->otherMembers) {
+		connman->PushMessage(node, msgMaker.Make(NetMsgType::PBFT_C, cMsg));
+	    }
+	}
+    }
+
+    else if (strCommand == NetMsgType::PBFT_C) {
+        CPbftMessage cMsg;
+        vRecv >> cMsg;
+	if(!pbft->ProcessC(pfrom, cMsg)) {
+	    std::cout << __func__ << ": process cMsg failed" <<std::endl;
+	}
+	/* probably need to send reply to client. */
+//	if(fEnterCommitPhase) {
+//	    /* send a cMsg */
+//	    CPbftMessage cMsg = pbft->assembleMsg(pMsg.seq);
+//	    const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
+//	    for (CNode* node: pbft->otherMembers) {
+//		connman->PushMessage(node, msgMaker.Make(NetMsgType::PBFT_C, cMsg));
+//	    }
 //	}
     }
 

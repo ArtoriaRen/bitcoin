@@ -292,7 +292,6 @@ enum FlushStateMode {
 static bool FlushStateToDisk(const CChainParams& chainParams, CValidationState &state, FlushStateMode mode, int nManualPruneHeight=0);
 static void FindFilesToPruneManual(std::set<int>& setFilesToPrune, int nManualPruneHeight);
 static void FindFilesToPrune(std::set<int>& setFilesToPrune, uint64_t nPruneAfterHeight);
-bool CheckInputs(const CTransaction& tx, CValidationState &state, const CCoinsViewCache &inputs, bool fScriptChecks, unsigned int flags, bool cacheSigStore, bool cacheFullScriptStore, PrecomputedTransactionData& txdata, std::vector<CScriptCheck> *pvChecks = nullptr);
 static FILE* OpenUndoFile(const CDiskBlockPos &pos, bool fReadOnly = false);
 
 bool CheckFinalTx(const CTransaction &tx, int flags)
@@ -1287,19 +1286,26 @@ void CChainState::InvalidBlockFound(CBlockIndex *pindex, const CValidationState 
     }
 }
 
-void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo, int nHeight, TxPlacer* txPlacer)
+void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo, int nHeight)
 {
-    /* get the shard affinity for output UTXOs*/
+//    /* get the shard affinity for output UTXOs*/
+//    int32_t outputShard = -1;
+//    /* txPlacer may be null if UpdateCoins is called from checkmempool */
+//    if (txPlacer != nullptr){
+//	if (tx.IsCoinBase()){
+//	    lastAssignedAffinity = (lastAssignedAffinity + 1) % num_committees;
+//	    outputShard = lastAssignedAffinity;
+//	} else {
+//	    outputShard = txPlacer->smartPlace(tx, inputs);
+//	}
+//    }
+    
+    /* TODO: output shard should be the shard of the first input and should be the id
+     * of this shard. 
+     * 1. add shard affinity to txout. Client must collect information about its
+     * own txout and specify shard id in tx inputs. */
+//    assert(tx.vin[0].shardAffinity);
     int32_t outputShard = -1;
-    /* txPlacer may be null if UpdateCoins is called from checkmempool */
-    if (txPlacer != nullptr){
-	if (tx.IsCoinBase()){
-	    lastAssignedAffinity = (lastAssignedAffinity + 1) % num_committees;
-	    outputShard = lastAssignedAffinity;
-	} else {
-	    outputShard = txPlacer->smartPlace(tx, inputs);
-	}
-    }
 
     // mark inputs spent
     if (!tx.IsCoinBase()) {
@@ -1318,7 +1324,7 @@ void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txund
 void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, int nHeight)
 {
     CTxUndo txundo;
-    UpdateCoins(tx, inputs, txundo, nHeight, nullptr);
+    UpdateCoins(tx, inputs, txundo, nHeight);
 }
 
 bool CScriptCheck::operator()() {
@@ -1974,7 +1980,7 @@ bool CChainState::ConnectBlock(const CBlock& block, CValidationState& state, CBl
         if (i > 0) {
             blockundo.vtxundo.push_back(CTxUndo());
         }
-        UpdateCoins(tx, view, i == 0 ? undoDummy : blockundo.vtxundo.back(), pindex->nHeight, &txPlacer);
+        UpdateCoins(tx, view, i == 0 ? undoDummy : blockundo.vtxundo.back(), pindex->nHeight);
     }
 
     txPlacer.printPlaceResult();

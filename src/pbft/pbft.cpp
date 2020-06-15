@@ -9,12 +9,19 @@
 #include <netinet/in.h>
 #include "pbft/pbft.h"
 #include "init.h"
+#include "validation.h"
 #include "pbft/pbft_msg.h"
 #include "crypto/aes.h"
+#include "consensus/validation.h"
+#include "consensus/params.h"
+#include "consensus/tx_verify.h"
+#include "coins.h"
+#include "script/interpreter.h"
+#include "undo.h"
 
 bool fIsClient; // if this node is a pbft client.
 
-CPbft::CPbft() : groupSize(4), localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedIndex(-1), privateKey(CKey()){
+CPbft::CPbft() : groupSize(4), nFaulty(1), localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedIndex(-1), privateKey(CKey()){
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
 }
@@ -157,87 +164,88 @@ bool CPbft::ProcessPP(CNode* pfrom, CPre_prepare& ppMsg) {
     /* check if at least 2f prepare has been received. If so, enter commit phase directly; otherwise, enter prepare phase.(The goal of this operation is to tolerate network reordering.)
      -----Placeholder: to tolerate faulty nodes, we must check if all prepare msg matches the pre-prepare.
      */
-//    CPbftMessage p = assembleMsg(PbftPhase::prepare, ppMsg.seq);
-//    broadcast(&p);
-//    if (log[ppMsg.seq].prepareCount >= (nFaulty << 1)) {
-//        log[ppMsg.seq].phase = PbftPhase::commit;
-//        CPbftMessage c = assembleMsg(PbftPhase::commit, ppMsg.seq);
-//        broadcast(&c);
-//    } else {
-//#ifdef BASIC_PBFT
-//        std::cout << "enter prepare phase. seq in pre-prepare = " << ppMsg.seq << std::endl;
-//#endif
-//        log[ppMsg.seq].phase = PbftPhase::prepare;
-//    }
+    /* add the pMsg of from the node itself. */
+    log[ppMsg.seq].prepareCount++;
+    if (log[ppMsg.seq].prepareCount >= (nFaulty << 1)) {
+        log[ppMsg.seq].phase = PbftPhase::commit;
+    } else {
+#ifdef BASIC_PBFT
+        std::cout << "enter prepare phase. seq in pre-prepare = " << ppMsg.seq << std::endl;
+#endif
+        log[ppMsg.seq].phase = PbftPhase::prepare;
+    }
     std::cout << "digest = " << ppMsg.digest.GetHex() << std::endl;
     return true;
 }
 
-bool CPbft::ProcessP(CPbftMessage& prepare, bool sanityCheck) {
+bool CPbft::ProcessP(CNode* pfrom, CPbftMessage& pMsg, bool* fEnterCommitPhase) {
 //#ifdef BASIC_PBFT
 //    std::cout << "server " << server_id << " received prepare. seq = " << prepare.seq << std::endl;
 //#endif
-//    // sanity check for signature, seq, view.
-//    if (sanityCheck && !checkMsg(&prepare)) {
-//        return false;
-//    }
+    // sanity check for signature, seq, and the message's view equals the local view.
+    if (!checkMsg(pfrom, &pMsg)) {
+        return false;
+    }
 
-//    // if phase is prepare or commit, also need to check view 
-//    if (msg->phase == PbftPhase::prepare || msg->phase == PbftPhase::commit) {
-//
-//        if (log[msg->seq].pre_prepare.view != msg->view) {
-//            std::cerr << "log entry view = " << log[msg->seq].pre_prepare.view << ", but msg view = " << msg->view << std::endl;
-//            return false;
-//        }
-//    }
-//
-//    //-----------add to log (currently use placeholder: should add the entire message to log and not increase re-count if the sender is the same. Also, if prepares are received earlier than pre-prepare, different prepare may have different digest. Should categorize buffered prepares based on digest.)
-//    //    log[prepare.seq].prepareArray.push_back(prepare);
-//    // count the number of prepare msg. enter commit if greater than 2f
-//    log[prepare.seq].prepareCount++;
-//    //use == (nFaulty << 1) instead of >= (nFaulty << 1) so that we do not re-send commit msg every time another prepare msg is received.  
-//    if (log[prepare.seq].phase == PbftPhase::prepare && log[prepare.seq].prepareCount == (nFaulty << 1)) {
-//        // enter commit phase
-//#ifdef BASIC_PBFT
-//        std::cout << "server " << server_id << " enter commit phase" << std::endl;
-//#endif
-//        log[prepare.seq].phase = PbftPhase::commit;
-//        CPbftMessage c = assembleMsg(PbftPhase::commit, prepare.seq);
-//        broadcast(&c);
-//        return true;
-//    }
+    // check the message's view mactches the ppMsg's view in log.
+    if (log[pMsg.seq].ppMsg.view != pMsg.view) {
+	std::cerr << "log entry view = " << log[pMsg.seq].ppMsg.view 
+		<< ", but msg view = " << pMsg.view << std::endl;
+	return false;
+    }
+
+    /*-----------
+     * add to log (currently use placeholder: should add the entire message 
+     * to log and not increase re-count if the sender is the same. 
+     * Also, if prepares are received earlier than pre-prepare, different
+     * prepare may have different digest. Should categorize buffered prepares 
+     * based on digest.)
+     */
+    // log[prepare.seq].prepareArray.push_back(prepare);
+
+    /* count the number of prepare msg. enter commit if greater than 2f */
+    log[pMsg.seq].prepareCount++;
+    //use == (nFaulty << 1) instead of >= (nFaulty << 1) so that we do not re-send commit msg every time another prepare msg is received.  
+    if (log[pMsg.seq].phase == PbftPhase::prepare && log[pMsg.seq].prepareCount == (nFaulty << 1)) {
+        // enter commit phase
+#ifdef BASIC_PBFT
+        std::cout << "server " << server_id << " enter commit phase" << std::endl;
+#endif
+        log[pMsg.seq].phase = PbftPhase::commit;
+	//*fEnterCommitPhase = true;
+    }
+    /* TODO: this is only for testing, delete this line and uncomment the second last line
+     * to test a cluster. */
+    *fEnterCommitPhase = true;
     return true;
 }
 
-bool CPbft::ProcessC(CPbftMessage& commit, bool sanityCheck) {
+bool CPbft::ProcessC(CNode* pfrom, CPbftMessage& cMsg) {
 //#ifdef BASIC_PBFT
 //    std::cout << "server " << server_id << "received commit, seq = " << commit.seq << std::endl;
 //#endif
-//    // sanity check for signature, seq, view.
-//    if (sanityCheck && !checkMsg(&commit)) {
-//        return false;
-//    }
+    // sanity check for signature, seq, and the message's view equals the local view.
+    if (!checkMsg(pfrom, &cMsg)) {
+        return false;
+    }
 
-//    // if phase is prepare or commit, also need to check view 
-//    if (msg->phase == PbftPhase::prepare || msg->phase == PbftPhase::commit) {
-//
-//        if (log[msg->seq].pre_prepare.view != msg->view) {
-//            std::cerr << "log entry view = " << log[msg->seq].pre_prepare.view << ", but msg view = " << msg->view << std::endl;
-//            return false;
-//        }
-//    }
-//
-//    // count the number of prepare msg. enter execute if greater than 2f+1
-//    log[commit.seq].commitCount++;
-//    if (log[commit.seq].phase == PbftPhase::commit && log[commit.seq].commitCount == (nFaulty << 1) + 1) {
-//        // enter execute phase
-//#ifdef BASIC_PBFT
-//        std::cout << "enter reply phase" << std::endl;
-//#endif
-//        log[commit.seq].phase = PbftPhase::reply;
-//        executeTransaction(commit.seq);
-//        return true;
-//    }
+    // check the message's view mactches the ppMsg's view in log.
+    if (log[cMsg.seq].ppMsg.view != cMsg.view) {
+	std::cerr << "log entry view = " << log[cMsg.seq].ppMsg.view 
+		<< ", but msg view = " << cMsg.view << std::endl;
+	return false;
+    }
+
+    // count the number of commit msg. enter execute if greater than 2f+1
+    log[cMsg.seq].commitCount++;
+//    if (log[cMsg.seq].phase == PbftPhase::commit && log[cMsg.seq].commitCount == (nFaulty << 1) + 1) {
+    /* TODO : enable the above if condition. */
+    if (log[cMsg.seq].phase == PbftPhase::commit) {
+        // enter execute phase
+        std::cout << "enter reply phase" << std::endl;
+        log[cMsg.seq].phase = PbftPhase::reply;
+        executeTransaction(cMsg.seq);
+    }
     return true;
 }
 
@@ -277,9 +285,8 @@ CPre_prepare CPbft::assemblePPMsg(const CTransaction& tx) {
 #ifdef MSG_ASSEMBLE
     std::cout << "assembling pre_prepare, seq = " << seq << "client req = " << clientReq << std::endl;
 #endif
-    uint32_t seq = nextSeq++;
     CPre_prepare toSent; // phase is set to Pre_prepare by default.
-    toSent.seq = seq;
+    toSent.seq = nextSeq++;
     toSent.view = 0;
     localView = 0; // also change the local view, or the sanity check would fail.
     toSent.digest = tx.GetHash();
@@ -291,16 +298,14 @@ CPre_prepare CPbft::assemblePPMsg(const CTransaction& tx) {
     return toSent;
 }
 
-// TODO: the real param should include digest, i.e. the block header hash.----(currently use placeholder)
-
-//CPbftMessage CPbft::assembleMsg(PbftPhase phase, uint32_t seq) {
-//    CPbftMessage toSent(log[seq].pre_prepare, server_id);
-//    toSent.phase = phase;
-//    uint256 hash;
-//    toSent.getHash(hash);
-//    privateKey.Sign(hash, toSent.vchSig);
-//    return toSent;
-//}
+CPbftMessage CPbft::assembleMsg(uint32_t seq) {
+    CPbftMessage toSent(log[seq].ppMsg);
+    uint256 hash;
+    toSent.getHash(hash);
+    privateKey.Sign(hash, toSent.vchSig);
+    toSent.sigSize = toSent.vchSig.size();
+    return toSent;
+}
 
 //CReply CPbft::assembleReply(uint32_t seq) {
 //    /* we use the digest from globalCC rather than digest from pre-prepare because 
@@ -315,90 +320,84 @@ CPre_prepare CPbft::assemblePPMsg(const CTransaction& tx) {
 //    return toSent;
 //}
 //
-//void CPbft::broadcast(CPbftMessage* msg) {
-//    std::ostringstream oss;
-//    if (msg->phase == PbftPhase::pre_prepare) {
-//        (static_cast<CPre_prepare*> (msg))->Serialize(oss);
-//    } else {
-//        msg->serialize(oss);
-//    }
-//    // loop to  send prepare to all nodes in the peers map.
-//    for (auto p : peers) {
-//        udpClient.sendto(oss, p.second.ip, p.second.port);
-//    }
-//    // virtually send the message to this node itself if it is a prepare or commit msg.
-//    switch (msg->phase) {
-//        case PbftPhase::pre_prepare:
-//            // do call onReceivePrePrepare, because the leader do not send prepare.
-//            if (log[msg->seq].pre_prepare.digest.IsNull()) {
-//                // add to log, phase is  auto-set to prepare
-//                log[msg->seq] = CPbftLogEntry(*(static_cast<CPre_prepare*> (msg)));
-//#ifdef BASIC_PBFT
-//                std::cout << "add to log, clientReq =" << (static_cast<CPre_prepare*> (msg))->clientReq << std::endl;
-//#endif
-//            }
-//
-//            break;
-//        case PbftPhase::prepare:
-//            onReceivePrepare(const_cast<CPbftMessage&> (*msg), false);
-//            break;
-//        case PbftPhase::commit:
-//            onReceiveCommit(const_cast<CPbftMessage&> (*msg), false);
-//            break;
-//        default:
-//            break;
-//    }
-//}
-//
-//void CPbft::executeTransaction(const int seq) {
-//    // execute all lower-seq tx until this one if possible.
-//    int i = lastExecutedIndex + 1;
-//    for (; i < seq + 1; i++) {
-//        if (log[i].phase == PbftPhase::reply) {
-//            /* client request message format: "r <request type>,<key>[,<value>]". 
-//             * Request type can be either read 'r' or write 'w'. If it is a 
-//             * write request, client must provide value. We use comma as delimiter 
-//             * here to avoid coflict with message deserialization, which use space
-//             * as delimiter.
-//             */
-//            std::string req = log[i].pre_prepare.clientReq;
-//
-//            if (req.at(0) == 'w') {
-//                // this is a write request
-//                std::size_t found = req.find(',', 2);
-//                int key = std::stoi(req.substr(2, found - 2));
-//                data[key] = req.at(found + 1);
-//                log[i].result = '0'; // '0' means write succeed. 
-//#ifdef EXECUTION
-//                std::cout << "-----server " << server_id << " write key: " << key << ", value :"
-//                        << data[key] << std::endl;
-//#endif
-//            } else if (req.at(0) == 'r') {
-//                /* Empty string means read failed because all writes come together with 
-//                 * a write value and empty string simply means the key has never been 
-//                 * inserted into the map.
-//                 */
-//                int key = std::stoi(req.substr(2));
-//                log[i].result = data[key];
-//#ifdef EXECUTION
-//                std::cout << "-----server " << server_id << " read key: " << key << ", value :"
-//                        << data[key] << std::endl;
-//#endif
-//            } else {
-//                std::cout << "invalid request" << std::endl;
-//            }
-//            /* send reply right after execution. */
+void CPbft::executeTransaction(const int seq) {
+    // execute all lower-seq tx until this one if possible.
+    int i = lastExecutedIndex + 1;
+    for (; i < seq + 1; i++) {
+        if (log[i].phase == PbftPhase::reply) {
+            /* client request message format: "r <request type>,<key>[,<value>]". 
+             * Request type can be either read 'r' or write 'w'. If it is a 
+             * write request, client must provide value. We use comma as delimiter 
+             * here to avoid coflict with message deserialization, which use space
+             * as delimiter.
+             */
+	    const CTransaction &tx = log[i].ppMsg.tx;
+	    
+	    /* -------------logic from Bitcoin code for tx processing--------- */
+	    CValidationState state;
+	    CCoinsViewCache view(pcoinsTip.get());
+	    std::vector<PrecomputedTransactionData> txdata;
+	    bool fScriptChecks = true;
+//	    CBlockUndo blockundo;
+	    unsigned int flags = SCRIPT_VERIFY_NONE; // only verify pay to public key hash
+	    CAmount txfee = 0;
+	    /* We use seq as block height */
+            if (!Consensus::CheckTxInputs(tx, state, *pcoinsTip, i, txfee)) {
+		char errorMsg[500];
+                sprintf(errorMsg, "%s: Consensus::CheckTxInputs: %s, %s", __func__, tx.GetHash().ToString(), FormatStateMessage(state));
+		std::cerr << errorMsg << std::endl;
+		return;
+            }
+            if (!MoneyRange(txfee)) {
+		char errorMsg[500];
+		sprintf(errorMsg, "%s: accumulated fee in the block out of range.", __func__);
+		std::cerr << errorMsg << std::endl;
+		return;
+            }
+
+	    // GetTransactionSigOpCost counts 3 types of sigops:
+	    // * legacy (always)
+	    // * p2sh (when P2SH enabled in flags and excludes coinbase)
+	    // * witness (when witness enabled in flags and excludes coinbase)
+	    int64_t nSigOpsCost = 0;
+	    nSigOpsCost += GetTransactionSigOpCost(tx, view, flags);
+	    if (nSigOpsCost > MAX_BLOCK_SIGOPS_COST) { 
+		char errorMsg[500];
+		sprintf(errorMsg, "ConnectBlock(): too many sigops");
+		std::cerr << errorMsg << std::endl;
+		return;
+	    }
+
+	    txdata.emplace_back(tx);
+	    std::vector<CScriptCheck> vChecks;
+	    bool fCacheResults = false; /* Don't cache results if we're actually connecting blocks (still consult the cache, though) */
+	    if (!CheckInputs(tx, state, view, fScriptChecks, flags, fCacheResults, fCacheResults, txdata[i], nullptr)) {  // do not use multithreads to check scripts
+		char errorMsg[500];
+		sprintf(errorMsg, "ConnectBlock(): CheckInputs on %s failed with %s",
+		    tx.GetHash().ToString(), FormatStateMessage(state));
+		std::cerr << errorMsg << std::endl;
+		return;
+	    }
+
+//	    CTxUndo undoDummy;
+//	    if (i > 0) {
+//		blockundo.vtxundo.push_back(CTxUndo());
+//	    }
+	    UpdateCoins(tx, view, seq);
+	    /* -------------logic from Bitcoin code for tx processing--------- */
+
+            /* send reply right after execution. */
 //            sendReply2Client(i);
-//        } else {
-//            break;
-//        }
-//    }
-//    lastExecutedIndex = i - 1;
-//    /* if lastExecutedIndex is less than seq, we delay sending reply until 
-//     * the all requsts up to seq has been executed. This may be triggered 
-//     * by future requests.
-//     */
-//}
+        } else {
+            break;
+        }
+    }
+    lastExecutedIndex = i - 1;
+    /* if lastExecutedIndex is less than seq, we delay sending reply until 
+     * the all requsts up to seq has been executed. This may be triggered 
+     * by future requests.
+     */
+}
 //
 //void CPbft::sendReply2Client(const int seq) {
 //    std::ostringstream oss;

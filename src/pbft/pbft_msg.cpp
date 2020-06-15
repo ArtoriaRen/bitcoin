@@ -14,6 +14,9 @@ CPbftMessage::CPbftMessage(): view(0), seq(0), digest(), vchSig(){
     vchSig.reserve(72); // the expected sig size is 72 bytes.
 }
 
+CPbftMessage::CPbftMessage(const CPbftMessage& msg): view(msg.view), seq(msg.seq), digest(msg.digest), vchSig(msg.vchSig){
+}
+
 void CPbftMessage::getHash(uint256& result){
     CHash256().Write((const unsigned char*)&view, sizeof(view))
 	    .Write((const unsigned char*)&seq, sizeof(seq))
@@ -21,12 +24,10 @@ void CPbftMessage::getHash(uint256& result){
 	    .Finalize((unsigned char*)&result);
 }
 
-CPre_prepare::CPre_prepare(const CPbftMessage& msg){
-    view = msg.view;
-    seq = msg.seq;
-    digest = msg.digest;
-    vchSig = msg.vchSig;
+CPre_prepare::CPre_prepare(const CPre_prepare& msg): CPbftMessage(msg), tx(msg.tx) {
 }
+
+CPre_prepare::CPre_prepare(const CPbftMessage& msg): CPbftMessage(msg) { }
 
 CReply::CReply(): phase(PbftPhase::reply), seq(), senderId(), reply(), digest(), vchSig(){
 }

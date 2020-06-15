@@ -25,6 +25,7 @@ class CPbft{
 public:
     static const size_t logSize = 1000;  
     size_t groupSize;
+    uint32_t nFaulty;
     uint32_t localView;
     // pbft log. The index is sequence number.
     std::vector<CPbftLogEntry> log;
@@ -33,21 +34,24 @@ public:
     CPubKey myPubKey;
 
     CNode* leader; // pbft leader
+    /* TODO: remove the leader from the otherMembers vector. */
     std::vector<CNode*> otherMembers; // members other than the leader and the node itself.
     std::unordered_map<std::string, CPubKey> pubKeyMap;
 
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
-    bool ProcessPP(CNode* pfrom, CPre_prepare& pre_prepare);
+    bool ProcessPP(CNode* pfrom, CPre_prepare& ppMsg);
 
     // Check Prepare message signature, add to corresponding log, check if we have accumulated 2f Prepare message. If so, send Commit message
-    bool ProcessP(CPbftMessage& prepare, bool sanityCheck);
+    bool ProcessP(CNode* pfrom, CPbftMessage& pMsg, bool* fEnterCommitPhase);
     
     // Check Commit message signature, add to corresponding log, check if we have accumulated 2f+1 Commit message. If so, execute transactions and reply. 
-    bool ProcessC(CPbftMessage& commit, bool sanityCheck);
+    bool ProcessC(CNode* pfrom, CPbftMessage& cMsg);
 
     CPre_prepare assemblePPMsg(const CTransaction& tx);
+    CPbftMessage assembleMsg(uint32_t seq); 
     bool checkMsg(CNode* pfrom, CPbftMessage* msg);
+    void executeTransaction(const int seq);
 
 private:
     // private ECDSA key used to sign messages
