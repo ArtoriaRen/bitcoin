@@ -35,11 +35,13 @@ public:
 //    const static uint32_t messageSizeBytes = 128; // the real size is 4*4 + 32 +72 = 120 bytes.
     
     CPbftMessage();
+    CPbftMessage(const CPbftMessage& msg);
     
     template<typename Stream>
     void Serialize(Stream& s) const{
 	s.write((char*)&view, sizeof(view));
 	s.write((char*)&seq, sizeof(seq));
+	std::cout<< __func__ << ": digest = " << digest.GetHex() <<std::endl;
 	s.write((char*)digest.begin(), digest.size());
 	s.write((char*)&sigSize, sizeof(sigSize));
 	s.write((char*)vchSig.data(), sigSize);
@@ -50,6 +52,7 @@ public:
 	s.read((char*)&view, sizeof(view));
 	s.read((char*)&seq, sizeof(seq));
 	s.read((char*)digest.begin(), digest.size());
+	std::cout<< __func__ << ": digest = " << digest.GetHex() <<std::endl;
 	s.read((char*)&sigSize, sizeof(sigSize));
 	vchSig.resize(sigSize);
 	s.read((char*)vchSig.data(), sigSize);
@@ -68,6 +71,7 @@ public:
     }
     
     //add explicit?
+    CPre_prepare(const CPre_prepare& msg);
     CPre_prepare(const CPbftMessage& msg);
 
     template<typename Stream>
