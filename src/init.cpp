@@ -811,13 +811,21 @@ void InitParameterInteraction()
          randomPlaceBlock = gArgs.GetArg("-startblock", 600000);
     }
     if (gArgs.IsArgSet("-endblock")) {
-         blockEnd = gArgs.GetArg("-endblock", 600001);
+        blockEnd = gArgs.GetArg("-endblock", 600001);
     }
     if (gArgs.IsArgSet("-numcommittees")) {
-         num_committees = gArgs.GetArg("-numcommittees", 2);
+        num_committees = gArgs.GetArg("-numcommittees", 2);
     }
     if (gArgs.IsArgSet("-ispbftclient")) {
-         fIsClient = gArgs.GetBoolArg("-ispbftclient", false);
+        fIsClient = gArgs.GetBoolArg("-ispbftclient", false);
+    }
+    if (gArgs.IsArgSet("-pbftleader")) {
+        leaderAddrString = gArgs.GetArg("-pbftleader", "");
+	std::cout << __func__ << "pbft leader = " << leaderAddrString << std::endl;
+    }
+    if (gArgs.IsArgSet("-pbftclient")) {
+        clientAddrString = gArgs.GetArg("-pbftclient", "");
+	std::cout << __func__ << "pbft client = " << clientAddrString << std::endl;
     }
 }
 

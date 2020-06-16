@@ -24,8 +24,7 @@ void CPbftMessage::getHash(uint256& result){
 	    .Finalize((unsigned char*)&result);
 }
 
-CPre_prepare::CPre_prepare(const CPre_prepare& msg): CPbftMessage(msg), tx(msg.tx) {
-}
+CPre_prepare::CPre_prepare(const CPre_prepare& msg): CPbftMessage(msg), tx(msg.tx) { }
 
 CPre_prepare::CPre_prepare(const CPbftMessage& msg): CPbftMessage(msg) { }
 

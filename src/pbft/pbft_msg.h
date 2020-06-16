@@ -41,7 +41,6 @@ public:
     void Serialize(Stream& s) const{
 	s.write((char*)&view, sizeof(view));
 	s.write((char*)&seq, sizeof(seq));
-	std::cout<< __func__ << ": digest = " << digest.GetHex() <<std::endl;
 	s.write((char*)digest.begin(), digest.size());
 	s.write((char*)&sigSize, sizeof(sigSize));
 	s.write((char*)vchSig.data(), sigSize);
@@ -52,7 +51,6 @@ public:
 	s.read((char*)&view, sizeof(view));
 	s.read((char*)&seq, sizeof(seq));
 	s.read((char*)digest.begin(), digest.size());
-	std::cout<< __func__ << ": digest = " << digest.GetHex() <<std::endl;
 	s.read((char*)&sigSize, sizeof(sigSize));
 	vchSig.resize(sigSize);
 	s.read((char*)vchSig.data(), sigSize);

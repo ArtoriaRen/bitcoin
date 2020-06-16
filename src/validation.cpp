@@ -3954,7 +3954,7 @@ bool CChainState::RollforwardBlock(const CBlockIndex* pindex, CCoinsViewCache& i
 
     for (const CTransactionRef& tx : block.vtx) {
 	/* get the shard affinity for output UTXOs*/
-	int32_t shardAffinity = getShardAffinityForTx(inputs, *tx);
+//	int32_t shardAffinity = getShardAffinityForTx(inputs, *tx);
 
         if (!tx->IsCoinBase()) {
             for (const CTxIn &txin : tx->vin) {
@@ -3962,7 +3962,7 @@ bool CChainState::RollforwardBlock(const CBlockIndex* pindex, CCoinsViewCache& i
             }
         }
         // Pass check = true as every addition may be an overwrite.
-        AddCoins(inputs, *tx, pindex->nHeight, shardAffinity, true);
+        AddCoins(inputs, *tx, pindex->nHeight, true);
     }
     return true;
 }

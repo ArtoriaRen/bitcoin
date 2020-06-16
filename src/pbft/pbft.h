@@ -20,6 +20,8 @@
 #include <unordered_map>
 
 extern bool fIsClient; // if this node is a pbft client.
+extern std::string leaderAddrString;
+extern std::string clientAddrString;
 
 class CPbft{
 public:
@@ -34,6 +36,7 @@ public:
     CPubKey myPubKey;
 
     CNode* leader; // pbft leader
+    CNode* client; // pbft leader
     /* TODO: remove the leader from the otherMembers vector. */
     std::vector<CNode*> otherMembers; // members other than the leader and the node itself.
     std::unordered_map<std::string, CPubKey> pubKeyMap;
