@@ -812,7 +812,15 @@ void InitParameterInteraction()
         syncToHeight = gArgs.GetArg("-synctoheight", 10);
     }
     if (gArgs.IsArgSet("-ispbftclient")) {
-         fIsClient = gArgs.GetBoolArg("-ispbftclient", false);
+        fIsClient = gArgs.GetBoolArg("-ispbftclient", false);
+    }
+    if (gArgs.IsArgSet("-pbftleader")) {
+        leaderAddrString = gArgs.GetArg("-pbftleader", "");
+	std::cout << __func__ << "pbft leader = " << leaderAddrString << std::endl;
+    }
+    if (gArgs.IsArgSet("-pbftclient")) {
+        clientAddrString = gArgs.GetArg("-pbftclient", "");
+	std::cout << __func__ << "pbft client = " << clientAddrString << std::endl;
     }
 }
 

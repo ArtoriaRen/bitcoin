@@ -20,31 +20,14 @@
 #include "undo.h"
 
 bool fIsClient; // if this node is a pbft client.
+std::string leaderAddrString;
+std::string clientAddrString;
 
-CPbft::CPbft() : groupSize(4), nFaulty(1), localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedIndex(-1), privateKey(CKey()){
+CPbft::CPbft() : groupSize(4), nFaulty(1), localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedIndex(-1), leader(nullptr), client(nullptr), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
 }
 
-//CPbft& CPbft::operator=(const CPbft& rhs) {
-//    if (this == &rhs)
-//        return *this;
-//    localView = rhs.localView;
-//    log = rhs.log;
-//    nextSeq = rhs.nextSeq;
-//    lastExecutedIndex = rhs.lastExecutedIndex;
-//    leader = rhs.leader;
-//    members = rhs.members;
-//    server_id = rhs.server_id;
-//    peers = rhs.peers;
-//    udpServer = rhs.udpServer;
-//    udpClient = rhs.udpClient;
-//    pRecvBuf = rhs.pRecvBuf;
-//    privateKey = rhs.privateKey;
-//    publicKey = rhs.publicKey;
-//    data = rhs.data;
-//    return *this;
-//}
 
 /**
  * Go through the last nBlocks block, calculate membership of nGroups groups.
@@ -63,86 +46,6 @@ CPbft::CPbft() : groupSize(4), nFaulty(1), localView(0), log(std::vector<CPbftLo
 //
 //}
 
-//void interruptableReceive(CPbft& pbftObj) {
-//    // Placeholder: broadcast myself pubkey, and request others' pubkey.
-//    pbftObj.broadcastPubKey();
-//    pbftObj.broadcastPubKeyReq(); // request peer publickey
-//    struct sockaddr_in src_addr; // use this stuct to get sender IP and port
-//    size_t len = sizeof (src_addr);
-//
-//    while (!ShutdownRequested()) {
-//        // timeout block on receving a new packet. Attention: timeout is in milliseconds. 
-//        ssize_t recvBytes = pbftObj.udpServer->timed_recv(pbftObj.pRecvBuf.get(), CPbftMessage::messageSizeBytes, 500, &src_addr, &len);
-//
-//        if (recvBytes == -1) {
-//            // timeout. but we have got peer publickey. do nothing.
-//            continue;
-//        }
-//
-//        switch (pbftObj.pRecvBuf.get()[0]) {
-//            case CPbft::pubKeyReqHeader:
-//                // received msg is pubKeyReq. send pubKey
-//                std::cout << "receive pubKey req" << std::endl;
-//                // send public key to the peer.
-//                pbftObj.sendPubKey(src_addr, deserializePublicKeyReq(pbftObj.pRecvBuf.get(), recvBytes));
-//                continue;
-//            case CPbft::pubKeyMsgHeader:
-//                deSerializePubKeyMsg(pbftObj.peers, pbftObj.pRecvBuf.get(), recvBytes, src_addr);
-//                continue;
-//            case CPbft::clientReqHeader:
-//                // received client request, send preprepare
-//#ifdef BASIC_PBFT
-//                std::cout << "receive client req" << std::endl;
-//#endif
-//                uint32_t seq = pbftObj.nextSeq++;
-//                std::string clientReq(&pbftObj.pRecvBuf.get()[2], recvBytes - 2);
-//                CPre_prepare pp = pbftObj.assemblePre_prepare(seq, clientReq);
-//                pbftObj.broadcast(&pp);
-//                continue;
-//        }
-//
-//
-//        // received msg is a PbftMessage.	
-//        std::string recvString(pbftObj.pRecvBuf.get(), recvBytes);
-//        std::istringstream iss(recvString);
-//        int phaseNum = -1;
-//        iss >> phaseNum;
-//        switch (static_cast<PbftPhase> (phaseNum)) {
-//            case pre_prepare:
-//            {
-//                CPre_prepare ppMsg(pbftObj.server_id);
-//#ifdef SOCKET
-//                std::cout << "recvBytes = " << recvBytes << std::endl;
-//#endif
-//                ppMsg.Unserialize(iss);
-//                pbftObj.ProcessPP(ppMsg);
-//                break;
-//            }
-//            case prepare:
-//            {
-//                CPbftMessage pMsg(PbftPhase::prepare, pbftObj.server_id);
-//                pMsg.deserialize(iss);
-//                pbftObj.ProcessP(pMsg, true);
-//                break;
-//            }
-//            case commit:
-//            {
-//                CPbftMessage cMsg(PbftPhase::commit, pbftObj.server_id);
-//                cMsg.deserialize(iss);
-//                pbftObj.ProcessC(cMsg, true);
-//                break;
-//            }
-//            default:
-//                std::cout << "received invalid msg" << std::endl;
-//
-//        }
-//    }
-//}
-
-//void CPbft::start() {
-//    receiver = std::thread(interruptableReceive, std::ref(*this));
-//    receiver.join();
-//}
 
 bool CPbft::ProcessPP(CNode* pfrom, CPre_prepare& ppMsg) {
 //#ifdef BASIC_PBFT
@@ -240,12 +143,11 @@ bool CPbft::ProcessC(CNode* pfrom, CPbftMessage& cMsg) {
     log[cMsg.seq].commitCount++;
 //    if (log[cMsg.seq].phase == PbftPhase::commit && log[cMsg.seq].commitCount == (nFaulty << 1) + 1) {
     /* TODO : enable the above if condition. */
-    if (log[cMsg.seq].phase == PbftPhase::commit) {
         // enter execute phase
         std::cout << "enter reply phase" << std::endl;
         log[cMsg.seq].phase = PbftPhase::reply;
         executeTransaction(cMsg.seq);
-    }
+//    }
     return true;
 }
 
@@ -341,17 +243,14 @@ void CPbft::executeTransaction(const int seq) {
 //	    CBlockUndo blockundo;
 	    unsigned int flags = SCRIPT_VERIFY_NONE; // only verify pay to public key hash
 	    CAmount txfee = 0;
-	    /* We use seq as block height */
-            if (!Consensus::CheckTxInputs(tx, state, *pcoinsTip, i, txfee)) {
-		char errorMsg[500];
-                sprintf(errorMsg, "%s: Consensus::CheckTxInputs: %s, %s", __func__, tx.GetHash().ToString(), FormatStateMessage(state));
-		std::cerr << errorMsg << std::endl;
+	    /* We use  INT_MAX as block height, so that we never fail coinbase 
+	     * maturity check. */
+            if (!Consensus::CheckTxInputs(tx, state, view, INT_MAX, txfee)) {
+                std::cerr << __func__ << ": Consensus::CheckTxInputs: " << tx.GetHash().ToString() << ", " << FormatStateMessage(state) << std::endl;
 		return;
             }
             if (!MoneyRange(txfee)) {
-		char errorMsg[500];
-		sprintf(errorMsg, "%s: accumulated fee in the block out of range.", __func__);
-		std::cerr << errorMsg << std::endl;
+		std::cerr << __func__ << ": accumulated fee in the block out of range." << std::endl;
 		return;
             }
 
@@ -362,9 +261,7 @@ void CPbft::executeTransaction(const int seq) {
 	    int64_t nSigOpsCost = 0;
 	    nSigOpsCost += GetTransactionSigOpCost(tx, view, flags);
 	    if (nSigOpsCost > MAX_BLOCK_SIGOPS_COST) { 
-		char errorMsg[500];
-		sprintf(errorMsg, "ConnectBlock(): too many sigops");
-		std::cerr << errorMsg << std::endl;
+		std::cerr << __func__ << ": ConnectBlock(): too many sigops" << std::endl;
 		return;
 	    }
 
@@ -372,10 +269,10 @@ void CPbft::executeTransaction(const int seq) {
 	    std::vector<CScriptCheck> vChecks;
 	    bool fCacheResults = false; /* Don't cache results if we're actually connecting blocks (still consult the cache, though) */
 	    if (!CheckInputs(tx, state, view, fScriptChecks, flags, fCacheResults, fCacheResults, txdata[i], nullptr)) {  // do not use multithreads to check scripts
-		char errorMsg[500];
-		sprintf(errorMsg, "ConnectBlock(): CheckInputs on %s failed with %s",
-		    tx.GetHash().ToString(), FormatStateMessage(state));
-		std::cerr << errorMsg << std::endl;
+		std::cerr << __func__ << ": ConnectBlock(): CheckInputs on " 
+			<< tx.GetHash().ToString() 
+			<< " failed with " << FormatStateMessage(state)
+			<< std::endl;
 		return;
 	    }
 
@@ -384,8 +281,12 @@ void CPbft::executeTransaction(const int seq) {
 //		blockundo.vtxundo.push_back(CTxUndo());
 //	    }
 	    UpdateCoins(tx, view, seq);
+	    bool flushed = view.Flush(); // flush to pcoinsTip
+	    assert(flushed);
 	    /* -------------logic from Bitcoin code for tx processing--------- */
 
+	    std::cout << __func__ << "excuted tx " << tx.GetHash().ToString()
+		    << " at log slot " << i << std::endl;
             /* send reply right after execution. */
 //            sendReply2Client(i);
         } else {

@@ -1847,9 +1847,12 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	CPre_prepare ppMsg = pbft->assemblePPMsg(tx);
 	/* add the ppMsg to the leader's own log. */
 	pbft->log[ppMsg.seq].ppMsg = ppMsg;
+	pbft->log[ppMsg.seq].phase = PbftPhase::prepare;
 	const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
 	std::cout << __func__ << ": received tx = " << tx.ToString()
-		<< ", otherMember.size = " << pbft->otherMembers.size() << std::endl;
+		<< ", otherMember.size = " << pbft->otherMembers.size()
+		<< ", log slot "<< ppMsg.seq << " for tx = "
+		<< pbft->log[ppMsg.seq].ppMsg.tx.GetHash().GetHex() << std::endl;
 	for (CNode* node: pbft->otherMembers) {
 	    /* since we are the leader, we do not care to exclude the leader from 
 	     * the otherMember vector because ourself is not in the vector. */
@@ -1867,6 +1870,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	/* send a pMsg */
 	CPbftMessage pMsg = pbft->assembleMsg(ppMsg.seq);
 	const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
+	connman->PushMessage(pbft->leader, msgMaker.Make(NetMsgType::PBFT_P, pMsg));
 	for (CNode* node: pbft->otherMembers) {
 	    connman->PushMessage(node, msgMaker.Make(NetMsgType::PBFT_P, pMsg));
 	}
@@ -1895,6 +1899,22 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    /* send a cMsg */
 	    CPbftMessage cMsg = pbft->assembleMsg(pMsg.seq);
 	    const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
+	    std::cout << "pbft->leader = " << pbft->leader  <<std::endl;
+	    if (pbft->leader != nullptr) {
+		std::cout << __func__ << ": leader->GetAddrName() = " 
+			<< pbft->leader->GetAddrName()
+			<< ",  leaderAddrString = " <<  leaderAddrString
+			<< std::endl;
+	    }
+
+	    if(pbft->leader != nullptr) {
+		/* Only followers send cMsg to the leader. The leader should not
+		 * send cMsg to itself.
+		 * The leader has pbft->leader == nullptr b/c no other nodes with
+		 * the leader's address connects to the leader as a peer. 
+		 */
+		connman->PushMessage(pbft->leader, msgMaker.Make(NetMsgType::PBFT_C, cMsg));
+	    }
 	    for (CNode* node: pbft->otherMembers) {
 		connman->PushMessage(node, msgMaker.Make(NetMsgType::PBFT_C, cMsg));
 	    }
