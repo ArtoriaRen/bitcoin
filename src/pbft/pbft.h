@@ -62,14 +62,7 @@ private:
 };
 
 
-class CPbftClient{
-public:
-    uint nTxTotal; // total number of tx to send
-    uint nTxSent; // number of tx already sent
-    CPbftClient();
-};
 
 extern std::unique_ptr<CPbft> g_pbft;
-extern std::unique_ptr<CPbftClient> g_pbft_client;
 #endif /* PBFT_H */
 

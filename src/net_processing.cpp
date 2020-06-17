@@ -1517,12 +1517,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         }
     }
 
-//    if (strCommand == NetMsgType::PBFT_PP) {
-//	CPre_prepare ppMsg;
-//	ppMsg.Unserialize(vRecv)
-//	pbft->ProcessPP(ppMsg);
-//    }
-
     if (strCommand == NetMsgType::REJECT)
     {
         if (LogAcceptCategory(BCLog::NET)) {
@@ -1830,6 +1824,16 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             pfrom->fGetAddr = false;
         if (pfrom->fOneShot)
             pfrom->fDisconnect = true;
+    }
+
+    else if (strCommand == NetMsgType::PBFT_CLIENT)
+    {
+	/* Remove the client from the otherMembers array. 
+	 * Because followers connect to the leader before the client, we can safely
+	 * treat the last element in otherMembers as the client. 
+	 */
+	pbft->client = pbft->otherMembers[pbft->otherMembers.size() - 1];
+	pbft->otherMembers.resize(pbft->otherMembers.size() - 1);
     }
 
     else if (strCommand == NetMsgType::PBFT_PUBKEY)
@@ -3365,18 +3369,6 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
                 pto->vAddrToSend.shrink_to_fit();
         }
 
-	 /* the pbft client send tx to the leader initiatively. */
-	if (g_pbft_client != nullptr && g_pbft_client->nTxSent < g_pbft_client->nTxTotal) {
-	    CTransaction tx;
-	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-	    /* the client should connect to only the PBFT leader to make sure 
-	     * that pto is the leader. */
-	    std::cout << __func__ << ": sending message = " << tx.ToString()
-		    << std::endl;
-	    connman->PushMessage(pto, msgMaker.Make(NetMsgType::PBFT_TX, tx));
-	    g_pbft_client->nTxSent++;
-	}
-	    
         // Start block sync
 //        if (pindexBestHeader == nullptr)
 //            pindexBestHeader = chainActive.Tip();

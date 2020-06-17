@@ -341,7 +341,4 @@ void CPbft::executeTransaction(const int seq) {
 //}
 
 
-CPbftClient::CPbftClient(): nTxTotal(1), nTxSent(0) {}
-
 std::unique_ptr<CPbft> g_pbft;
-std::unique_ptr<CPbftClient> g_pbft_client;
