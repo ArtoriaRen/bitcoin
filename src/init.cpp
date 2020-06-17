@@ -1312,10 +1312,6 @@ bool AppInitMain()
     g_connman = std::unique_ptr<CConnman>(new CConnman(GetRand(std::numeric_limits<uint64_t>::max()), GetRand(std::numeric_limits<uint64_t>::max())));
     assert(!g_pbft);
     g_pbft = std::unique_ptr<CPbft>(new CPbft());
-    if (fIsClient){
-	/* We are a pbft client. */
-	g_pbft_client = std::unique_ptr<CPbftClient>(new CPbftClient());
-    }
     CConnman& connman = *g_connman;
     peerLogic.reset(new PeerLogicValidation(&connman, g_pbft.get(), scheduler));
     RegisterValidationInterface(peerLogic.get());
