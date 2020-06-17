@@ -36,6 +36,7 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/thread.hpp>
 #include <netmessagemaker.h>
+#include "pbft/pbft.h"
 
 std::vector<CWalletRef> vpwallets;
 /** Transaction fee set by the user */
@@ -1767,10 +1768,7 @@ bool CWalletTx::RelayWalletTransaction(CConnman* connman)
                 //    pnode->PushInventory(inv);
                 //});
 		const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-                connman->ForEachNode([&connman, &msgMaker, this](CNode* pnode)
-		{
-		    connman->PushMessage(pnode, msgMaker.Make(NetMsgType::PBFT_TX, *tx));
-		});
+		connman->PushMessage(g_pbft->leader, msgMaker.Make(NetMsgType::PBFT_TX, *tx));
                 return true;
             }
         }

@@ -62,6 +62,7 @@
 #include <boost/interprocess/sync/file_lock.hpp>
 #include <boost/thread.hpp>
 #include <openssl/crypto.h>
+#include "pbft/pbft.h"
 
 #if ENABLE_ZMQ
 #include <zmq/zmqnotificationinterface.h>
@@ -803,6 +804,10 @@ void InitParameterInteraction()
             LogPrintf("%s: Ignoring blockmaxsize setting which is overridden by blockmaxweight", __func__);
         }
     }
+    if (gArgs.IsArgSet("-pbftleader")) {
+        leaderAddrString = gArgs.GetArg("-pbftleader", "");
+	std::cout << __func__ << "pbft leader = " << leaderAddrString << std::endl;
+    }
 }
 
 static std::string ResolveErrMsg(const char * const optname, const std::string& strBind)
@@ -1286,6 +1291,8 @@ bool AppInitMain()
 
     assert(!g_connman);
     g_connman = std::unique_ptr<CConnman>(new CConnman(GetRand(std::numeric_limits<uint64_t>::max()), GetRand(std::numeric_limits<uint64_t>::max())));
+    assert(!g_pbft);
+    g_pbft = std::unique_ptr<CPbft>(new CPbft());
     CConnman& connman = *g_connman;
 
     peerLogic.reset(new PeerLogicValidation(&connman, scheduler));

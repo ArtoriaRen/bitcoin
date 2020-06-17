@@ -19,6 +19,7 @@
 #include <scheduler.h>
 #include <ui_interface.h>
 #include <utilstrencodings.h>
+#include <pbft/pbft.h>
 
 #ifdef WIN32
 #include <string.h>
@@ -1145,6 +1146,9 @@ void CConnman::AcceptConnection(const ListenSocket& hListenSocket) {
     {
         LOCK(cs_vNodes);
         vNodes.push_back(pnode);
+	if (pnode->addrName == leaderAddrString) {
+	    g_pbft->leader = pnode;
+	}
     }
 }
 
@@ -1988,6 +1992,9 @@ void CConnman::OpenNetworkConnection(const CAddress& addrConnect, bool fCountFai
     {
         LOCK(cs_vNodes);
         vNodes.push_back(pnode);
+	if (pnode->addrName == leaderAddrString) {
+	    g_pbft->leader = pnode;
+	}
     }
 }
 
