@@ -238,6 +238,7 @@ extern const char *GETBLOCKTXN;
  */
 extern const char *BLOCKTXN;
 extern const char *PBFT_TX; // use to differentiate pbft tx from normal tx
+extern const char *PBFT_CLIENT; // a pbft client use this msg to inform the leader that it is a client not a follower.
 };
 
 /* Get a vector of all valid message types (see above) */

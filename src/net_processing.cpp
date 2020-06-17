@@ -29,12 +29,14 @@
 #include <util.h>
 #include <utilmoneystr.h>
 #include <utilstrencodings.h>
+#include "pbft/pbft.h"
 
 #if defined(NDEBUG)
 # error "Bitcoin cannot be compiled without assertions."
 #endif
 
 std::atomic<int64_t> nTimeBestReceived(0); // Used only to inform the wallet of when we last received a block
+static bool sentPbftClientMsg = false;
 
 struct IteratorComparator
 {
@@ -3239,6 +3241,10 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
                 pto->vAddrToSend.shrink_to_fit();
         }
 
+	if (!sentPbftClientMsg) {
+                connman->PushMessage(g_pbft->leader, msgMaker.Make(NetMsgType::PBFT_CLIENT));
+		sentPbftClientMsg = true;
+	}
         // Start block sync
         if (pindexBestHeader == nullptr)
             pindexBestHeader = chainActive.Tip();

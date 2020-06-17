@@ -40,6 +40,7 @@ const char *CMPCTBLOCK="cmpctblock";
 const char *GETBLOCKTXN="getblocktxn";
 const char *BLOCKTXN="blocktxn";
 const char *PBFT_TX="pbfttx"; // use to differentiate pbft tx from normal tx
+const char *PBFT_CLIENT="client"; // a pbft client use this msg to inform the leader that it is a client not a follower.
 } // namespace NetMsgType
 
 /** All known message types. Keep this in the same order as the list of
@@ -72,7 +73,8 @@ const static std::string allNetMessageTypes[] = {
     NetMsgType::CMPCTBLOCK,
     NetMsgType::GETBLOCKTXN,
     NetMsgType::BLOCKTXN,
-    NetMsgType::PBFT_TX // use to differentiate pbft tx from normal tx
+    NetMsgType::PBFT_TX, // use to differentiate pbft tx from normal tx
+    NetMsgType::PBFT_CLIENT
 };
 const static std::vector<std::string> allNetMessageTypesVec(allNetMessageTypes, allNetMessageTypes+ARRAYLEN(allNetMessageTypes));
 
