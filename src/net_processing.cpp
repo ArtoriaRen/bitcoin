@@ -1867,76 +1867,24 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     else if (strCommand == NetMsgType::PBFT_PP) {
         CPre_prepare ppMsg;
         vRecv >> ppMsg;
-	if(!pbft->ProcessPP(pfrom, ppMsg)) {
+	if(!pbft->ProcessPP(pfrom, connman, ppMsg)) {
 	    std::cout << __func__ << ": process ppMsg failed" <<std::endl;
-	}
-
-	/* send a pMsg */
-	CPbftMessage pMsg = pbft->assembleMsg(ppMsg.seq);
-	const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
-	connman->PushMessage(pbft->leader, msgMaker.Make(NetMsgType::PBFT_P, pMsg));
-	for (CNode* node: pbft->otherMembers) {
-	    connman->PushMessage(node, msgMaker.Make(NetMsgType::PBFT_P, pMsg));
-	}
-
-	/* if this node is the 2n-th one receiving the ppMsg, it should enter commit
-	 * phase. */
-	if (pbft->log[ppMsg.seq].phase == PbftPhase::commit) {
-	    CPbftMessage cMsg = pbft->assembleMsg(ppMsg.seq);
-	    const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
-	    /* send commit msg to all other members including the leader. */
-	    connman->PushMessage(pbft->leader, msgMaker.Make(NetMsgType::PBFT_C, cMsg));
-	    for (CNode* node: pbft->otherMembers) {
-		connman->PushMessage(node, msgMaker.Make(NetMsgType::PBFT_C, cMsg));
-	    }
 	}
     }
 
     else if (strCommand == NetMsgType::PBFT_P) {
         CPbftMessage pMsg;
         vRecv >> pMsg;
-	bool fEnterCommitPhase = false;
-	if(!pbft->ProcessP(pfrom, pMsg, &fEnterCommitPhase)) {
+	if(!pbft->ProcessP(pfrom, connman, pMsg)) {
 	    std::cout << __func__ << ": process pMsg failed" <<std::endl;
-	}
-	if(fEnterCommitPhase) {
-	    /* send a cMsg */
-	    CPbftMessage cMsg = pbft->assembleMsg(pMsg.seq);
-	    const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
-	    std::cout << "pbft->leader = " << pbft->leader  <<std::endl;
-	    if (pbft->leader != nullptr) {
-		std::cout << __func__ << ": leader->GetAddrName() = " 
-			<< pbft->leader->GetAddrName()
-			<< ",  leaderAddrString = " <<  leaderAddrString
-			<< std::endl;
-	    }
-
-	    if(pbft->leader != nullptr) {
-		/* Only followers send cMsg to the leader. The leader should not
-		 * send cMsg to itself.
-		 * The leader has pbft->leader == nullptr b/c no other nodes with
-		 * the leader's address connects to the leader as a peer. 
-		 */
-		connman->PushMessage(pbft->leader, msgMaker.Make(NetMsgType::PBFT_C, cMsg));
-	    }
-	    for (CNode* node: pbft->otherMembers) {
-		connman->PushMessage(node, msgMaker.Make(NetMsgType::PBFT_C, cMsg));
-	    }
 	}
     }
 
     else if (strCommand == NetMsgType::PBFT_C) {
         CPbftMessage cMsg;
         vRecv >> cMsg;
-	bool fExecutedTx = false;
-	if(!pbft->ProcessC(pfrom, cMsg, &fExecutedTx)) {
+	if(!pbft->ProcessC(pfrom, connman, cMsg)) {
 	    std::cout << __func__ << ": process cMsg failed" <<std::endl;
-	}
-	/* send reply to client only once. */
-	if (fExecutedTx) {
-	    CReply cReply = pbft->assembleReply(cMsg.seq);
-	    const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
-	    connman->PushMessage(pbft->client, msgMaker.Make(NetMsgType::PBFT_REPLY, cReply));
 	}
     }
 

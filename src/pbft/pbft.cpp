@@ -18,6 +18,7 @@
 #include "coins.h"
 #include "script/interpreter.h"
 #include "undo.h"
+#include "netmessagemaker.h"
 
 bool fIsClient; // if this node is a pbft client.
 std::string leaderAddrString;
@@ -29,28 +30,7 @@ CPbft::CPbft() : groupSize(4), nFaulty(1), localView(0), log(std::vector<CPbftLo
 }
 
 
-/**
- * Go through the last nBlocks block, calculate membership of nGroups groups.
- * @param random is the random number used to group nodes.
- * @param nBlocks is number of blocks whose miner participate in the PBFT.
- * @return 
- */
-//void CPbft::group(uint32_t randomNumber, uint32_t nBlocks, const CBlockIndex* pindexNew) {
-//    const CBlockIndex* pindex = pindexNew; // make a copy so that we do not change the original argument passed in
-//    LogPrintf("group number %d nBlock = %d, pindex->nHeight = %d \n", nGroups, nBlocks, pindex->nHeight);
-//    for (uint i = 0; i < nBlocks && pindex != nullptr; i++) {
-//        //TODO: get block miner IP addr and port, add them to the members
-//        LogPrintf("pbft: block height = %d, ip&port = %s \n ", pindex->nHeight, pindex->netAddrPort.ToString());
-//        pindex = pindex->pprev;
-//    }
-//
-//}
-
-
-bool CPbft::ProcessPP(CNode* pfrom, CPre_prepare& ppMsg) {
-//#ifdef BASIC_PBFT
-//    std::cout << "server " << server_id << "received pre-prepare, seq = " << pre_prepare.seq << std::endl;
-//#endif
+bool CPbft::ProcessPP(CNode* pfrom, CConnman* connman, CPre_prepare& ppMsg) {
     // sanity check for signature, seq, view, digest.
     /*Faulty nodes may proceed even if the sanity check fails*/
     if (!checkMsg(pfrom, &ppMsg)) {
@@ -67,38 +47,44 @@ bool CPbft::ProcessPP(CNode* pfrom, CPre_prepare& ppMsg) {
     /* check if at least 2f prepare has been received. If so, enter commit phase directly; otherwise, enter prepare phase.(The goal of this operation is to tolerate network reordering.)
      -----Placeholder: to tolerate faulty nodes, we must check if all prepare msg matches the pre-prepare.
      */
-    /* add the pMsg of from the node itself. */
-    log[ppMsg.seq].prepareCount++;
-    if (log[ppMsg.seq].prepareCount >= (nFaulty << 1)) {
-        log[ppMsg.seq].phase = PbftPhase::commit;
-    } else {
-#ifdef BASIC_PBFT
-        std::cout << "enter prepare phase. seq in pre-prepare = " << ppMsg.seq << std::endl;
-#endif
-        log[ppMsg.seq].phase = PbftPhase::prepare;
-    }
+
     std::cout << "digest = " << ppMsg.digest.GetHex() << std::endl;
+
+    /* Enter prepare phase. add the pMsg of from the node itself. */
+    log[ppMsg.seq].phase = PbftPhase::prepare;
+    /* make a pMsg */
+    CPbftMessage pMsg = assembleMsg(ppMsg.seq);
+    /* send the pMsg to other peers, including the leader. */
+    const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
+    connman->PushMessage(leader, msgMaker.Make(NetMsgType::PBFT_P, pMsg)); // the leader will not receive ppMs, so we do not check if we are the leader here.
+    for (CNode* node: otherMembers) {
+	connman->PushMessage(node, msgMaker.Make(NetMsgType::PBFT_P, pMsg));
+    }
+    /* add the pMsg to our own log.
+     * We should do this after we send the pMsg to other peers so that we always 
+     * send pMsg before cMsg. 
+     */
+    ProcessP(nullptr, connman, pMsg, false);
     return true;
 }
 
-bool CPbft::ProcessP(CNode* pfrom, CPbftMessage& pMsg, bool* fEnterCommitPhase) {
-//#ifdef BASIC_PBFT
-//    std::cout << "server " << server_id << " received prepare. seq = " << prepare.seq << std::endl;
-//#endif
-    // sanity check for signature, seq, and the message's view equals the local view.
-    if (!checkMsg(pfrom, &pMsg)) {
-        return false;
+bool CPbft::ProcessP(CNode* pfrom, CConnman* connman, CPbftMessage& pMsg, bool fCheck) {
+    /* do not perform checking when a peer add a msg to its own log */
+    if (fCheck) {
+	// sanity check for signature, seq, and the message's view equals the local view.
+	if (!checkMsg(pfrom, &pMsg)) {
+	    return false;
+	}
+
+	// check the message's view mactches the ppMsg's view in log.
+	if (log[pMsg.seq].ppMsg.view != pMsg.view) {
+	    std::cerr << "log entry view = " << log[pMsg.seq].ppMsg.view 
+		    << ", but msg view = " << pMsg.view << std::endl;
+	    return false;
+	}
     }
 
-    // check the message's view mactches the ppMsg's view in log.
-    if (log[pMsg.seq].ppMsg.view != pMsg.view) {
-	std::cerr << "log entry view = " << log[pMsg.seq].ppMsg.view 
-		<< ", but msg view = " << pMsg.view << std::endl;
-	return false;
-    }
-
-    /*-----------
-     * add to log (currently use placeholder: should add the entire message 
+    /* add to log (currently use placeholder: should add the entire message 
      * to log and not increase re-count if the sender is the same. 
      * Also, if prepares are received earlier than pre-prepare, different
      * prepare may have different digest. Should categorize buffered prepares 
@@ -108,47 +94,69 @@ bool CPbft::ProcessP(CNode* pfrom, CPbftMessage& pMsg, bool* fEnterCommitPhase) 
 
     /* count the number of prepare msg. enter commit if greater than 2f */
     log[pMsg.seq].prepareCount++;
-    //use == (nFaulty << 1) instead of >= (nFaulty << 1) so that we do not re-send commit msg every time another prepare msg is received.  
+    /* In the if condition, we use == (nFaulty << 1) instead of >= (nFaulty << 1),
+     * so that we do not re-send commit msg every time another prepare msg is received.
+     */
     if (log[pMsg.seq].phase == PbftPhase::prepare && log[pMsg.seq].prepareCount == (nFaulty << 1)) {
-        // enter commit phase
-#ifdef BASIC_PBFT
-        std::cout << "server " << server_id << " enter commit phase" << std::endl;
-#endif
+	/* Enter commit phase. add the cMsg of from the node itself. */
         log[pMsg.seq].phase = PbftPhase::commit;
-	//*fEnterCommitPhase = true;
+	log[pMsg.seq].commitCount++;
+	/* make a cMsg */
+	CPbftMessage cMsg = assembleMsg(pMsg.seq);
+	/* send the cMsg to other peers */
+	const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
+	if(leader != nullptr) {
+	    /* Only followers send cMsg to the leader. The leader should not
+	     * send cMsg to itself.
+	     * The leader has pbft->leader == nullptr b/c no other nodes with
+	     * the leader's address connects to the leader as a peer. 
+	     */
+	    std::cout << __func__ << ": leader->GetAddrName() = " 
+		    << leader->GetAddrName()
+		    << ",  leaderAddrString = " <<  leaderAddrString
+		    << std::endl;
+	    connman->PushMessage(leader, msgMaker.Make(NetMsgType::PBFT_C, cMsg));
+	}
+	for (CNode* node: otherMembers) {
+	    connman->PushMessage(node, msgMaker.Make(NetMsgType::PBFT_C, cMsg));
+	}
+	/* add the cMsg to our own log.
+	 * We should do this after we send the pMsg to other peers so that we always 
+	 * send cMsg before execute tx. 
+	 */
+	ProcessC(nullptr, connman, cMsg, false);
     }
-    /* TODO: this is only for testing, delete this line and uncomment the second last line
-     * to test a cluster. */
-    *fEnterCommitPhase = true;
     return true;
 }
 
-bool CPbft::ProcessC(CNode* pfrom, CPbftMessage& cMsg, bool* fExecuteTx) {
-//#ifdef BASIC_PBFT
-//    std::cout << "server " << server_id << "received commit, seq = " << commit.seq << std::endl;
-//#endif
-    // sanity check for signature, seq, and the message's view equals the local view.
-    if (!checkMsg(pfrom, &cMsg)) {
-        return false;
-    }
+bool CPbft::ProcessC(CNode* pfrom, CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
+    /* do not perform checking when a peer add a msg to its own log */
+    if (fCheck) {
+	// sanity check for signature, seq, and the message's view equals the local view.
+	if (!checkMsg(pfrom, &cMsg)) {
+	    return false;
+	}
 
-    // check the message's view mactches the ppMsg's view in log.
-    if (log[cMsg.seq].ppMsg.view != cMsg.view) {
-	std::cerr << "log entry view = " << log[cMsg.seq].ppMsg.view 
-		<< ", but msg view = " << cMsg.view << std::endl;
-	return false;
+	// check the message's view mactches the ppMsg's view in log.
+	if (log[cMsg.seq].ppMsg.view != cMsg.view) {
+	    std::cerr << "log entry view = " << log[cMsg.seq].ppMsg.view 
+		    << ", but msg view = " << cMsg.view << std::endl;
+	    return false;
+	}
     }
 
     // count the number of commit msg. enter execute if greater than 2f+1
     log[cMsg.seq].commitCount++;
-//    if (log[cMsg.seq].phase == PbftPhase::commit && log[cMsg.seq].commitCount == (nFaulty << 1) + 1) {
-    /* TODO : enable the above if condition. */
-        // enter execute phase
+    if (log[cMsg.seq].phase == PbftPhase::commit && log[cMsg.seq].commitCount == (nFaulty << 1) + 1) {
+        // enter reply phase
         std::cout << "enter reply phase" << std::endl;
         log[cMsg.seq].phase = PbftPhase::reply;
         executeTransaction(cMsg.seq);
-	*fExecuteTx = true;
-//    }
+	/* send reply to client only once. */
+	CReply cReply = assembleReply(cMsg.seq);
+	const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
+	connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, cReply));
+    }
     return true;
 }
 

@@ -43,13 +43,13 @@ public:
 
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
-    bool ProcessPP(CNode* pfrom, CPre_prepare& ppMsg);
+    bool ProcessPP(CNode* pfrom, CConnman* connman, CPre_prepare& ppMsg);
 
     // Check Prepare message signature, add to corresponding log, check if we have accumulated 2f Prepare message. If so, send Commit message
-    bool ProcessP(CNode* pfrom, CPbftMessage& pMsg, bool* fEnterCommitPhase);
+    bool ProcessP(CNode* pfrom, CConnman* connman, CPbftMessage& pMsg, bool fCheck = true);
     
     // Check Commit message signature, add to corresponding log, check if we have accumulated 2f+1 Commit message. If so, execute transactions and reply. 
-    bool ProcessC(CNode* pfrom, CPbftMessage& cMsg, bool* fExecuteTx);
+    bool ProcessC(CNode* pfrom, CConnman* connman, CPbftMessage& cMsg, bool fCheck = true);
 
     CPre_prepare assemblePPMsg(const CTransaction& tx);
     CPbftMessage assembleMsg(uint32_t seq); 
