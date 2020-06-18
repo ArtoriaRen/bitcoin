@@ -49,10 +49,11 @@ public:
     bool ProcessP(CNode* pfrom, CPbftMessage& pMsg, bool* fEnterCommitPhase);
     
     // Check Commit message signature, add to corresponding log, check if we have accumulated 2f+1 Commit message. If so, execute transactions and reply. 
-    bool ProcessC(CNode* pfrom, CPbftMessage& cMsg);
+    bool ProcessC(CNode* pfrom, CPbftMessage& cMsg, bool* fExecuteTx);
 
     CPre_prepare assemblePPMsg(const CTransaction& tx);
     CPbftMessage assembleMsg(uint32_t seq); 
+    CReply assembleReply(uint32_t seq);
     bool checkMsg(CNode* pfrom, CPbftMessage* msg);
     void executeTransaction(const int seq);
 

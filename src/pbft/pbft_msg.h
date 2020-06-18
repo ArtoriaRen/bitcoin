@@ -107,25 +107,30 @@ public:
 /*Local pre-prepare message*/
 class CReply {
 public:
-    PbftPhase phase;
-    uint32_t seq;
-    uint32_t senderId;
     char reply; // execution result
-    std::string timestamp;
-    uint256 digest; // use the block header hash as digest.
-    /* TODO: change the YCSB workload (probably hash each key and value to constant size)
-     * so that the reply has a fixed size.
-     * Assume the reply is 1 byte for now.
-     */
+    uint256 digest; // use the tx header hash as digest.
+    uint32_t sigSize;
     std::vector<unsigned char> vchSig; //serilized ecdsa signature.
-    // the real size of a reply msg is 4*3 + 1 + 32 + 72 = 117 bytes.
 
     CReply();
-    CReply(uint32_t seqNum, const uint32_t sender, char rpl, const uint256& dgt, std::string timestamp);
+    CReply(char replyIn, const uint256& digestIn);
 
-    void serialize(std::ostringstream& s) const;
+    template<typename Stream>
+    void Serialize(Stream& s) const{
+	s.write(&reply, sizeof(reply));
+	s.write((char*)digest.begin(), digest.size());
+	s.write((char*)&sigSize, sizeof(sigSize));
+	s.write((char*)vchSig.data(), sigSize);
+    }
     
-    void deserialize(std::istringstream& s); 
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+	s.read(&reply, sizeof(reply));
+	s.read((char*)digest.begin(), digest.size());
+	s.read((char*)&sigSize, sizeof(sigSize));
+	vchSig.resize(sigSize);
+	s.read((char*)vchSig.data(), sigSize);
+    }
 
     void getHash(uint256& result);
 };

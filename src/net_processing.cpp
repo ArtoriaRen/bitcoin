@@ -1929,18 +1929,16 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     else if (strCommand == NetMsgType::PBFT_C) {
         CPbftMessage cMsg;
         vRecv >> cMsg;
-	if(!pbft->ProcessC(pfrom, cMsg)) {
+	bool fExecutedTx = false;
+	if(!pbft->ProcessC(pfrom, cMsg, &fExecutedTx)) {
 	    std::cout << __func__ << ": process cMsg failed" <<std::endl;
 	}
-	/* probably need to send reply to client. */
-//	if(fEnterCommitPhase) {
-//	    /* send a cMsg */
-//	    CPbftMessage cMsg = pbft->assembleMsg(pMsg.seq);
-//	    const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
-//	    for (CNode* node: pbft->otherMembers) {
-//		connman->PushMessage(node, msgMaker.Make(NetMsgType::PBFT_C, cMsg));
-//	    }
-//	}
+	/* send reply to client only once. */
+	if (fExecutedTx) {
+	    CReply cReply = pbft->assembleReply(cMsg.seq);
+	    const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
+	    connman->PushMessage(pbft->client, msgMaker.Make(NetMsgType::PBFT_REPLY, cReply));
+	}
     }
 
     else if (strCommand == NetMsgType::SENDHEADERS)
