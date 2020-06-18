@@ -602,6 +602,7 @@ class CNode
 {
     friend class CConnman;
 public:
+    bool sentPbftClientMsg;
     // socket
     std::atomic<ServiceFlags> nServices;
     SOCKET hSocket;

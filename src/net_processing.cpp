@@ -30,13 +30,13 @@
 #include <utilmoneystr.h>
 #include <utilstrencodings.h>
 #include "pbft/pbft.h"
+#include "pbft/pbft_msg.h"
 
 #if defined(NDEBUG)
 # error "Bitcoin cannot be compiled without assertions."
 #endif
 
 std::atomic<int64_t> nTimeBestReceived(0); // Used only to inform the wallet of when we last received a block
-static bool sentPbftClientMsg = false;
 
 struct IteratorComparator
 {
@@ -1495,6 +1495,7 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, const std::ve
 
 bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman* connman, const std::atomic<bool>& interruptMsgProc)
 {
+    std::cout << __func__ << ": " << strCommand << std::endl;
     LogPrint(BCLog::NET, "received: %s (%u bytes) peer=%d\n", SanitizeString(strCommand), vRecv.size(), pfrom->GetId());
     if (gArgs.IsArgSet("-dropmessagestest") && GetRand(gArgs.GetArg("-dropmessagestest", 0)) == 0)
     {
@@ -1822,6 +1823,14 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             pfrom->fGetAddr = false;
         if (pfrom->fOneShot)
             pfrom->fDisconnect = true;
+    }
+
+    else if (strCommand == NetMsgType::PBFT_REPLY)
+    {
+	std::cout << __func__ << ": receivd  PBFT_REPLY from " << pfrom->GetAddrName() << std::endl;
+	CReply cReply;
+	vRecv >> cReply;
+	g_pbft->replyMap[cReply.digest].emplace(pfrom->GetAddrName());
     }
 
     else if (strCommand == NetMsgType::SENDHEADERS)
@@ -3241,9 +3250,9 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
                 pto->vAddrToSend.shrink_to_fit();
         }
 
-	if (!sentPbftClientMsg) {
-                connman->PushMessage(g_pbft->leader, msgMaker.Make(NetMsgType::PBFT_CLIENT));
-		sentPbftClientMsg = true;
+	if (!pto->sentPbftClientMsg) {
+                connman->PushMessage(pto, msgMaker.Make(NetMsgType::PBFT_CLIENT));
+		pto->sentPbftClientMsg = true;
 	}
         // Start block sync
         if (pindexBestHeader == nullptr)
