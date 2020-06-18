@@ -123,7 +123,7 @@ bool CPbft::ProcessP(CNode* pfrom, CPbftMessage& pMsg, bool* fEnterCommitPhase) 
     return true;
 }
 
-bool CPbft::ProcessC(CNode* pfrom, CPbftMessage& cMsg) {
+bool CPbft::ProcessC(CNode* pfrom, CPbftMessage& cMsg, bool* fExecuteTx) {
 //#ifdef BASIC_PBFT
 //    std::cout << "server " << server_id << "received commit, seq = " << commit.seq << std::endl;
 //#endif
@@ -147,6 +147,7 @@ bool CPbft::ProcessC(CNode* pfrom, CPbftMessage& cMsg) {
         std::cout << "enter reply phase" << std::endl;
         log[cMsg.seq].phase = PbftPhase::reply;
         executeTransaction(cMsg.seq);
+	*fExecuteTx = true;
 //    }
     return true;
 }
@@ -209,19 +210,18 @@ CPbftMessage CPbft::assembleMsg(uint32_t seq) {
     return toSent;
 }
 
-//CReply CPbft::assembleReply(uint32_t seq) {
-//    /* we use the digest from globalCC rather than digest from pre-prepare because 
-//     * a group may get a globalCC without GC msg from its own group.
-//     */
-//    std::string req = log[seq].pre_prepare.clientReq;
-//    // the last field of a requst is the timestamp
-//    CReply toSent(seq, server_id, log[seq].result, log[seq].pre_prepare.digest, req.substr(req.find_last_of(',') + 1));
-//    uint256 hash;
-//    toSent.getHash(hash);
-//    privateKey.Sign(hash, toSent.vchSig);
-//    return toSent;
-//}
-//
+CReply CPbft::assembleReply(uint32_t seq) {
+    /* 'y' --- execute sucessfully
+     * 'n' --- execute fail
+     * Currently we only reply with 'y' b/c servers will exit when an error occurs.
+     */
+    CReply toSent('y', log[seq].ppMsg.digest);
+    uint256 hash;
+    toSent.getHash(hash);
+    privateKey.Sign(hash, toSent.vchSig);
+    return toSent;
+}
+
 void CPbft::executeTransaction(const int seq) {
     // execute all lower-seq tx until this one if possible.
     int i = lastExecutedIndex + 1;
