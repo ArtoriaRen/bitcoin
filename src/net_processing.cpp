@@ -1848,16 +1848,16 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     else if (strCommand == NetMsgType::PBFT_TX) {
         CTransactionRef ptx;
         vRecv >> ptx;
-        const CTransaction& tx = *ptx;
-	CPre_prepare ppMsg = pbft->assemblePPMsg(tx);
+	std::shared_ptr<TxReq> ptxReq(new TxReq(*ptx));
+	CPre_prepare ppMsg = pbft->assemblePPMsg(ptxReq, ClientReqType::TX);
 	/* add the ppMsg to the leader's own log. */
 	pbft->log[ppMsg.seq].ppMsg = ppMsg;
 	pbft->log[ppMsg.seq].phase = PbftPhase::prepare;
 	const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
-	std::cout << __func__ << ": received tx = " << tx.ToString()
+	std::cout << __func__ << ": received tx = " << ptx->ToString()
 		<< ", otherMember.size = " << pbft->otherMembers.size()
 		<< ", log slot "<< ppMsg.seq << " for tx = "
-		<< pbft->log[ppMsg.seq].ppMsg.tx.GetHash().GetHex() << std::endl;
+		<< pbft->log[ppMsg.seq].ppMsg.req->GetDigest().GetHex() << std::endl;
 	for (CNode* node: pbft->otherMembers) {
 	    /* since we are the leader, we do not care to exclude the leader from 
 	     * the otherMember vector because ourself is not in the vector. */

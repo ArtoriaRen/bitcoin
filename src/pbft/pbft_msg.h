@@ -20,6 +20,7 @@
 //global view number
 
 enum PbftPhase {pre_prepare, prepare, commit, reply, end};
+enum ClientReqType {TX, LOCK, UNLOCK};
 
 class CPre_prepare;
 
@@ -59,14 +60,53 @@ public:
     void getHash(uint256& result);
 };
 
-class CPre_prepare : public CPbftMessage{
-    // CBlock block;
-    /* we can use P2P network to disseminate the block before the primary send Pre_prepare msg 
-     * so that the block does not have to be in the Pre-prepare message.*/
-    
+class CClientReq{
 public:
-    CPre_prepare():CPbftMessage(){
+    /* we did not put serialization methods here because c++ does not allow
+     * virtual template method.
+     */
+    virtual void Execute(const int seq) const = 0; // seq is passed in because we use it as block height.
+    virtual uint256 GetDigest() const = 0;
+//    virtual ~CClientReq(){};
+};
+
+class TxReq: public CClientReq {
+public:
+    CMutableTransaction tx_mutable;
+    
+    TxReq(): tx_mutable(CMutableTransaction()) {}
+    TxReq(const CTransaction& txIn) : tx_mutable(txIn){}
+
+    template<typename Stream>
+    void Serialize(Stream& s) const{
+	tx_mutable.Serialize(s);
     }
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+	tx_mutable.Unserialize(s);
+    }
+    void Execute(const int seq) const override;
+    uint256 GetDigest() const override;
+
+//    ~TxReq(){
+//	~tx();
+//    }
+};
+
+class CPre_prepare : public CPbftMessage{
+public:
+    /* The client request type (currently only for OmniLedger):
+     * The type is used to decide how the client request should be serialized,
+     * and deserialized when a peer receives a ppMsg.
+     */
+    ClientReqType type;
+    /* If we use P2P network to disseminate client req before the primary send Pre_prepare msg,
+     * the req does not have to be in the Pre-prepare message.*/
+    std::shared_ptr<CClientReq> req;
+
+   
+    CPre_prepare():CPbftMessage(), req(nullptr){ }
+    CPre_prepare(const CPbftMessage& pbftMsg, const std::shared_ptr<CClientReq>& reqIn):CPbftMessage(pbftMsg), req(reqIn){ }
     
     //add explicit?
     CPre_prepare(const CPre_prepare& msg);
@@ -75,16 +115,23 @@ public:
     template<typename Stream>
     void Serialize(Stream& s) const{
 	CPbftMessage::Serialize(s);
-	tx.Serialize(s);
+	s.write((char*)&type, sizeof(type));
+	if(type == ClientReqType::TX) {
+	    assert(req != nullptr);
+	    static_cast<TxReq*>(req.get())->Serialize(s);
+	}
     }
     
     template<typename Stream>
     void Unserialize(Stream& s) {
 	CPbftMessage::Unserialize(s);
-	tx.Unserialize(s);
+	s.read((char*)&type, sizeof(type));
+	if(type == ClientReqType::TX) {
+	    req.reset(new TxReq());
+	    static_cast<TxReq*>(req.get())->Unserialize(s);
+	}
     }
 
-    CMutableTransaction tx;
 };
 
 

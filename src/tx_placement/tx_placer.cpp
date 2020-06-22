@@ -29,7 +29,7 @@ TxPlacer::TxPlacer(const CBlock& block){
 }
 
 /* all output UTXOs of a tx is stored in one shard. */
-int32_t TxPlacer::randomPlaceTxid(CTransactionRef tx){
+std::vector<int32_t> TxPlacer::randomPlaceTxid(CTransactionRef tx){
     std::set<int> shardIds;
     /* add the output shard id to the above set */
     arith_uint256 txid = UintToArith256(tx->GetHash());
@@ -53,8 +53,12 @@ int32_t TxPlacer::randomPlaceTxid(CTransactionRef tx){
     
     /* shardIds.size() is the shard span of this tx. */
     shardCntMap[tx->vin.size()][shardIds.size()]++;
+    std::vector<int32_t> ret(shardIds.begin(), shardIds.end());
+    std::vector<int32_t>::iterator outShardIt = std::find(ret.begin(), ret.end(),
+	    (int32_t)(outShardId.GetLow64()));
+    std::swap(ret[0], *outShardIt); // put the outShardIt as the first element
 
-    return (int32_t)(outShardId.GetLow64());
+    return ret;
 }
 
 int32_t TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCache& cache){
@@ -280,20 +284,20 @@ void printShardAffinity(){
 //}
 
 void randomPlaceTxInBlock(){
-    std::cout << "RANDOM place block " << randomPlaceBlock << std::endl;
-
-    CBlock block;
-    CBlockIndex* pblockindex = chainActive[randomPlaceBlock];
-    if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
-	std::cerr << "Block not found on disk" << std::endl;
-    }
-    TxPlacer txPlacer(block);
-
-    /* start from the second transaction to exclude coinbase tx */
-    for (uint j = 1; j < block.vtx.size(); j++) {
-	txPlacer.randomPlaceTxid(block.vtx[j]);
-    }
-    txPlacer.printPlaceResult();
+//    std::cout << "RANDOM place block " << randomPlaceBlock << std::endl;
+//
+//    CBlock block;
+//    CBlockIndex* pblockindex = chainActive[randomPlaceBlock];
+//    if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
+//	std::cerr << "Block not found on disk" << std::endl;
+//    }
+//    TxPlacer txPlacer(block);
+//
+//    /* start from the second transaction to exclude coinbase tx */
+//    for (uint j = 1; j < block.vtx.size(); j++) {
+//	txPlacer.randomPlaceTxid(block.vtx[j]);
+//    }
+//    txPlacer.printPlaceResult();
 }
 
 //void smartPlaceTxInBlock(const std::shared_ptr<const CBlock> pblock){

@@ -38,8 +38,8 @@ bool CPbft::ProcessPP(CNode* pfrom, CConnman* connman, CPre_prepare& ppMsg) {
     }
 
     // check if the digest matches client req
-    if (ppMsg.digest != ppMsg.tx.GetHash()) {
-	std::cerr << "digest does not match client tx. Client txid = " << ppMsg.tx.GetHash().GetHex() << ", but digest = " << ppMsg.digest.GetHex() << std::endl;
+    if (ppMsg.digest != ppMsg.req->GetDigest()) {
+	std::cerr << "digest does not match client tx. Client txid = " << ppMsg.req->GetDigest().GetHex() << ", but digest = " << ppMsg.digest.GetHex() << std::endl;
 	return false;
     }
     // add to log
@@ -55,7 +55,7 @@ bool CPbft::ProcessPP(CNode* pfrom, CConnman* connman, CPre_prepare& ppMsg) {
     /* make a pMsg */
     CPbftMessage pMsg = assembleMsg(ppMsg.seq);
     /* send the pMsg to other peers, including the leader. */
-    const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
+    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
     connman->PushMessage(leader, msgMaker.Make(NetMsgType::PBFT_P, pMsg)); // the leader will not receive ppMs, so we do not check if we are the leader here.
     for (CNode* node: otherMembers) {
 	connman->PushMessage(node, msgMaker.Make(NetMsgType::PBFT_P, pMsg));
@@ -104,7 +104,7 @@ bool CPbft::ProcessP(CNode* pfrom, CConnman* connman, CPbftMessage& pMsg, bool f
 	/* make a cMsg */
 	CPbftMessage cMsg = assembleMsg(pMsg.seq);
 	/* send the cMsg to other peers */
-	const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
+	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	if(leader != nullptr) {
 	    /* Only followers send cMsg to the leader. The leader should not
 	     * send cMsg to itself.
@@ -151,11 +151,15 @@ bool CPbft::ProcessC(CNode* pfrom, CConnman* connman, CPbftMessage& cMsg, bool f
         // enter reply phase
         std::cout << "enter reply phase" << std::endl;
         log[cMsg.seq].phase = PbftPhase::reply;
-        executeTransaction(cMsg.seq);
-	/* send reply to client only once. */
-	CReply cReply = assembleReply(cMsg.seq);
-	const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
-	connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, cReply));
+	/* if some seq ahead of the cMsg.seq is not in the reply phase yet, 
+	 * cMsg.seq will not be executed.
+	 */
+	if (executeTransaction(cMsg.seq) == cMsg.seq) {
+	    /* send reply to client only once. */
+	    CReply cReply = assembleReply(cMsg.seq);
+	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+	    connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, cReply));
+	}
     }
     return true;
 }
@@ -192,16 +196,14 @@ bool CPbft::checkMsg(CNode* pfrom, CPbftMessage* msg) {
     return true;
 }
 
-CPre_prepare CPbft::assemblePPMsg(const CTransaction& tx) {
-#ifdef MSG_ASSEMBLE
-    std::cout << "assembling pre_prepare, seq = " << seq << "client req = " << clientReq << std::endl;
-#endif
+CPre_prepare CPbft::assemblePPMsg(const std::shared_ptr<TxReq>& ptxReq, ClientReqType type) {
     CPre_prepare toSent; // phase is set to Pre_prepare by default.
     toSent.seq = nextSeq++;
     toSent.view = 0;
     localView = 0; // also change the local view, or the sanity check would fail.
-    toSent.digest = tx.GetHash();
-    toSent.tx = CMutableTransaction(tx);
+    toSent.type = type;
+    toSent.req = ptxReq;
+    toSent.digest = toSent.req->GetDigest();
     uint256 hash;
     toSent.getHash(hash); // this hash is used for signature, so client tx is not included in this hash.
     privateKey.Sign(hash, toSent.vchSig);
@@ -230,73 +232,12 @@ CReply CPbft::assembleReply(uint32_t seq) {
     return toSent;
 }
 
-void CPbft::executeTransaction(const int seq) {
+int CPbft::executeTransaction(const int seq) {
     // execute all lower-seq tx until this one if possible.
     int i = lastExecutedIndex + 1;
     for (; i < seq + 1; i++) {
         if (log[i].phase == PbftPhase::reply) {
-            /* client request message format: "r <request type>,<key>[,<value>]". 
-             * Request type can be either read 'r' or write 'w'. If it is a 
-             * write request, client must provide value. We use comma as delimiter 
-             * here to avoid coflict with message deserialization, which use space
-             * as delimiter.
-             */
-	    const CTransaction &tx = log[i].ppMsg.tx;
-	    
-	    /* -------------logic from Bitcoin code for tx processing--------- */
-	    CValidationState state;
-	    CCoinsViewCache view(pcoinsTip.get());
-	    std::vector<PrecomputedTransactionData> txdata;
-	    bool fScriptChecks = true;
-//	    CBlockUndo blockundo;
-	    unsigned int flags = SCRIPT_VERIFY_NONE; // only verify pay to public key hash
-	    CAmount txfee = 0;
-	    /* We use  INT_MAX as block height, so that we never fail coinbase 
-	     * maturity check. */
-            if (!Consensus::CheckTxInputs(tx, state, view, INT_MAX, txfee)) {
-                std::cerr << __func__ << ": Consensus::CheckTxInputs: " << tx.GetHash().ToString() << ", " << FormatStateMessage(state) << std::endl;
-		return;
-            }
-            if (!MoneyRange(txfee)) {
-		std::cerr << __func__ << ": accumulated fee in the block out of range." << std::endl;
-		return;
-            }
-
-	    // GetTransactionSigOpCost counts 3 types of sigops:
-	    // * legacy (always)
-	    // * p2sh (when P2SH enabled in flags and excludes coinbase)
-	    // * witness (when witness enabled in flags and excludes coinbase)
-	    int64_t nSigOpsCost = 0;
-	    nSigOpsCost += GetTransactionSigOpCost(tx, view, flags);
-	    if (nSigOpsCost > MAX_BLOCK_SIGOPS_COST) { 
-		std::cerr << __func__ << ": ConnectBlock(): too many sigops" << std::endl;
-		return;
-	    }
-
-	    txdata.emplace_back(tx);
-	    std::vector<CScriptCheck> vChecks;
-	    bool fCacheResults = false; /* Don't cache results if we're actually connecting blocks (still consult the cache, though) */
-	    if (!CheckInputs(tx, state, view, fScriptChecks, flags, fCacheResults, fCacheResults, txdata[i], nullptr)) {  // do not use multithreads to check scripts
-		std::cerr << __func__ << ": ConnectBlock(): CheckInputs on " 
-			<< tx.GetHash().ToString() 
-			<< " failed with " << FormatStateMessage(state)
-			<< std::endl;
-		return;
-	    }
-
-//	    CTxUndo undoDummy;
-//	    if (i > 0) {
-//		blockundo.vtxundo.push_back(CTxUndo());
-//	    }
-	    UpdateCoins(tx, view, seq);
-	    bool flushed = view.Flush(); // flush to pcoinsTip
-	    assert(flushed);
-	    /* -------------logic from Bitcoin code for tx processing--------- */
-
-	    std::cout << __func__ << "excuted tx " << tx.GetHash().ToString()
-		    << " at log slot " << i << std::endl;
-            /* send reply right after execution. */
-//            sendReply2Client(i);
+	    log[i].ppMsg.req->Execute(i);
         } else {
             break;
         }
@@ -306,6 +247,7 @@ void CPbft::executeTransaction(const int seq) {
      * the all requsts up to seq has been executed. This may be triggered 
      * by future requests.
      */
+    return lastExecutedIndex;
 }
 //
 //void CPbft::sendReply2Client(const int seq) {

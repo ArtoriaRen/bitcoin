@@ -32,8 +32,9 @@ public:
     /* return the number of shards that input UTXOs and output UTXOs span */
     TxPlacer(const CBlock& block);
 
-    /* return the output shard id */
-    int32_t randomPlaceTxid(CTransactionRef tx);
+    /* return a vector of shard ids. 
+     * The first element is the output shard id, and other elements are input shard ids. */
+    std::vector<int32_t> randomPlaceTxid(CTransactionRef tx);
     int32_t smartPlace(const CTransaction& tx, CCoinsViewCache& cache);
     void printPlaceResult();
     // TODO: smartPlaceSorted
