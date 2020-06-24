@@ -248,3 +248,56 @@ bool Consensus::CheckTxInputs(const CTransaction& tx, CValidationState& state, c
     txfee = txfee_aux;
     return true;
 }
+
+bool Consensus::CheckLockReqInputs(const CTransaction& tx, CValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& totalValueIn) {
+    // are the actual inputs in our shard available?
+    for (CTxIn input: tx.vin) {
+	//TODO: add shardAffinity to vin and CTxOut
+//	if (input.shardAffinity == myShardId))
+	    if (!inputs.HaveCoin(input.prevout)) {
+		return state.DoS(100, false, REJECT_INVALID, "bad-txns-inputs-missingorspent", false,
+				 strprintf("%s: inputs missing/spent", __func__));
+	    }
+    }
+
+    CAmount nValueIn = 0;
+    for (unsigned int i = 0; i < tx.vin.size(); ++i) {
+        const COutPoint &prevout = tx.vin[i].prevout;
+        const Coin& coin = inputs.AccessCoin(prevout);
+        assert(!coin.IsSpent());
+
+        // If prev is coinbase, check that it's matured
+        if (coin.IsCoinBase() && nSpendHeight - coin.nHeight < COINBASE_MATURITY) {
+            return state.Invalid(false,
+                REJECT_INVALID, "bad-txns-premature-spend-of-coinbase",
+                strprintf("tried to spend coinbase at depth %d", nSpendHeight - coin.nHeight));
+        }
+
+        // Check for negative or overflow input values
+        nValueIn += coin.out.nValue;
+        if (!MoneyRange(coin.out.nValue) || !MoneyRange(nValueIn)) {
+            return state.DoS(100, false, REJECT_INVALID, "bad-txns-inputvalues-outofrange");
+        }
+    } 
+
+    totalValueIn = nValueIn; 
+
+    /* As an input shard, we do not have enough info to verify if the total input amount
+     * exceeds the output amount because we do not know the input UTXO values of other
+     * input shards. We reply the client with the total amount locked in our shard and
+     * let the output shard do this verification. */
+//    const CAmount value_out = tx.GetValueOut();
+//    if (nValueIn < value_out) {
+//        return state.DoS(100, false, REJECT_INVALID, "bad-txns-in-belowout", false,
+//            strprintf("value in (%s) < value out (%s)", FormatMoney(nValueIn), FormatMoney(value_out)));
+//    }
+
+//    // Tally transaction fees
+//    const CAmount txfee_aux = nValueIn - value_out;
+//    if (!MoneyRange(txfee_aux)) {
+//        return state.DoS(100, false, REJECT_INVALID, "bad-txns-fee-outofrange");
+//    }
+
+//    txfee = txfee_aux;
+    return true;
+}

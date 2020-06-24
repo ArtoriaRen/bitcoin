@@ -46,6 +46,10 @@ const char *PBFT_REPLY="pbftrpl"; // pbft commit
 const char *PBFT_TX="pbfttx"; // use to differentiate pbft tx from normal tx
 const char *PBFT_PUBKEY="pubkey"; 
 const char *PBFT_CLIENT="client"; // a pbft client use this msg to inform the leader that it is a client not a follower.
+const char *OMNI_LOCK="omnilock"; // lock req of OmniLedger
+const char *OMNI_LOCK_REPLY="lockrly"; // lock reply of OmniLedger
+const char *OMNI_UNLOCK_COMMIT="unlockcmt"; 
+const char *OMNI_UNLOCK_ABORT="unlockabt"; 
 } // namespace NetMsgType
 
 /** All known message types. Keep this in the same order as the list of
@@ -84,7 +88,11 @@ const static std::string allNetMessageTypes[] = {
     NetMsgType::PBFT_REPLY, // pbft commit
     NetMsgType::PBFT_TX, // use to differentiate pbft tx from normal tx
     NetMsgType::PBFT_PUBKEY,
-    NetMsgType::PBFT_CLIENT // a pbft client use this msg to inform the leader that it is a client not a follower.
+    NetMsgType::PBFT_CLIENT, // a pbft client use this msg to inform the leader that it is a client not a follower.
+    NetMsgType::OMNI_LOCK, // lock req of OmniLedger
+    NetMsgType::OMNI_LOCK_REPLY, // lock reply of OmniLedger
+    NetMsgType::OMNI_UNLOCK_COMMIT, 
+    NetMsgType::OMNI_UNLOCK_ABORT 
 };
 const static std::vector<std::string> allNetMessageTypesVec(allNetMessageTypes, allNetMessageTypes+ARRAYLEN(allNetMessageTypes));
 

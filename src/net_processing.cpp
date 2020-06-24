@@ -1845,11 +1845,17 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     }
 
     /* The pbft leader receiving a tx will assemble pp message. */
-    else if (strCommand == NetMsgType::PBFT_TX) {
+    else if (strCommand == NetMsgType::PBFT_TX || strCommand == NetMsgType::OMNI_LOCK) {
         CTransactionRef ptx;
         vRecv >> ptx;
-	std::shared_ptr<TxReq> ptxReq(new TxReq(*ptx));
-	CPre_prepare ppMsg = pbft->assemblePPMsg(ptxReq, ClientReqType::TX);
+	CPre_prepare ppMsg;
+	if (strCommand == NetMsgType::PBFT_TX) {
+	    std::shared_ptr<TxReq> ptxReq(new TxReq(*ptx));
+	    ppMsg = pbft->assemblePPMsg(ptxReq, ClientReqType::TX);
+	} else {
+	    std::shared_ptr<LockReq> plockReq(new LockReq(*ptx));
+	    ppMsg = pbft->assemblePPMsg(plockReq, ClientReqType::LOCK);
+	}
 	/* add the ppMsg to the leader's own log. */
 	pbft->log[ppMsg.seq].ppMsg = ppMsg;
 	pbft->log[ppMsg.seq].phase = PbftPhase::prepare;

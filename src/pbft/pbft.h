@@ -51,9 +51,10 @@ public:
     // Check Commit message signature, add to corresponding log, check if we have accumulated 2f+1 Commit message. If so, execute transactions and reply. 
     bool ProcessC(CNode* pfrom, CConnman* connman, CPbftMessage& cMsg, bool fCheck = true);
 
-    CPre_prepare assemblePPMsg(const std::shared_ptr<TxReq>& ptxReq, ClientReqType type);
-    CPbftMessage assembleMsg(uint32_t seq); 
-    CReply assembleReply(uint32_t seq);
+    CPre_prepare assemblePPMsg(const std::shared_ptr<CClientReq>& pclientReq, ClientReqType type);
+    CPbftMessage assembleMsg(const uint32_t seq); 
+    CReply assembleReply(const uint32_t seq);
+    CInputShardReply assembleInputShardReply(const uint32_t seq);
     bool checkMsg(CNode* pfrom, CPbftMessage* msg);
     /*return the last executed seq */
     int executeTransaction(const int seq);

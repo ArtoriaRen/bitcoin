@@ -20,7 +20,10 @@
 //global view number
 
 enum PbftPhase {pre_prepare, prepare, commit, reply, end};
-enum ClientReqType {TX, LOCK, UNLOCK};
+/* Only input shards will receive LOCK and  UNLOCK_TO_ABORT req;
+ * Only output shards will receive UNLOCK_TO_COMMIT req.
+ */
+enum ClientReqType {TX, LOCK, UNLOCK_TO_COMMIT, UNLOCK_TO_ABORT};
 
 class CPre_prepare;
 
@@ -87,11 +90,90 @@ public:
     }
     void Execute(const int seq) const override;
     uint256 GetDigest() const override;
-
-//    ~TxReq(){
-//	~tx();
-//    }
 };
+
+/* Although the LockReq class has the same member variable as the TxReq class,
+ * a LockReq is executed differently: spent only input UTXOs in the shard and 
+ * does not add any output UTXOs.
+ */
+class LockReq: public CClientReq {
+public:
+    CMutableTransaction tx_mutable;
+    /* total input amount in our shard. Only in-memory. No need to serialize it. */
+    mutable CAmount totalValueInOfShard;
+    
+    LockReq(): tx_mutable(CMutableTransaction()) {}
+    LockReq(const CTransaction& txIn) : tx_mutable(txIn){}
+
+    template<typename Stream>
+    void Serialize(Stream& s) const{
+	tx_mutable.Serialize(s);
+    }
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+	tx_mutable.Unserialize(s);
+    }
+    void Execute(const int seq) const override;
+    uint256 GetDigest() const override;
+};
+
+
+//class UnlockToCommitReq: public CClientReq {
+//public:
+//    CMutableTransaction tx_mutable;
+//    /* number of signatures from input shards. The output shard deems the first
+//     * three sigs are for the UTXOs appear first in the input list, ... */
+//    uint nSigs;  
+//    std::vector<CSig> vSig;
+//
+//    
+//    TxReq(): tx_mutable(CMutableTransaction()) {}
+//    TxReq(const CTransaction& txIn) : tx_mutable(txIn){}
+//
+//    template<typename Stream>
+//    void Serialize(Stream& s) const{
+//	tx_mutable.Serialize(s);
+//	for (uint i = 0; i < nSigs; i++) {
+//	    vSig[i].Serialize(s);
+//	}
+//    }
+//    template<typename Stream>
+//    void Unserialize(Stream& s) {
+//	tx_mutable.Unserialize(s);
+//	for (uint i = 0; i < nSigs; i++) {
+//	    vSig[i].Unserialize(s);
+//	}
+//    }
+//    void Execute(const int seq) const override;
+//    uint256 GetDigest() const override;
+//};
+
+/* We currently do not verify the proof-of-rejection part of OmniLeder.
+ * proof-of-rejection verification requires every peer to know the publickey
+ * of every committee. In our case of lacking threshold signature implementation,
+ * the peer has to know all the pubkey keys of peers in the output committee and
+ * verify everyone's signature. The process is tedious. */
+//class UnlockToAbortReq: public CClientReq {
+//public:
+//    std::vector<COutPoint> voutpoint;
+//
+//    template<typename Stream>
+//    void Serialize(Stream& s) const{
+//	for (uint i = 0; i < voutpoint.size(); i++) {
+//	    voutpoint[i].Serialize(s);
+//	}
+//    }
+//    template<typename Stream>
+//    void Unserialize(Stream& s) {
+//	for (uint i = 0; i < voutpoint.size(); i++) {
+//	    voutpoint[i].Unserialize(s);
+//	}
+//    }
+//
+//    /* mark UTXO(s) in the req as spent */
+//    void Execute(const int seq) const override;
+//    uint256 GetDigest() const override;
+//};
 
 class CPre_prepare : public CPbftMessage{
 public:
@@ -119,7 +201,10 @@ public:
 	if(type == ClientReqType::TX) {
 	    assert(req != nullptr);
 	    static_cast<TxReq*>(req.get())->Serialize(s);
-	}
+	} else if (type == ClientReqType::LOCK) {
+	    assert(req != nullptr);
+	    static_cast<LockReq*>(req.get())->Serialize(s);
+	}  
     }
     
     template<typename Stream>
@@ -129,26 +214,13 @@ public:
 	if(type == ClientReqType::TX) {
 	    req.reset(new TxReq());
 	    static_cast<TxReq*>(req.get())->Unserialize(s);
+	} else if(type == ClientReqType::LOCK) {
+	    req.reset(new LockReq());
+	    static_cast<LockReq*>(req.get())->Unserialize(s);
 	}
     }
-
 };
 
-
-//class CPrepare: public CPbftMessage{
-//    
-//public:
-//    CPrepare():CPbftMessage(PbftPhase::prepare){
-//    }
-//};
-//
-//class CCommit: public CPbftMessage{
-//    
-//public:
-//    CCommit():CPbftMessage(PbftPhase::commit){
-//    }
-//    
-//};
 
 
 /*Local pre-prepare message*/
@@ -177,6 +249,30 @@ public:
 	s.read((char*)&sigSize, sizeof(sigSize));
 	vchSig.resize(sigSize);
 	s.read((char*)vchSig.data(), sigSize);
+    }
+
+    void getHash(uint256& result);
+};
+
+class CInputShardReply: public CReply {
+public:
+    /* total input amount in our shard. Must inform the output shard of this value.
+     * Otherwise the output shard will have no enough info to verify if total input
+     * value is larger than total output value. */
+    CAmount totalValueInOfShard;
+    CInputShardReply();
+    CInputShardReply(char replyIn, const uint256& digestIn, const CAmount valueIn);
+
+    template<typename Stream>
+    void Serialize(Stream& s) const{
+	CReply::Serialize(s);
+	s.write((char*)&totalValueInOfShard, sizeof(totalValueInOfShard));
+    }
+    
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+	CReply::Unserialize(s);
+	s.read((char*)&totalValueInOfShard, sizeof(totalValueInOfShard));
     }
 
     void getHash(uint256& result);

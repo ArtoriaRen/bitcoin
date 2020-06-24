@@ -245,6 +245,10 @@ extern const char *PBFT_REPLY; // pbft commit
 extern const char *PBFT_TX; // use to differentiate pbft tx from normal tx
 extern const char *PBFT_PUBKEY; 
 extern const char *PBFT_CLIENT; // a pbft client use this msg to inform the leader that it is a client not a follower.
+extern const char *OMNI_LOCK; // lock req of OmniLedger
+extern const char *OMNI_LOCK_REPLY; // lock reply of OmniLedger
+extern const char *OMNI_UNLOCK_COMMIT; 
+extern const char *OMNI_UNLOCK_ABORT; 
 };
 
 /* Get a vector of all valid message types (see above) */

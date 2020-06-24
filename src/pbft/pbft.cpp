@@ -19,6 +19,7 @@
 #include "script/interpreter.h"
 #include "undo.h"
 #include "netmessagemaker.h"
+#include <memory>
 
 bool fIsClient; // if this node is a pbft client.
 std::string leaderAddrString;
@@ -33,6 +34,7 @@ CPbft::CPbft() : groupSize(4), nFaulty(1), localView(0), log(std::vector<CPbftLo
 bool CPbft::ProcessPP(CNode* pfrom, CConnman* connman, CPre_prepare& ppMsg) {
     // sanity check for signature, seq, view, digest.
     /*Faulty nodes may proceed even if the sanity check fails*/
+    std::cout << __func__ << ": req type = " <<  ppMsg.type << std::endl;
     if (!checkMsg(pfrom, &ppMsg)) {
         return false;
     }
@@ -154,11 +156,16 @@ bool CPbft::ProcessC(CNode* pfrom, CConnman* connman, CPbftMessage& cMsg, bool f
 	/* if some seq ahead of the cMsg.seq is not in the reply phase yet, 
 	 * cMsg.seq will not be executed.
 	 */
-	if (executeTransaction(cMsg.seq) == cMsg.seq) {
-	    /* send reply to client only once. */
-	    CReply cReply = assembleReply(cMsg.seq);
+	if (executeTransaction(cMsg.seq) == (int)cMsg.seq) {
 	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-	    connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, cReply));
+	    /* send reply to client only once. */
+	    if (log[cMsg.seq].ppMsg.type == ClientReqType::TX) {
+		CReply reply = assembleReply(cMsg.seq);
+		connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
+	    } else if (log[cMsg.seq].ppMsg.type == ClientReqType::LOCK) {
+		CInputShardReply reply = assembleInputShardReply(cMsg.seq);
+		connman->PushMessage(client, msgMaker.Make(NetMsgType::OMNI_LOCK_REPLY, reply));
+	    }
 	}
     }
     return true;
@@ -196,13 +203,13 @@ bool CPbft::checkMsg(CNode* pfrom, CPbftMessage* msg) {
     return true;
 }
 
-CPre_prepare CPbft::assemblePPMsg(const std::shared_ptr<TxReq>& ptxReq, ClientReqType type) {
+CPre_prepare CPbft::assemblePPMsg(const std::shared_ptr<CClientReq>& pclientReq, ClientReqType type) {
     CPre_prepare toSent; // phase is set to Pre_prepare by default.
     toSent.seq = nextSeq++;
     toSent.view = 0;
     localView = 0; // also change the local view, or the sanity check would fail.
     toSent.type = type;
-    toSent.req = ptxReq;
+    toSent.req = pclientReq;
     toSent.digest = toSent.req->GetDigest();
     uint256 hash;
     toSent.getHash(hash); // this hash is used for signature, so client tx is not included in this hash.
@@ -211,7 +218,7 @@ CPre_prepare CPbft::assemblePPMsg(const std::shared_ptr<TxReq>& ptxReq, ClientRe
     return toSent;
 }
 
-CPbftMessage CPbft::assembleMsg(uint32_t seq) {
+CPbftMessage CPbft::assembleMsg(const uint32_t seq) {
     CPbftMessage toSent(log[seq].ppMsg);
     uint256 hash;
     toSent.getHash(hash);
@@ -220,7 +227,7 @@ CPbftMessage CPbft::assembleMsg(uint32_t seq) {
     return toSent;
 }
 
-CReply CPbft::assembleReply(uint32_t seq) {
+CReply CPbft::assembleReply(const uint32_t seq) {
     /* 'y' --- execute sucessfully
      * 'n' --- execute fail
      * Currently we only reply with 'y' b/c servers will exit when an error occurs.
@@ -229,6 +236,16 @@ CReply CPbft::assembleReply(uint32_t seq) {
     uint256 hash;
     toSent.getHash(hash);
     privateKey.Sign(hash, toSent.vchSig);
+    toSent.sigSize = toSent.vchSig.size();
+    return toSent;
+}
+
+CInputShardReply CPbft::assembleInputShardReply(const uint32_t seq) {
+    CInputShardReply toSent('y', log[seq].ppMsg.digest, ((LockReq*)log[seq].ppMsg.req.get())->totalValueInOfShard);
+    uint256 hash;
+    toSent.getHash(hash);
+    privateKey.Sign(hash, toSent.vchSig);
+    toSent.sigSize = toSent.vchSig.size();
     return toSent;
 }
 
@@ -292,3 +309,6 @@ int CPbft::executeTransaction(const int seq) {
 
 
 std::unique_ptr<CPbft> g_pbft;
+/* In case we receive an omniledger unlock_to_abort req, store a copy of all locked coins
+ * so that they can be added back to pcoinsTip. */
+std::unordered_map<COutPoint, Coin, SaltedOutpointHasher> lockedCoinMap;
