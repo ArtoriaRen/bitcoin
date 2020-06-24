@@ -1827,10 +1827,18 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
     else if (strCommand == NetMsgType::PBFT_REPLY)
     {
-	std::cout << __func__ << ": receivd  PBFT_REPLY from " << pfrom->GetAddrName() << std::endl;
-	CReply cReply;
-	vRecv >> cReply;
-	g_pbft->replyMap[cReply.digest].emplace(pfrom->GetAddrName());
+	CReply reply;
+	vRecv >> reply;
+	g_pbft->replyMap[reply.digest].emplace(pfrom->GetAddrName());
+	std::cout << __func__ << ": receivd  PBFT_REPLY for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
+    }
+
+    else if (strCommand == NetMsgType::OMNI_LOCK_REPLY)
+    {
+	CInputShardReply reply;
+	vRecv >> reply;
+	g_pbft->replyMap[reply.digest].emplace(pfrom->GetAddrName());
+	std::cout << __func__ << ": receivd "  << strCommand << "for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
     }
 
     else if (strCommand == NetMsgType::SENDHEADERS)

@@ -1768,7 +1768,9 @@ bool CWalletTx::RelayWalletTransaction(CConnman* connman)
                 //    pnode->PushInventory(inv);
                 //});
 		const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-		connman->PushMessage(g_pbft->leader, msgMaker.Make(NetMsgType::PBFT_TX, *tx));
+		//connman->PushMessage(g_pbft->leader, msgMaker.Make(NetMsgType::PBFT_TX, *tx));
+		connman->PushMessage(g_pbft->leader, msgMaker.Make(NetMsgType::OMNI_LOCK, *tx));
+
                 return true;
             }
         }
