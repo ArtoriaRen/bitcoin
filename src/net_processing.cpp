@@ -1837,8 +1837,47 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     {
 	CInputShardReply reply;
 	vRecv >> reply;
-	g_pbft->replyMap[reply.digest].emplace(pfrom->GetAddrName());
 	std::cout << __func__ << ": receivd "  << strCommand << "for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
+	// TODO: replace the sigSize with peer id. We use shardId = peerID / groupSize.
+	// TODO: the client must create the right number of shards in the inputShardReplyMap so that we can decide if we can send an unlocktocommit req by checking if every shard has sent us enough replies.
+//	std::set<CInputShardReply>& shardReplies = g_pbft->inputShardReplyMap[reply.digest][1];
+//        std::cout << "shardReplies.size() = " << shardReplies.size() << std::endl;
+//	shardReplies.insert(reply);
+//	/* Check if the client has accumulated enough replies from every shard. If so, send a unlock_to_commit req to the output shard. */
+//	bool gotAllInputShardReplies = true;
+//	uint reply_threshold = 2 * CPbft::nFaulty + 1;
+//        std::cout << "inputShardReplyMap[reply.digest].size() = " << g_pbft->inputShardReplyMap[reply.digest].size() << std::endl;
+//	for (auto pair: g_pbft->inputShardReplyMap[reply.digest]) {
+//	    std::cout << "pair.first = " << pair.first << ", pair.second.size() = " << pair.second.size() << std::endl;
+//	    if (pair.second.size() < reply_threshold) {
+//		gotAllInputShardReplies = false;
+//		break;
+//	    }
+//	}
+//	if (gotAllInputShardReplies) {
+//	    /* assemble a vector including (2f + 1) replies for every shard */
+//	    std::vector<CInputShardReply> vReply;
+//	    vReply.reserve(reply_threshold * g_pbft->inputShardReplyMap[reply.digest].size());
+//	    for (auto& p : g_pbft->inputShardReplyMap[reply.digest]) {
+//		auto it = p.second.begin();
+//		/* add the first (2f+1) replies of the current shard to the vector */
+//		for (uint i = 0; i < reply_threshold; i++) {
+//		    vReply.push_back(CInputShardReply(*it));
+//		    it++;
+//		}
+//	    }
+//            
+//	    assert(g_pbft->mapTxid.find(reply.digest) != g_pbft->mapTxid.end());
+	//    UnlockToCommitReq commitReq(std::move(CMutableTransaction(*g_pbft->mapTxid[reply.digest])), vReply.size(), std::move(vReply));
+	g_pbft->vInputShardReplies.push_back(reply);
+	if(g_pbft->vInputShardReplies.size() == 3) {
+	    UnlockToCommitReq commitReq(std::move(CMutableTransaction(*g_pbft->mapTxid[reply.digest])), 3, g_pbft->vInputShardReplies);
+	    std::cout << "sending unlock_to_commit with req_hash = " << commitReq.GetDigest().GetHex() << std::endl;
+	    // TODO: create an unlock to commit req and sent it to the output shard leader.  
+	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+	    // TODO: need an <id, pnode, pubkey> map. Can be implemented with a vector.
+	    connman->PushMessage(g_pbft->leader, msgMaker.Make(NetMsgType::OMNI_UNLOCK_COMMIT, commitReq));
+	}
     }
 
     else if (strCommand == NetMsgType::SENDHEADERS)
