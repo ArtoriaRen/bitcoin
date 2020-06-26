@@ -30,6 +30,8 @@ namespace Consensus {
 bool CheckTxInputs(const CTransaction& tx, CValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& txfee);
 
 bool CheckLockReqInputs(const CTransaction& tx, CValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& totalValueIn);
+
+bool CheckInputsCommitReq(const CTransaction& tx, CValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, const CAmount& totalValueIn);
 } // namespace Consensus
 
 /** Auxiliary functions for transaction validation (ideally should not be exposed) */
@@ -58,6 +60,8 @@ unsigned int GetP2SHSigOpCount(const CTransaction& tx, const CCoinsViewCache& ma
  * @return Total signature operation cost of tx
  */
 int64_t GetTransactionSigOpCost(const CTransaction& tx, const CCoinsViewCache& inputs, int flags);
+
+int64_t GetTransactionSigOpCostInOutShard(const CTransaction& tx, const CCoinsViewCache& inputs, int flags);
 
 /**
  * Check if transaction is final and can be included in a block with the

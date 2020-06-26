@@ -1871,6 +1871,27 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	}
     }
 
+    else if (strCommand == NetMsgType::OMNI_UNLOCK_COMMIT) {
+	std::shared_ptr<UnlockToCommitReq> pUnlockCommitReq(new UnlockToCommitReq());
+        vRecv >> *pUnlockCommitReq;
+	CPre_prepare ppMsg;
+	ppMsg = pbft->assemblePPMsg(pUnlockCommitReq, ClientReqType::UNLOCK_TO_COMMIT);
+	/* add the ppMsg to the leader's own log. */
+	pbft->log[ppMsg.seq].ppMsg = ppMsg;
+	pbft->log[ppMsg.seq].phase = PbftPhase::prepare;
+	const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
+	CTransaction tx(pUnlockCommitReq->tx_mutable);
+	std::cout << __func__ << ": received tx = " << tx.GetHash().GetHex().substr(1, 10)
+		<< ", otherMember.size = " << pbft->otherMembers.size()
+		<< ", log slot "<< ppMsg.seq << " for req = "
+		<< pbft->log[ppMsg.seq].ppMsg.req->GetDigest().GetHex() << std::endl;
+	for (CNode* node: pbft->otherMembers) {
+	    /* since we are the leader, we do not care to exclude the leader from 
+	     * the otherMember vector because ourself is not in the vector. */
+	    connman->PushMessage(node, msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
+	}
+    }
+
     else if (strCommand == NetMsgType::PBFT_PP) {
         CPre_prepare ppMsg;
         vRecv >> ppMsg;

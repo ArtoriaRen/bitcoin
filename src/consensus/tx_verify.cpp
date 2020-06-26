@@ -156,6 +156,20 @@ int64_t GetTransactionSigOpCost(const CTransaction& tx, const CCoinsViewCache& i
     return nSigOps;
 }
 
+int64_t GetTransactionSigOpCostInOutShard(const CTransaction& tx, const CCoinsViewCache& inputs, int flags)
+{
+    int64_t nSigOps = GetLegacySigOpCount(tx) * WITNESS_SCALE_FACTOR;
+
+    if (tx.IsCoinBase())
+        return nSigOps;
+
+    if (flags & SCRIPT_VERIFY_P2SH) {
+        nSigOps += GetP2SHSigOpCount(tx, inputs) * WITNESS_SCALE_FACTOR;
+    }
+
+    return nSigOps;
+}
+
 bool CheckTransaction(const CTransaction& tx, CValidationState &state, bool fCheckDuplicateInputs)
 {
     // Basic checks that don't depend on any context
@@ -299,5 +313,26 @@ bool Consensus::CheckLockReqInputs(const CTransaction& tx, CValidationState& sta
 //    }
 
 //    txfee = txfee_aux;
+    return true;
+}
+
+bool Consensus::CheckInputsCommitReq(const CTransaction& tx, CValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, const CAmount& totalValueIn) {
+    /* verify if the total input amount exceeds the output amount 
+     * because we do not know the input UTXO values of other
+     * input shards. We reply the client with the total amount locked in our shard and
+     * let the output shard do this verification. 
+     */
+    const CAmount value_out = tx.GetValueOut();
+    if (totalValueIn < value_out) {
+        return state.DoS(100, false, REJECT_INVALID, "bad-txns-in-belowout", false,
+            strprintf("value in (%s) < value out (%s)", FormatMoney(totalValueIn), FormatMoney(value_out)));
+    }
+
+    // Tally transaction fees
+    const CAmount txfee_aux =  totalValueIn - value_out;
+    if (!MoneyRange(txfee_aux)) {
+        return state.DoS(100, false, REJECT_INVALID, "bad-txns-fee-outofrange");
+    }
+
     return true;
 }

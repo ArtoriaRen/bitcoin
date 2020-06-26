@@ -25,7 +25,7 @@ bool fIsClient; // if this node is a pbft client.
 std::string leaderAddrString;
 std::string clientAddrString;
 
-CPbft::CPbft() : groupSize(4), nFaulty(1), localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedIndex(-1), leader(nullptr), client(nullptr), privateKey(CKey()) {
+CPbft::CPbft() : localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedIndex(-1), leader(nullptr), client(nullptr), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
 }
@@ -159,13 +159,14 @@ bool CPbft::ProcessC(CNode* pfrom, CConnman* connman, CPbftMessage& cMsg, bool f
 	if (executeTransaction(cMsg.seq) == (int)cMsg.seq) {
 	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	    /* send reply to client only once. */
-	    if (log[cMsg.seq].ppMsg.type == ClientReqType::TX) {
+	    if (log[cMsg.seq].ppMsg.type == ClientReqType::TX || 
+		    log[cMsg.seq].ppMsg.type == ClientReqType::UNLOCK_TO_COMMIT) {
 		CReply reply = assembleReply(cMsg.seq);
 		connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
 	    } else if (log[cMsg.seq].ppMsg.type == ClientReqType::LOCK) {
 		CInputShardReply reply = assembleInputShardReply(cMsg.seq);
 		connman->PushMessage(client, msgMaker.Make(NetMsgType::OMNI_LOCK_REPLY, reply));
-	    }
+	    } 
 	}
     }
     return true;
@@ -184,7 +185,7 @@ bool CPbft::checkMsg(CNode* pfrom, CPbftMessage* msg) {
         std::cerr << "verification sig fail" << std::endl;
         return false;
     }
-    std::cerr << "sig ok" << std::endl;
+    std::cout << __func__ << ": sig ok" << std::endl;
     // server should be in the view
     if (localView != msg->view) {
         std::cerr << "server view = " << localView << ", but msg view = " << msg->view << std::endl;
@@ -266,46 +267,6 @@ int CPbft::executeTransaction(const int seq) {
      */
     return lastExecutedIndex;
 }
-//
-//void CPbft::sendReply2Client(const int seq) {
-//    std::ostringstream oss;
-//    CReply r = assembleReply(seq);
-//    r.serialize(oss);
-//    // hard code client address for now.
-//    std::string clientIP = "127.0.0.1";
-//    int clientUdpPort = 12345;
-//    udpClient.sendto(oss, clientIP, clientUdpPort);
-//#ifdef REPLY
-//    std::cout << "have sent reply to client port " << clientUdpPort << std::endl;
-//#endif
-//}
-//
-//void CPbft::broadcastPubKey() {
-//    std::ostringstream oss;
-//    // opti: serialized version can be stored.
-//    serializePubKeyMsg(oss, server_id, udpServer->get_port(), publicKey);
-//    int pbftPeerPort = std::stoi(gArgs.GetArg("-pbftpeerport", "18340"));
-//    udpClient.sendto(oss, "127.0.0.1", pbftPeerPort);
-//}
-//
-//void CPbft::sendPubKey(const struct sockaddr_in& src_addr, uint32_t recver_id) {
-//    std::ostringstream oss;
-//    serializePubKeyMsg(oss, server_id, udpServer->get_port(), publicKey);
-//    udpClient.sendto(oss, inet_ntoa(src_addr.sin_addr), peers.at(recver_id).port);
-//}
-//
-//void CPbft::broadcastPubKeyReq() {
-//    std::ostringstream oss;
-//    oss << pubKeyReqHeader;
-//    oss << " ";
-//    oss << server_id;
-//    int pbftPeerPort = std::stoi(gArgs.GetArg("-pbftpeerport", "18340"));
-//    udpClient.sendto(oss, "127.0.0.1", pbftPeerPort);
-//}
-//
-//CPubKey CPbft::getPublicKey() {
-//    return publicKey;
-//}
 
 
 std::unique_ptr<CPbft> g_pbft;

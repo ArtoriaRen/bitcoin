@@ -63,6 +63,61 @@ public:
     void getHash(uint256& result);
 };
 
+/*Local pre-prepare message*/
+class CReply {
+public:
+    char reply; // execution result
+    uint256 digest; // use the tx header hash as digest.
+    uint32_t sigSize;
+    std::vector<unsigned char> vchSig; //serilized ecdsa signature.
+
+    CReply();
+    CReply(char replyIn, const uint256& digestIn);
+
+    template<typename Stream>
+    void Serialize(Stream& s) const{
+	s.write(&reply, sizeof(reply));
+	s.write((char*)digest.begin(), digest.size());
+	s.write((char*)&sigSize, sizeof(sigSize));
+	s.write((char*)vchSig.data(), sigSize);
+    }
+    
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+	s.read(&reply, sizeof(reply));
+	s.read((char*)digest.begin(), digest.size());
+	s.read((char*)&sigSize, sizeof(sigSize));
+	vchSig.resize(sigSize);
+	s.read((char*)vchSig.data(), sigSize);
+    }
+
+    void getHash(uint256& result) const;
+};
+
+class CInputShardReply: public CReply {
+public:
+    /* total input amount in our shard. Must inform the output shard of this value.
+     * Otherwise the output shard will have no enough info to verify if total input
+     * value is larger than total output value. */
+    CAmount totalValueInOfShard;
+    CInputShardReply();
+    CInputShardReply(char replyIn, const uint256& digestIn, const CAmount valueIn);
+
+    template<typename Stream>
+    void Serialize(Stream& s) const{
+	CReply::Serialize(s);
+	s.write((char*)&totalValueInOfShard, sizeof(totalValueInOfShard));
+    }
+    
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+	CReply::Unserialize(s);
+	s.read((char*)&totalValueInOfShard, sizeof(totalValueInOfShard));
+    }
+
+    void getHash(uint256& result) const;
+};
+
 class CClientReq{
 public:
     /* we did not put serialization methods here because c++ does not allow
@@ -117,36 +172,45 @@ public:
     uint256 GetDigest() const override;
 };
 
+class UnlockToCommitReq: public CClientReq {
+public:
+    CMutableTransaction tx_mutable;
+    /* number of signatures from input shards. The output shard deems the first
+     * three sigs are for the UTXOs appear first in the input list, ... 
+     * TODO: figure out which publickey to use when verify the sigs.
+     * Solution: 
+     * - give every peer a identifier and assign them to shard base on 
+     * their identifier. E.g. 0, 1,2,3 forms the first committee.   
+     * - at start up, all peers of all groups connect to each other to exchange 
+     * publickey as well as report their id so that every peer can build a <id, pubkey>
+     * map. 
+     */
+    uint nInputShardReplies;  
+    std::vector<CInputShardReply> vInputShardReply;
 
-//class UnlockToCommitReq: public CClientReq {
-//public:
-//    CMutableTransaction tx_mutable;
-//    /* number of signatures from input shards. The output shard deems the first
-//     * three sigs are for the UTXOs appear first in the input list, ... */
-//    uint nSigs;  
-//    std::vector<CSig> vSig;
-//
-//    
-//    TxReq(): tx_mutable(CMutableTransaction()) {}
-//    TxReq(const CTransaction& txIn) : tx_mutable(txIn){}
-//
-//    template<typename Stream>
-//    void Serialize(Stream& s) const{
-//	tx_mutable.Serialize(s);
-//	for (uint i = 0; i < nSigs; i++) {
-//	    vSig[i].Serialize(s);
-//	}
-//    }
-//    template<typename Stream>
-//    void Unserialize(Stream& s) {
-//	tx_mutable.Unserialize(s);
-//	for (uint i = 0; i < nSigs; i++) {
-//	    vSig[i].Unserialize(s);
-//	}
-//    }
-//    void Execute(const int seq) const override;
-//    uint256 GetDigest() const override;
-//};
+    UnlockToCommitReq();
+    UnlockToCommitReq(const CTransaction& txIn, const uint sigCountIn, std::vector<CInputShardReply>&& vReply);
+
+    template<typename Stream>
+    void Serialize(Stream& s) const{
+	tx_mutable.Serialize(s);
+	s.write((char*)&nInputShardReplies, sizeof(nInputShardReplies));
+	for (uint i = 0; i < nInputShardReplies; i++) {
+	    vInputShardReply[i].Serialize(s);
+	}
+    }
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+	tx_mutable.Unserialize(s);
+	s.read((char*)&nInputShardReplies, sizeof(nInputShardReplies));
+	vInputShardReply.resize(nInputShardReplies);
+	for (uint i = 0; i < nInputShardReplies; i++) {
+	    vInputShardReply[i].Unserialize(s);
+	}
+    }
+    void Execute(const int seq) const override;
+    uint256 GetDigest() const override;
+};
 
 /* We currently do not verify the proof-of-rejection part of OmniLeder.
  * proof-of-rejection verification requires every peer to know the publickey
@@ -204,6 +268,9 @@ public:
 	} else if (type == ClientReqType::LOCK) {
 	    assert(req != nullptr);
 	    static_cast<LockReq*>(req.get())->Serialize(s);
+	} else if (type == ClientReqType::UNLOCK_TO_COMMIT) {
+	    assert(req != nullptr);
+	    static_cast<UnlockToCommitReq*>(req.get())->Serialize(s);
 	}  
     }
     
@@ -217,66 +284,15 @@ public:
 	} else if(type == ClientReqType::LOCK) {
 	    req.reset(new LockReq());
 	    static_cast<LockReq*>(req.get())->Unserialize(s);
+	} else if(type == ClientReqType::UNLOCK_TO_COMMIT) {
+	    req.reset(new UnlockToCommitReq());
+	    static_cast<UnlockToCommitReq*>(req.get())->Unserialize(s);
 	}
     }
 };
 
 
 
-/*Local pre-prepare message*/
-class CReply {
-public:
-    char reply; // execution result
-    uint256 digest; // use the tx header hash as digest.
-    uint32_t sigSize;
-    std::vector<unsigned char> vchSig; //serilized ecdsa signature.
-
-    CReply();
-    CReply(char replyIn, const uint256& digestIn);
-
-    template<typename Stream>
-    void Serialize(Stream& s) const{
-	s.write(&reply, sizeof(reply));
-	s.write((char*)digest.begin(), digest.size());
-	s.write((char*)&sigSize, sizeof(sigSize));
-	s.write((char*)vchSig.data(), sigSize);
-    }
-    
-    template<typename Stream>
-    void Unserialize(Stream& s) {
-	s.read(&reply, sizeof(reply));
-	s.read((char*)digest.begin(), digest.size());
-	s.read((char*)&sigSize, sizeof(sigSize));
-	vchSig.resize(sigSize);
-	s.read((char*)vchSig.data(), sigSize);
-    }
-
-    void getHash(uint256& result);
-};
-
-class CInputShardReply: public CReply {
-public:
-    /* total input amount in our shard. Must inform the output shard of this value.
-     * Otherwise the output shard will have no enough info to verify if total input
-     * value is larger than total output value. */
-    CAmount totalValueInOfShard;
-    CInputShardReply();
-    CInputShardReply(char replyIn, const uint256& digestIn, const CAmount valueIn);
-
-    template<typename Stream>
-    void Serialize(Stream& s) const{
-	CReply::Serialize(s);
-	s.write((char*)&totalValueInOfShard, sizeof(totalValueInOfShard));
-    }
-    
-    template<typename Stream>
-    void Unserialize(Stream& s) {
-	CReply::Unserialize(s);
-	s.read((char*)&totalValueInOfShard, sizeof(totalValueInOfShard));
-    }
-
-    void getHash(uint256& result);
-};
 
 
 #endif /* PBFT_MSG_H */

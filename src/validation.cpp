@@ -1305,7 +1305,7 @@ void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txund
      * 1. add shard affinity to txout. Client must collect information about its
      * own txout and specify shard id in tx inputs. */
 //    assert(tx.vin[0].shardAffinity);
-    int32_t outputShard = -1;
+//    int32_t outputShard = -1;
 
     // mark inputs spent
     if (!tx.IsCoinBase()) {
@@ -1318,7 +1318,7 @@ void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txund
         }
     }
     // add outputs
-    AddCoins(inputs, tx, nHeight, outputShard);
+    AddCoins(inputs, tx, nHeight);
 }
 
 void UpdateLockCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo, int nHeight)
@@ -1328,7 +1328,7 @@ void UpdateLockCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &t
      * 1. add shard affinity to txout. Client must collect information about its
      * own txout and specify shard id in tx inputs. */
 //    assert(tx.vin[0].shardAffinity);
-    int32_t outputShard = -1;
+//    int32_t outputShard = -1;
 
     /* mark inputs in our shard spent */
     if (!tx.IsCoinBase()) {
@@ -1344,6 +1344,19 @@ void UpdateLockCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &t
             assert(is_spent);
         }
     }
+}
+
+void UpdateUnlockCommitCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo, int nHeight)
+{
+    /* TODO: output shard should be the shard of the first input and should be the id
+     * of this shard. 
+     * 1. add shard affinity to txout. Client must collect information about its
+     * own txout and specify shard id in tx inputs. */
+//    assert(tx.vin[0].shardAffinity);
+//    int32_t outputShard = -1;
+
+    // add outputs
+    AddCoins(inputs, tx, nHeight);
 }
 void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, int nHeight)
 {

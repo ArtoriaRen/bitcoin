@@ -26,8 +26,8 @@ extern std::string clientAddrString;
 class CPbft{
 public:
     static const size_t logSize = 1000;  
-    size_t groupSize;
-    uint32_t nFaulty;
+    static const uint32_t nFaulty = 1;
+    static const size_t groupSize = 4;
     uint32_t localView;
     // pbft log. The index is sequence number.
     std::vector<CPbftLogEntry> log;
