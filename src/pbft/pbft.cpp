@@ -24,18 +24,20 @@
 bool fIsClient; // if this node is a pbft client.
 std::string leaderAddrString;
 std::string clientAddrString;
+int32_t pbftID; 
 
 CPbft::CPbft() : localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedIndex(-1), leader(nullptr), client(nullptr), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
+    pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
 }
 
 
-bool CPbft::ProcessPP(CNode* pfrom, CConnman* connman, CPre_prepare& ppMsg) {
+bool CPbft::ProcessPP(CConnman* connman, CPre_prepare& ppMsg) {
     // sanity check for signature, seq, view, digest.
     /*Faulty nodes may proceed even if the sanity check fails*/
     std::cout << __func__ << ": req type = " <<  ppMsg.type << std::endl;
-    if (!checkMsg(pfrom, &ppMsg)) {
+    if (!checkMsg(&ppMsg)) {
         return false;
     }
 
@@ -66,15 +68,15 @@ bool CPbft::ProcessPP(CNode* pfrom, CConnman* connman, CPre_prepare& ppMsg) {
      * We should do this after we send the pMsg to other peers so that we always 
      * send pMsg before cMsg. 
      */
-    ProcessP(nullptr, connman, pMsg, false);
+    ProcessP(connman, pMsg, false);
     return true;
 }
 
-bool CPbft::ProcessP(CNode* pfrom, CConnman* connman, CPbftMessage& pMsg, bool fCheck) {
+bool CPbft::ProcessP(CConnman* connman, CPbftMessage& pMsg, bool fCheck) {
     /* do not perform checking when a peer add a msg to its own log */
     if (fCheck) {
 	// sanity check for signature, seq, and the message's view equals the local view.
-	if (!checkMsg(pfrom, &pMsg)) {
+	if (!checkMsg(&pMsg)) {
 	    return false;
 	}
 
@@ -126,16 +128,16 @@ bool CPbft::ProcessP(CNode* pfrom, CConnman* connman, CPbftMessage& pMsg, bool f
 	 * We should do this after we send the pMsg to other peers so that we always 
 	 * send cMsg before execute tx. 
 	 */
-	ProcessC(nullptr, connman, cMsg, false);
+	ProcessC(connman, cMsg, false);
     }
     return true;
 }
 
-bool CPbft::ProcessC(CNode* pfrom, CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
+bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
     /* do not perform checking when a peer add a msg to its own log */
     if (fCheck) {
 	// sanity check for signature, seq, and the message's view equals the local view.
-	if (!checkMsg(pfrom, &cMsg)) {
+	if (!checkMsg(&cMsg)) {
 	    return false;
 	}
 
@@ -172,11 +174,11 @@ bool CPbft::ProcessC(CNode* pfrom, CConnman* connman, CPbftMessage& cMsg, bool f
     return true;
 }
 
-bool CPbft::checkMsg(CNode* pfrom, CPbftMessage* msg) {
+bool CPbft::checkMsg(CPbftMessage* msg) {
     // verify signature and return wrong if sig is wrong
-    auto it = pubKeyMap.find(pfrom->addr.ToStringIPPort());
+    auto it = pubKeyMap.find(msg->peerID);
     if (it == pubKeyMap.end()) {
-        std::cerr << "no pub key for the sender" << std::endl;
+        std::cerr << "no pub key for sender " << msg->peerID << std::endl;
         return false;
     }
     uint256 msgHash;

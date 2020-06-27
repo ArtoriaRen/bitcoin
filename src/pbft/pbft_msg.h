@@ -34,6 +34,7 @@ public:
     uint32_t seq;
     //uint32_t senderId;
     uint256 digest; // use the block header hash as digest.
+    int32_t peerID;
     uint32_t sigSize;
     std::vector<unsigned char> vchSig; //serilized ecdsa signature.
 //    const static uint32_t messageSizeBytes = 128; // the real size is 4*4 + 32 +72 = 120 bytes.
@@ -46,6 +47,7 @@ public:
 	s.write((char*)&view, sizeof(view));
 	s.write((char*)&seq, sizeof(seq));
 	s.write((char*)digest.begin(), digest.size());
+	s.write((char*)&peerID, sizeof(peerID));
 	s.write((char*)&sigSize, sizeof(sigSize));
 	s.write((char*)vchSig.data(), sigSize);
     }
@@ -55,6 +57,7 @@ public:
 	s.read((char*)&view, sizeof(view));
 	s.read((char*)&seq, sizeof(seq));
 	s.read((char*)digest.begin(), digest.size());
+	s.read((char*)&peerID, sizeof(peerID));
 	s.read((char*)&sigSize, sizeof(sigSize));
 	vchSig.resize(sigSize);
 	s.read((char*)vchSig.data(), sigSize);
@@ -68,6 +71,7 @@ class CReply {
 public:
     char reply; // execution result
     uint256 digest; // use the tx header hash as digest.
+    int32_t peerID;
     uint32_t sigSize;
     std::vector<unsigned char> vchSig; //serilized ecdsa signature.
 
@@ -78,6 +82,7 @@ public:
     void Serialize(Stream& s) const{
 	s.write(&reply, sizeof(reply));
 	s.write((char*)digest.begin(), digest.size());
+	s.write((char*)&peerID, sizeof(peerID));
 	s.write((char*)&sigSize, sizeof(sigSize));
 	s.write((char*)vchSig.data(), sigSize);
     }
@@ -86,6 +91,7 @@ public:
     void Unserialize(Stream& s) {
 	s.read(&reply, sizeof(reply));
 	s.read((char*)digest.begin(), digest.size());
+	s.read((char*)&peerID, sizeof(peerID));
 	s.read((char*)&sigSize, sizeof(sigSize));
 	vchSig.resize(sigSize);
 	s.read((char*)vchSig.data(), sigSize);

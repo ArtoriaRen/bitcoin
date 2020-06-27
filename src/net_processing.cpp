@@ -1744,7 +1744,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                       (fLogIPs ? strprintf(", peeraddr=%s", pfrom->addr.ToString()) : ""));
         }
 
-	connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::PBFT_PUBKEY, pbft->myPubKey));
+	connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::PBFT_PUBKEY, std::make_pair(pbftID, pbft->myPubKey)));
 
 //        if (pfrom->nVersion >= SENDHEADERS_VERSION) {
 //            // Tell our peer we prefer to receive headers rather than inv's
@@ -1839,9 +1839,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
     else if (strCommand == NetMsgType::PBFT_PUBKEY)
     {
-	CPubKey peerPubKey;
-	vRecv >> peerPubKey;
-	pbft->pubKeyMap.insert(std::make_pair(pfrom->addr.ToStringIPPort(), std::move(peerPubKey)));
+	std::pair<int32_t, CPubKey> idPubkey;
+	vRecv >> idPubkey;
+	pbft->pubKeyMap.insert(std::make_pair(idPubkey.first, idPubkey.second));
     }
 
     /* The pbft leader receiving a tx will assemble pp message. */
@@ -1881,7 +1881,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	pbft->log[ppMsg.seq].phase = PbftPhase::prepare;
 	const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
 	CTransaction tx(pUnlockCommitReq->tx_mutable);
-	std::cout << __func__ << ": received tx = " << tx.GetHash().GetHex().substr(1, 10)
+	std::cout << __func__ << ": received tx = " << tx.GetHash().GetHex().substr(0, 10)
 		<< ", otherMember.size = " << pbft->otherMembers.size()
 		<< ", log slot "<< ppMsg.seq << " for req = "
 		<< pbft->log[ppMsg.seq].ppMsg.req->GetDigest().GetHex() << std::endl;
@@ -1895,7 +1895,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     else if (strCommand == NetMsgType::PBFT_PP) {
         CPre_prepare ppMsg;
         vRecv >> ppMsg;
-	if(!pbft->ProcessPP(pfrom, connman, ppMsg)) {
+	if(!pbft->ProcessPP(connman, ppMsg)) {
 	    std::cout << __func__ << ": process ppMsg failed" <<std::endl;
 	}
     }
@@ -1903,7 +1903,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     else if (strCommand == NetMsgType::PBFT_P) {
         CPbftMessage pMsg;
         vRecv >> pMsg;
-	if(!pbft->ProcessP(pfrom, connman, pMsg)) {
+	if(!pbft->ProcessP(connman, pMsg)) {
 	    std::cout << __func__ << ": process pMsg failed" <<std::endl;
 	}
     }
@@ -1911,7 +1911,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     else if (strCommand == NetMsgType::PBFT_C) {
         CPbftMessage cMsg;
         vRecv >> cMsg;
-	if(!pbft->ProcessC(pfrom, connman, cMsg)) {
+	if(!pbft->ProcessC(connman, cMsg)) {
 	    std::cout << __func__ << ": process cMsg failed" <<std::endl;
 	}
     }

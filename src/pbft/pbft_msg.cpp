@@ -22,11 +22,11 @@ void UpdateUnlockCommitCoins(const CTransaction& tx, CCoinsViewCache& inputs, CT
 
 std::unordered_map<uint256, CTxUndo, BlockHasher> mapTxUndo;
 
-CPbftMessage::CPbftMessage(): view(0), seq(0), digest(), sigSize(0), vchSig(){
+CPbftMessage::CPbftMessage(): view(0), seq(0), digest(), peerID(pbftID), sigSize(0), vchSig(){
     vchSig.reserve(72); // the expected sig size is 72 bytes.
 }
 
-CPbftMessage::CPbftMessage(const CPbftMessage& msg): view(msg.view), seq(msg.seq), digest(msg.digest), sigSize(msg.sigSize), vchSig(msg.vchSig){
+CPbftMessage::CPbftMessage(const CPbftMessage& msg): view(msg.view), seq(msg.seq), digest(msg.digest), peerID(pbftID), sigSize(msg.sigSize), vchSig(msg.vchSig){
     vchSig.reserve(72); // the expected sig size is 72 bytes.
 }
 
@@ -41,11 +41,11 @@ CPre_prepare::CPre_prepare(const CPre_prepare& msg): CPbftMessage(msg), req(msg.
 
 CPre_prepare::CPre_prepare(const CPbftMessage& msg): CPbftMessage(msg) { }
 
-CReply::CReply(): reply(), digest(), sigSize(0), vchSig(){ 
+CReply::CReply(): reply(), digest(), peerID(pbftID), sigSize(0), vchSig(){ 
     vchSig.reserve(72); // the expected sig size is 72 bytes.
 }
 
-CReply::CReply(char replyIn, const uint256& digestIn): reply(replyIn), digest(digestIn), sigSize(0), vchSig(){ 
+CReply::CReply(char replyIn, const uint256& digestIn): reply(replyIn), digest(digestIn), peerID(pbftID), sigSize(0), vchSig(){ 
     vchSig.reserve(72); // the expected sig size is 72 bytes.
 }
 
@@ -200,12 +200,15 @@ uint256 UnlockToCommitReq::GetDigest() const {
     return result;
 }
 
+bool checkInputShardReplySigs(const std::vector<CInputShardReply>& vReplies);
+
 void UnlockToCommitReq::Execute(const int seq) const {
     /* ------TODO: Verify the sigs of input shards. This needs <id, pubkey> map.---- */
+    if (!checkInputShardReplySigs(vInputShardReply)) {
+        std::cout << __func__ << ": verify sigs fail!" << std::endl;
+	return;
+    }
 
-    /* ------TODO: Verify the locked amount of an input shard is indeed all UTXOs 
-     * ------amount of the shard in the tx. This needs <id, pubkey> map.---- */
-    
     /* -------------logic from Bitcoin code for tx processing--------- */
     CTransaction tx(tx_mutable);
     
@@ -213,9 +216,10 @@ void UnlockToCommitReq::Execute(const int seq) const {
     CCoinsViewCache view(pcoinsTip.get());
     unsigned int flags = SCRIPT_VERIFY_NONE; // only verify pay to public key hash
 
-    /* Step 1: find all input UTXOs whose chainAffinity is our shard. Check if they are unspent.
+    /* Step 1: check the total input UTXO value is greater than the total output value.
+     * We must use the locked UTXO value in InputShardReplies b/c we do not know the
+     * value of UTXOs not in our shard. 
      * We use INT_MAX as block height, so that we never fail coinbase maturity check.
-     * This is done in input shards when executing lock req.
      */
     uint sigsPerInputShard = 2 * CPbft::nFaulty + 1;
     CAmount totalInputValue = 0;
@@ -256,4 +260,23 @@ void UnlockToCommitReq::Execute(const int seq) const {
     std::cout << __func__ << ":  commit tx " << tx.GetHash().GetHex().substr(1, 10) << " at log slot " << seq << std::endl;
 
 
+}
+
+bool checkInputShardReplySigs(const std::vector<CInputShardReply>& vReplies) {
+    // verify signature and return false if at least one sig is wrong
+    for (auto reply: vReplies) {
+	auto it = g_pbft->pubKeyMap.find(reply.peerID);
+	if (it == g_pbft->pubKeyMap.end()) {
+	    std::cerr << "no pub key for the sender" << reply.peerID << std::endl;
+	    return false;
+	}
+	uint256 msgHash;
+	reply.getHash(msgHash);
+	if (!it->second.Verify(msgHash, reply.vchSig)) {
+	    std::cerr << "verification sig fail" << std::endl;
+	    return false;
+	}
+    }
+    std::cout << __func__ << ": sig ok" << std::endl;
+    return true;
 }
