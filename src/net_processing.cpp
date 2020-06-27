@@ -1825,10 +1825,20 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             pfrom->fDisconnect = true;
     }
 
+    else if (strCommand == NetMsgType::PBFT_PUBKEY)
+    {
+	std::pair<int32_t, CPubKey> idPubkey;
+	vRecv >> idPubkey;
+	g_pbft->pubKeyMap.insert(std::make_pair(idPubkey.first, idPubkey.second));
+    }
+
     else if (strCommand == NetMsgType::PBFT_REPLY)
     {
 	CReply reply;
 	vRecv >> reply;
+	if (!g_pbft->checkReplySig(&reply)) {
+	    std::cout << strCommand << " from " << reply.peerID << " sig verification fail"  << std::endl;
+	}
 	g_pbft->replyMap[reply.digest].emplace(pfrom->GetAddrName());
 	std::cout << __func__ << ": receivd  PBFT_REPLY for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
     }
@@ -1838,6 +1848,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	CInputShardReply reply;
 	vRecv >> reply;
 	std::cout << __func__ << ": receivd "  << strCommand << "for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
+	if (!g_pbft->checkReplySig(&reply)) {
+	    std::cout << strCommand << " from " << reply.peerID << " sig verification fail"  << std::endl;
+	}
 	// TODO: replace the sigSize with peer id. We use shardId = peerID / groupSize.
 	// TODO: the client must create the right number of shards in the inputShardReplyMap so that we can decide if we can send an unlocktocommit req by checking if every shard has sent us enough replies.
 //	std::set<CInputShardReply>& shardReplies = g_pbft->inputShardReplyMap[reply.digest][1];
