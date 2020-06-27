@@ -1838,6 +1838,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	vRecv >> reply;
 	if (!g_pbft->checkReplySig(&reply)) {
 	    std::cout << strCommand << " from " << reply.peerID << " sig verification fail"  << std::endl;
+	} else {
+	    std::cout << strCommand << " sig ok" << std::endl;
 	}
 	g_pbft->replyMap[reply.digest].emplace(pfrom->GetAddrName());
 	std::cout << __func__ << ": receivd  PBFT_REPLY for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
@@ -1850,41 +1852,39 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	std::cout << __func__ << ": receivd "  << strCommand << "for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
 	if (!g_pbft->checkReplySig(&reply)) {
 	    std::cout << strCommand << " from " << reply.peerID << " sig verification fail"  << std::endl;
+	} else {
+	    std::cout << strCommand << " sig ok" << std::endl;
 	}
-	// TODO: replace the sigSize with peer id. We use shardId = peerID / groupSize.
+
 	// TODO: the client must create the right number of shards in the inputShardReplyMap so that we can decide if we can send an unlocktocommit req by checking if every shard has sent us enough replies.
-//	std::set<CInputShardReply>& shardReplies = g_pbft->inputShardReplyMap[reply.digest][1];
-//        std::cout << "shardReplies.size() = " << shardReplies.size() << std::endl;
-//	shardReplies.insert(reply);
-//	/* Check if the client has accumulated enough replies from every shard. If so, send a unlock_to_commit req to the output shard. */
-//	bool gotAllInputShardReplies = true;
-//	uint reply_threshold = 2 * CPbft::nFaulty + 1;
-//        std::cout << "inputShardReplyMap[reply.digest].size() = " << g_pbft->inputShardReplyMap[reply.digest].size() << std::endl;
-//	for (auto pair: g_pbft->inputShardReplyMap[reply.digest]) {
-//	    std::cout << "pair.first = " << pair.first << ", pair.second.size() = " << pair.second.size() << std::endl;
-//	    if (pair.second.size() < reply_threshold) {
-//		gotAllInputShardReplies = false;
-//		break;
-//	    }
-//	}
-//	if (gotAllInputShardReplies) {
-//	    /* assemble a vector including (2f + 1) replies for every shard */
-//	    std::vector<CInputShardReply> vReply;
-//	    vReply.reserve(reply_threshold * g_pbft->inputShardReplyMap[reply.digest].size());
-//	    for (auto& p : g_pbft->inputShardReplyMap[reply.digest]) {
-//		auto it = p.second.begin();
-//		/* add the first (2f+1) replies of the current shard to the vector */
-//		for (uint i = 0; i < reply_threshold; i++) {
-//		    vReply.push_back(CInputShardReply(*it));
-//		    it++;
-//		}
-//	    }
-//            
-//	    assert(g_pbft->mapTxid.find(reply.digest) != g_pbft->mapTxid.end());
-	//    UnlockToCommitReq commitReq(std::move(CMutableTransaction(*g_pbft->mapTxid[reply.digest])), vReply.size(), std::move(vReply));
-	g_pbft->vInputShardReplies.push_back(reply);
-	if(g_pbft->vInputShardReplies.size() == 3) {
-	    UnlockToCommitReq commitReq(std::move(CMutableTransaction(*g_pbft->mapTxid[reply.digest])), 3, g_pbft->vInputShardReplies);
+	std::vector<CInputShardReply>& shardReplies = g_pbft->inputShardReplyMap[reply.digest].lockReply[reply.peerID/CPbft::groupSize];
+        std::cout << "shardReplies.size() = " << shardReplies.size() << std::endl;
+	shardReplies.push_back(reply);
+	/* Check if the client has accumulated enough replies from every shard. If so, send a unlock_to_commit req to the output shard. */
+	bool gotAllInputShardReplies = true;
+	uint reply_threshold = 2 * CPbft::nFaulty + 1;
+        std::cout << "inputShardReplyMap[reply.digest].size() = " << g_pbft->inputShardReplyMap[reply.digest].lockReply.size() << std::endl;
+	for (auto& p: g_pbft->inputShardReplyMap[reply.digest].lockReply) {
+	    std::cout << "shardId = " << p.first << ", number of lock replies = " << p.second.size() << std::endl;
+	    if (p.second.size() < reply_threshold) {
+		gotAllInputShardReplies = false;
+		break;
+	    }
+	}
+	if (gotAllInputShardReplies) {
+	    /* assemble a vector including (2f + 1) replies for every shard */
+	    std::vector<CInputShardReply> vReply;
+	    vReply.reserve(reply_threshold * g_pbft->inputShardReplyMap[reply.digest].lockReply.size());
+	    for (auto& p : g_pbft->inputShardReplyMap[reply.digest].lockReply) {
+		/* add the first (2f+1) replies of the current shard to the vector */
+		vReply.insert(vReply.end(), p.second.begin(), p.second.begin() + 3);
+	    }
+            
+	    assert(g_pbft->mapTxid.find(reply.digest) != g_pbft->mapTxid.end());
+	    UnlockToCommitReq commitReq(std::move(CMutableTransaction(*g_pbft->mapTxid[reply.digest])), vReply.size(), std::move(vReply));
+	//g_pbft->vInputShardReplies.push_back(reply);
+	//if(g_pbft->vInputShardReplies.size() == 3) {
+	//    UnlockToCommitReq commitReq(std::move(CMutableTransaction(*g_pbft->mapTxid[reply.digest])), 3, g_pbft->vInputShardReplies);
 	    std::cout << "sending unlock_to_commit with req_hash = " << commitReq.GetDigest().GetHex() << std::endl;
 	    // TODO: create an unlock to commit req and sent it to the output shard leader.  
 	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
