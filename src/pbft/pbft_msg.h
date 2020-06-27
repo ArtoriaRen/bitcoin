@@ -21,8 +21,6 @@
 
 enum PbftPhase {pre_prepare, prepare, commit, reply, end};
 
-class CPre_prepare;
-
 class CPbftMessage {
 public:
     //PbftPhase phase;
@@ -30,6 +28,7 @@ public:
     uint32_t seq;
     //uint32_t senderId;
     uint256 digest; // use the block header hash as digest.
+    int32_t peerID;
     uint32_t sigSize;
     std::vector<unsigned char> vchSig; //serilized ecdsa signature.
 //    const static uint32_t messageSizeBytes = 128; // the real size is 4*4 + 32 +72 = 120 bytes.
@@ -42,6 +41,7 @@ public:
 	s.write((char*)&view, sizeof(view));
 	s.write((char*)&seq, sizeof(seq));
 	s.write((char*)digest.begin(), digest.size());
+	s.write((char*)&peerID, sizeof(peerID));
 	s.write((char*)&sigSize, sizeof(sigSize));
 	s.write((char*)vchSig.data(), sigSize);
     }
@@ -51,6 +51,7 @@ public:
 	s.read((char*)&view, sizeof(view));
 	s.read((char*)&seq, sizeof(seq));
 	s.read((char*)digest.begin(), digest.size());
+	s.read((char*)&peerID, sizeof(peerID));
 	s.read((char*)&sigSize, sizeof(sigSize));
 	vchSig.resize(sigSize);
 	s.read((char*)vchSig.data(), sigSize);
@@ -59,12 +60,46 @@ public:
     void getHash(uint256& result);
 };
 
+class CReply {
+public:
+    char reply; // execution result
+    uint256 digest; // use the tx header hash as digest.
+    int32_t peerID;
+    uint32_t sigSize;
+    std::vector<unsigned char> vchSig; //serilized ecdsa signature.
+
+    CReply();
+    CReply(char replyIn, const uint256& digestIn);
+
+    template<typename Stream>
+    void Serialize(Stream& s) const{
+	s.write(&reply, sizeof(reply));
+	s.write((char*)digest.begin(), digest.size());
+	s.write((char*)&peerID, sizeof(peerID));
+	s.write((char*)&sigSize, sizeof(sigSize));
+	s.write((char*)vchSig.data(), sigSize);
+    }
+    
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+	s.read(&reply, sizeof(reply));
+	s.read((char*)digest.begin(), digest.size());
+	s.read((char*)&peerID, sizeof(peerID));
+	s.read((char*)&sigSize, sizeof(sigSize));
+	vchSig.resize(sigSize);
+	s.read((char*)vchSig.data(), sigSize);
+    }
+
+    void getHash(uint256& result) const;
+};
+
 class CPre_prepare : public CPbftMessage{
     // CBlock block;
     /* we can use P2P network to disseminate the block before the primary send Pre_prepare msg 
      * so that the block does not have to be in the Pre-prepare message.*/
-    
 public:
+    CMutableTransaction tx_mutable;
+
     CPre_prepare():CPbftMessage(){
     }
     
@@ -75,16 +110,16 @@ public:
     template<typename Stream>
     void Serialize(Stream& s) const{
 	CPbftMessage::Serialize(s);
-	tx.Serialize(s);
+	tx_mutable.Serialize(s);
     }
     
     template<typename Stream>
     void Unserialize(Stream& s) {
 	CPbftMessage::Unserialize(s);
-	tx.Unserialize(s);
+	tx_mutable.Unserialize(s);
     }
 
-    CMutableTransaction tx;
+    void Execute(const int seq) const;
 };
 
 
@@ -103,37 +138,6 @@ public:
 //    
 //};
 
-
-/*Local pre-prepare message*/
-class CReply {
-public:
-    char reply; // execution result
-    uint256 digest; // use the tx header hash as digest.
-    uint32_t sigSize;
-    std::vector<unsigned char> vchSig; //serilized ecdsa signature.
-
-    CReply();
-    CReply(char replyIn, const uint256& digestIn);
-
-    template<typename Stream>
-    void Serialize(Stream& s) const{
-	s.write(&reply, sizeof(reply));
-	s.write((char*)digest.begin(), digest.size());
-	s.write((char*)&sigSize, sizeof(sigSize));
-	s.write((char*)vchSig.data(), sigSize);
-    }
-    
-    template<typename Stream>
-    void Unserialize(Stream& s) {
-	s.read(&reply, sizeof(reply));
-	s.read((char*)digest.begin(), digest.size());
-	s.read((char*)&sigSize, sizeof(sigSize));
-	vchSig.resize(sigSize);
-	s.read((char*)vchSig.data(), sigSize);
-    }
-
-    void getHash(uint256& result);
-};
 
 
 #endif /* PBFT_MSG_H */

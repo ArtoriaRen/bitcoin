@@ -822,6 +822,9 @@ void InitParameterInteraction()
         clientAddrString = gArgs.GetArg("-pbftclient", "");
 	std::cout << __func__ << "pbft client = " << clientAddrString << std::endl;
     }
+    if (gArgs.IsArgSet("-pbftid")) {
+        pbftID = gArgs.GetArg("-pbftid", -1);
+    }
 }
 
 static std::string ResolveErrMsg(const char * const optname, const std::string& strBind)

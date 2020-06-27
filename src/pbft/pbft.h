@@ -22,6 +22,7 @@
 extern bool fIsClient; // if this node is a pbft client.
 extern std::string leaderAddrString;
 extern std::string clientAddrString;
+extern int32_t pbftID; 
 
 class CPbft{
 public:
@@ -39,23 +40,24 @@ public:
     CNode* client; // pbft leader
     /* TODO: remove the leader from the otherMembers vector. */
     std::vector<CNode*> otherMembers; // members other than the leader and the node itself.
-    std::unordered_map<std::string, CPubKey> pubKeyMap;
+    std::unordered_map<int32_t, CPubKey> pubKeyMap;
 
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
-    bool ProcessPP(CNode* pfrom, CConnman* connman, CPre_prepare& ppMsg);
+    bool ProcessPP(CConnman* connman, CPre_prepare& ppMsg);
 
     // Check Prepare message signature, add to corresponding log, check if we have accumulated 2f Prepare message. If so, send Commit message
-    bool ProcessP(CNode* pfrom, CConnman* connman, CPbftMessage& pMsg, bool fCheck = true);
+    bool ProcessP(CConnman* connman, CPbftMessage& pMsg, bool fCheck = true);
     
     // Check Commit message signature, add to corresponding log, check if we have accumulated 2f+1 Commit message. If so, execute transactions and reply. 
-    bool ProcessC(CNode* pfrom, CConnman* connman, CPbftMessage& cMsg, bool fCheck = true);
+    bool ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck = true);
 
     CPre_prepare assemblePPMsg(const CTransaction& tx);
-    CPbftMessage assembleMsg(uint32_t seq); 
-    CReply assembleReply(uint32_t seq);
-    bool checkMsg(CNode* pfrom, CPbftMessage* msg);
-    void executeTransaction(const int seq);
+    CPbftMessage assembleMsg(const uint32_t seq); 
+    CReply assembleReply(const uint32_t seq);
+    bool checkMsg(CPbftMessage* msg);
+    /*return the last executed seq */
+    int executeTransaction(const int seq);
 
 private:
     // private ECDSA key used to sign messages
