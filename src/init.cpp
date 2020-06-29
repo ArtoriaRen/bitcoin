@@ -805,9 +805,11 @@ void InitParameterInteraction()
             LogPrintf("%s: Ignoring blockmaxsize setting which is overridden by blockmaxweight", __func__);
         }
     }
-    if (gArgs.IsArgSet("-pbftleader")) {
-        leaderAddrString = gArgs.GetArg("-pbftleader", "");
-	std::cout << __func__ << "pbft leader = " << leaderAddrString << std::endl;
+    if (gArgs.IsArgSet("-numcommittees")) {
+        num_committees = gArgs.GetArg("-numcommittees", 2);
+    }
+    if (gArgs.IsArgSet("-pbftid")) {
+        pbftID = gArgs.GetArg("-pbftid", -1);
     }
 }
 

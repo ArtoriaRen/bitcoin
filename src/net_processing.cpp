@@ -31,6 +31,8 @@
 #include <utilstrencodings.h>
 #include "pbft/pbft.h"
 #include "pbft/pbft_msg.h"
+#include "tx_placement/tx_placer.h"
+#include <sys/time.h>
 
 #if defined(NDEBUG)
 # error "Bitcoin cannot be compiled without assertions."
@@ -1744,26 +1746,28 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                       (fLogIPs ? strprintf(", peeraddr=%s", pfrom->addr.ToString()) : ""));
         }
 
-        if (pfrom->nVersion >= SENDHEADERS_VERSION) {
-            // Tell our peer we prefer to receive headers rather than inv's
-            // We send this to non-NODE NETWORK peers as well, because even
-            // non-NODE NETWORK peers can announce blocks (such as pruning
-            // nodes)
-            connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::SENDHEADERS));
-        }
-        if (pfrom->nVersion >= SHORT_IDS_BLOCKS_VERSION) {
-            // Tell our peer we are willing to provide version 1 or 2 cmpctblocks
-            // However, we do not request new block announcements using
-            // cmpctblock messages.
-            // We send this to non-NODE NETWORK peers as well, because
-            // they may wish to request compact blocks from us
-            bool fAnnounceUsingCMPCTBLOCK = false;
-            uint64_t nCMPCTBLOCKVersion = 2;
-            if (pfrom->GetLocalServices() & NODE_WITNESS)
-                connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::SENDCMPCT, fAnnounceUsingCMPCTBLOCK, nCMPCTBLOCKVersion));
-            nCMPCTBLOCKVersion = 1;
-            connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::SENDCMPCT, fAnnounceUsingCMPCTBLOCK, nCMPCTBLOCKVersion));
-        }
+	connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::PBFT_PUBKEY, std::make_pair(pbftID, g_pbft->myPubKey)));
+
+        //if (pfrom->nVersion >= SENDHEADERS_VERSION) {
+        //    // Tell our peer we prefer to receive headers rather than inv's
+        //    // We send this to non-NODE NETWORK peers as well, because even
+        //    // non-NODE NETWORK peers can announce blocks (such as pruning
+        //    // nodes)
+        //    connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::SENDHEADERS));
+        //}
+        //if (pfrom->nVersion >= SHORT_IDS_BLOCKS_VERSION) {
+        //    // Tell our peer we are willing to provide version 1 or 2 cmpctblocks
+        //    // However, we do not request new block announcements using
+        //    // cmpctblock messages.
+        //    // We send this to non-NODE NETWORK peers as well, because
+        //    // they may wish to request compact blocks from us
+        //    bool fAnnounceUsingCMPCTBLOCK = false;
+        //    uint64_t nCMPCTBLOCKVersion = 2;
+        //    if (pfrom->GetLocalServices() & NODE_WITNESS)
+        //        connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::SENDCMPCT, fAnnounceUsingCMPCTBLOCK, nCMPCTBLOCKVersion));
+        //    nCMPCTBLOCKVersion = 1;
+        //    connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::SENDCMPCT, fAnnounceUsingCMPCTBLOCK, nCMPCTBLOCKVersion));
+        //}
         pfrom->fSuccessfullyConnected = true;
     }
 
@@ -1830,6 +1834,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	std::pair<int32_t, CPubKey> idPubkey;
 	vRecv >> idPubkey;
 	g_pbft->pubKeyMap.insert(std::make_pair(idPubkey.first, idPubkey.second));
+	if (idPubkey.first % CPbft::groupSize == 0) {
+	    g_pbft->leaders[idPubkey.first/CPbft::groupSize] = pfrom;
+	}
     }
 
     else if (strCommand == NetMsgType::PBFT_REPLY)
@@ -1842,6 +1849,14 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    std::cout << strCommand << " sig ok" << std::endl;
 	}
 	g_pbft->replyMap[reply.digest].emplace(pfrom->GetAddrName());
+	if (g_pbft->replyMap[reply.digest].size() == 2 * CPbft::nFaulty + 1) {
+	    struct timeval endTime;
+	    gettimeofday(&endTime, NULL);
+	    assert(g_pbft->mapTxStartTime.find(reply.digest) != g_pbft->mapTxStartTime.end());
+	    TxStat& stat = g_pbft->mapTxStartTime[reply.digest]; 
+	    std::cout << (stat.type == TxType::SINGLE_SHARD ? "single-shard" : "cross-shard") << ", latency = " << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << " ms" << std::endl;
+	}
+		
 	std::cout << __func__ << ": receivd  PBFT_REPLY for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
     }
 
@@ -1889,7 +1904,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    // TODO: create an unlock to commit req and sent it to the output shard leader.  
 	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	    // TODO: need an <id, pnode, pubkey> map. Can be implemented with a vector.
-	    connman->PushMessage(g_pbft->leader, msgMaker.Make(NetMsgType::OMNI_UNLOCK_COMMIT, commitReq));
+	    TxPlacer txPlacer;
+	    int32_t outputShard = txPlacer.randomPlaceUTXO(g_pbft->mapTxid[reply.digest]->GetHash());
+	    connman->PushMessage(g_pbft->leaders[outputShard], msgMaker.Make(NetMsgType::OMNI_UNLOCK_COMMIT, commitReq));
 	}
     }
 
@@ -3310,10 +3327,6 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
                 pto->vAddrToSend.shrink_to_fit();
         }
 
-	if (!pto->sentPbftClientMsg) {
-                connman->PushMessage(pto, msgMaker.Make(NetMsgType::PBFT_CLIENT));
-		pto->sentPbftClientMsg = true;
-	}
         // Start block sync
         if (pindexBestHeader == nullptr)
             pindexBestHeader = chainActive.Tip();
