@@ -23,18 +23,22 @@ extern uint32_t blockEnd;
 extern uint32_t num_committees;
 extern int lastAssignedAffinity;
 
-/* place txs in a block */
 class TxPlacer{
 public:
     std::map<uint, std::map<uint, uint>> shardCntMap; // < input_utxo_count, shard_count, tx_count>
-    uint totalTxNum = 0;
+    uint totalTxNum;
 
     /* return the number of shards that input UTXOs and output UTXOs span */
-    TxPlacer(const CBlock& block);
+    TxPlacer();
 
     /* return a vector of shard ids. 
-     * The first element is the output shard id, and other elements are input shard ids. */
-    std::vector<int32_t> randomPlaceTxid(CTransactionRef tx);
+     * The first element is the output shard id, and other elements are input shard ids.
+     * The output shard id might equal one input shard id. */
+    std::vector<int32_t> randomPlace(const CTransaction& tx);
+
+    /* return the shard hosting the UTXO whose producing tx is txid */
+    int32_t randomPlaceUTXO(const uint256& txid);
+    /* return the output shard of tx. */
     int32_t smartPlace(const CTransaction& tx, CCoinsViewCache& cache);
     void printPlaceResult();
     // TODO: smartPlaceSorted

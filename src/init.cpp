@@ -816,17 +816,6 @@ void InitParameterInteraction()
     if (gArgs.IsArgSet("-numcommittees")) {
         num_committees = gArgs.GetArg("-numcommittees", 2);
     }
-    if (gArgs.IsArgSet("-ispbftclient")) {
-        fIsClient = gArgs.GetBoolArg("-ispbftclient", false);
-    }
-    if (gArgs.IsArgSet("-pbftleader")) {
-        leaderAddrString = gArgs.GetArg("-pbftleader", "");
-	std::cout << __func__ << "pbft leader = " << leaderAddrString << std::endl;
-    }
-    if (gArgs.IsArgSet("-pbftclient")) {
-        clientAddrString = gArgs.GetArg("-pbftclient", "");
-	std::cout << __func__ << "pbft client = " << clientAddrString << std::endl;
-    }
     if (gArgs.IsArgSet("-pbftid")) {
         pbftID = gArgs.GetArg("-pbftid", -1);
     }

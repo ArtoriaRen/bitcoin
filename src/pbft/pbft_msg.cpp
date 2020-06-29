@@ -114,6 +114,12 @@ uint256 TxReq::GetDigest() const {
 
 
 void LockReq::Execute(const int seq) const {
+    /* we did not check if there is any input coins belonging our shard because
+     * we believe the client is honest and will not send an LOCK req to a 
+     * irrelavant shard. In OmniLedger, we already beleive in the client to be 
+     * the 2PC coordinator so this assumption does not put more trust on the client
+     */
+
     /* -------------logic from Bitcoin code for tx processing--------- */
     CTransaction tx(tx_mutable);
     
@@ -257,7 +263,7 @@ void UnlockToCommitReq::Execute(const int seq) const {
     bool flushed = view.Flush(); // flush to pcoinsTip
     assert(flushed);
     /* -------------logic from Bitcoin code for tx processing--------- */
-    std::cout << __func__ << ":  commit tx " << tx.GetHash().GetHex().substr(1, 10) << " at log slot " << seq << std::endl;
+    std::cout << __func__ << ":  commit tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << std::endl;
 
 
 }

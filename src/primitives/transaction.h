@@ -64,6 +64,7 @@ public:
     COutPoint prevout;
     CScript scriptSig;
     uint32_t nSequence;
+//    int32_t shardAffinity;
     CScriptWitness scriptWitness; //! Only serialized through CTransaction
 
     /* Setting nSequence to this value for every input in a transaction
@@ -108,6 +109,7 @@ public:
         READWRITE(prevout);
         READWRITE(scriptSig);
         READWRITE(nSequence);
+//        READWRITE(shardAffinity);
     }
 
     friend bool operator==(const CTxIn& a, const CTxIn& b)
@@ -132,6 +134,7 @@ class CTxOut
 {
 public:
     CAmount nValue;
+//    int32_t shardAffinity;
     CScript scriptPubKey;
 
     CTxOut()
@@ -146,6 +149,7 @@ public:
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
         READWRITE(nValue);
+//        READWRITE(shardAffinity);
         READWRITE(scriptPubKey);
     }
 

@@ -48,6 +48,8 @@
 #include <boost/algorithm/string/join.hpp>
 #include <boost/thread.hpp>
 
+#include "pbft/pbft.h"
+
 #if defined(NDEBUG)
 # error "Bitcoin cannot be compiled without assertions."
 #endif
@@ -1348,12 +1350,19 @@ void UpdateLockCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &t
 
 void UpdateUnlockCommitCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo, int nHeight)
 {
-    /* TODO: output shard should be the shard of the first input and should be the id
+
+    /* for random placement, our shard id shoud be the random placement output 
+     * of the txid */
+    int32_t myShardId = pbftID/CPbft::groupSize;
+    TxPlacer txPlacer;
+    assert(txPlacer.randomPlaceUTXO(tx.GetHash()) == myShardId);
+    
+    /* TODO: for smart placement
+     * output shard should be the shard of the first input and should be the id
      * of this shard. 
-     * 1. add shard affinity to txout. Client must collect information about its
-     * own txout and specify shard id in tx inputs. */
-//    assert(tx.vin[0].shardAffinity);
-//    int32_t outputShard = -1;
+     */
+//    assert(tx.vin[0].shardAffinity == CPbft::shardID);
+//    for (uint i = 0, )
 
     // add outputs
     AddCoins(inputs, tx, nHeight);
@@ -1489,10 +1498,24 @@ bool CheckInputs(const CTransaction& tx, CValidationState &state, const CCoinsVi
 
 bool CheckLockInputs(const CTransaction& tx, CValidationState &state, const CCoinsViewCache &inputs, bool fScriptChecks, unsigned int flags, bool cacheSigStore, bool cacheFullScriptStore, PrecomputedTransactionData& txdata, std::vector<CScriptCheck> *pvChecks)
 {
+    int32_t myShardId = pbftID/CPbft::groupSize;
+    /*----pick out input UTXOs in our shard----*/
+    TxPlacer txPlacer;
+    std::vector<CTxIn> vinInMyShard;
+    for (CTxIn input: tx.vin) {
+	/* for random placement */
+	if (txPlacer.randomPlaceUTXO(input.prevout.hash) != myShardId)
+	    continue;
+	/* for smart placement */
+//	if (input.shardAffinity != CPbft::shardID)
+//		continue;
+	vinInMyShard.push_back(input);
+    }
+
     if (!tx.IsCoinBase())
     {
         if (pvChecks)
-            pvChecks->reserve(tx.vin.size());
+            pvChecks->reserve(vinInMyShard.size());
 
         // The first loop above does all the inexpensive checks.
         // Only if ALL inputs pass do we perform expensive ECDSA signature checks.
@@ -1519,11 +1542,11 @@ bool CheckLockInputs(const CTransaction& tx, CValidationState &state, const CCoi
                 return true;
             }
 
-            for (unsigned int i = 0; i < tx.vin.size(); i++) {
+            for (unsigned int i = 0; i < vinInMyShard.size(); i++) {
 		// TODO: check shardAffinity
 //		if (tx.vin[i].shardId != MyShardID)
 //		    continue;
-                const COutPoint &prevout = tx.vin[i].prevout;
+                const COutPoint &prevout =  vinInMyShard[i].prevout;
                 const Coin& coin = inputs.AccessCoin(prevout);
                 assert(!coin.IsSpent());
 
@@ -2042,11 +2065,6 @@ bool CChainState::ConnectBlock(const CBlock& block, CValidationState& state, CBl
     std::vector<PrecomputedTransactionData> txdata;
     txdata.reserve(block.vtx.size()); // Required so that pointers to individual PrecomputedTransactionData don't get invalidated
 
-    /* data structures for smart tx placement */
-    //std::cout << "SMART place block " << chainActive.Height() + 1 << std::endl;
-    std::cout << "SMART place block " << pindex->nHeight << std::endl;
-    TxPlacer txPlacer(block);
-
     for (unsigned int i = 0; i < block.vtx.size(); i++)
     {
         const CTransaction &tx = *(block.vtx[i]);
@@ -2106,8 +2124,6 @@ bool CChainState::ConnectBlock(const CBlock& block, CValidationState& state, CBl
         UpdateCoins(tx, view, i == 0 ? undoDummy : blockundo.vtxundo.back(), pindex->nHeight);
     }
 
-    txPlacer.printPlaceResult();
-    
     int64_t nTime3 = GetTimeMicros(); nTimeConnect += nTime3 - nTime2;
     LogPrint(BCLog::BENCH, "      - Connect %u transactions: %.2fms (%.3fms/tx, %.3fms/txin) [%.2fs (%.2fms/blk)]\n", (unsigned)block.vtx.size(), MILLI * (nTime3 - nTime2), MILLI * (nTime3 - nTime2) / block.vtx.size(), nInputs <= 1 ? 0 : MILLI * (nTime3 - nTime2) / (nInputs-1), nTimeConnect * MICRO, nTimeConnect * MILLI / nBlocksTotal);
 

@@ -14,6 +14,9 @@
 #include <coins.h>
 #include <utilmoneystr.h>
 
+#include "pbft/pbft.h"
+#include "tx_placement/tx_placer.h"
+
 bool IsFinalTx(const CTransaction &tx, int nBlockHeight, int64_t nBlockTime)
 {
     if (tx.nLockTime == 0)
@@ -264,19 +267,30 @@ bool Consensus::CheckTxInputs(const CTransaction& tx, CValidationState& state, c
 }
 
 bool Consensus::CheckLockReqInputs(const CTransaction& tx, CValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& totalValueIn) {
-    // are the actual inputs in our shard available?
+    int32_t myShardId = pbftID/CPbft::groupSize;
+    /*----pick out input UTXOs in our shard----*/
+    TxPlacer txPlacer;
+    std::vector<CTxIn> vinInMyShard;
     for (CTxIn input: tx.vin) {
-	//TODO: add shardAffinity to vin and CTxOut
-//	if (input.shardAffinity == myShardId))
-	    if (!inputs.HaveCoin(input.prevout)) {
-		return state.DoS(100, false, REJECT_INVALID, "bad-txns-inputs-missingorspent", false,
-				 strprintf("%s: inputs missing/spent", __func__));
-	    }
+	/* for random placement */
+	if (txPlacer.randomPlaceUTXO(input.prevout.hash) != myShardId)
+	    continue;
+	/* for smart placement */
+//	if (input.shardAffinity != CPbft::shardID)
+//		continue;
+	vinInMyShard.push_back(input);
+    }
+
+    for (CTxIn input: vinInMyShard) {
+	if (!inputs.HaveCoin(input.prevout)) {
+	    return state.DoS(100, false, REJECT_INVALID, "bad-txns-inputs-missingorspent", false,
+			     strprintf("%s: inputs missing/spent", __func__));
+	}
     }
 
     CAmount nValueIn = 0;
-    for (unsigned int i = 0; i < tx.vin.size(); ++i) {
-        const COutPoint &prevout = tx.vin[i].prevout;
+    for (unsigned int i = 0; i < vinInMyShard.size(); ++i) {
+        const COutPoint &prevout = vinInMyShard[i].prevout;
         const Coin& coin = inputs.AccessCoin(prevout);
         assert(!coin.IsSpent());
 
