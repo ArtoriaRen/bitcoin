@@ -195,6 +195,7 @@ void Shutdown()
 #endif
     MapPort(false);
 
+    g_pbft.reset();
     // Because these depend on each-other, we make sure that neither can be
     // using the other before destroying them.
     if (peerLogic) UnregisterValidationInterface(peerLogic.get());
