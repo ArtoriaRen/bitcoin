@@ -1872,21 +1872,22 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	}
 
 	// TODO: the client must create the right number of shards in the inputShardReplyMap so that we can decide if we can send an unlocktocommit req by checking if every shard has sent us enough replies.
-	std::vector<CInputShardReply>& shardReplies = g_pbft->inputShardReplyMap[reply.digest].lockReply[reply.peerID/CPbft::groupSize];
-        std::cout << "shardReplies.size() = " << shardReplies.size() << std::endl;
+	int shardID = reply.peerID/CPbft::groupSize;
+	std::vector<CInputShardReply>& shardReplies = g_pbft->inputShardReplyMap[reply.digest].lockReply[shardID];
 	shardReplies.push_back(reply);
+        std::cout << "num of lock replies from shard " << shardID << " becomes " << shardReplies.size() << std::endl;
 	/* Check if the client has accumulated enough replies from every shard. If so, send a unlock_to_commit req to the output shard. */
-	bool gotAllInputShardReplies = true;
+	bool isLeastReplyShard = true;
 	uint reply_threshold = 2 * CPbft::nFaulty + 1;
-        std::cout << "inputShardReplyMap[reply.digest].size() = " << g_pbft->inputShardReplyMap[reply.digest].lockReply.size() << std::endl;
+        std::cout << "num of input shards = " << g_pbft->inputShardReplyMap[reply.digest].lockReply.size() << std::endl;
 	for (auto& p: g_pbft->inputShardReplyMap[reply.digest].lockReply) {
-	    std::cout << "shardId = " << p.first << ", number of lock replies = " << p.second.size() << std::endl;
-	    if (p.second.size() < reply_threshold) {
-		gotAllInputShardReplies = false;
+	    std::cout << "shardId = " << p.first << ": number of lock replies = " << p.second.size() << std::endl;
+	    if (p.second.size() < shardReplies.size()) {
+		isLeastReplyShard = false;
 		break;
 	    }
 	}
-	if (gotAllInputShardReplies) {
+	if (isLeastReplyShard && shardReplies.size() == reply_threshold) {
 	    /* assemble a vector including (2f + 1) replies for every shard */
 	    std::vector<CInputShardReply> vReply;
 	    vReply.reserve(reply_threshold * g_pbft->inputShardReplyMap[reply.digest].lockReply.size());
@@ -1907,6 +1908,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    TxPlacer txPlacer;
 	    int32_t outputShard = txPlacer.randomPlaceUTXO(g_pbft->mapTxid[reply.digest]->GetHash());
 	    connman->PushMessage(g_pbft->leaders[outputShard], msgMaker.Make(NetMsgType::OMNI_UNLOCK_COMMIT, commitReq));
+	    /* add the new req digest with the tx start time to the stat map. */
+            g_pbft->mapTxStartTime.insert(std::make_pair(commitReq.GetDigest(), g_pbft->mapTxStartTime[reply.digest]));
 	}
     }
 
