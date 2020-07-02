@@ -35,6 +35,9 @@
 #include <stdint.h>
 
 #include <univalue.h>
+#include <netmessagemaker.h>
+#include "pbft/pbft.h"
+#include "tx_placement/tx_placer.h"
 
 
 void TxToJSON(const CTransaction& tx, const uint256 hashBlock, UniValue& entry)
@@ -1015,11 +1018,34 @@ UniValue sendrawtransaction(const JSONRPCRequest& request)
     if(!g_connman)
         throw JSONRPCError(RPC_CLIENT_P2P_DISABLED, "Error: Peer-to-peer functionality missing or disabled");
 
-    CInv inv(MSG_TX, hashTx);
-    g_connman->ForEachNode([&inv](CNode* pnode)
-    {
-        pnode->PushInventory(inv);
-    });
+    //CInv inv(MSG_TX, hashTx);
+    //g_connman->ForEachNode([&inv](CNode* pnode)
+    //{
+    //    pnode->PushInventory(inv);
+    //});
+
+    /* get the input shards and output shards id*/
+    TxPlacer txPlacer;
+    std::vector<int32_t> shards = txPlacer.randomPlace(*tx);
+    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+    assert(shards.size() >= 2); // there must be at least one output shard and one input shard.
+    struct TxStat stat;
+    if (shards.size() == 2 && shards[0] == shards[1]) {
+	/* this is a single shard tx */
+	stat.type = TxType::SINGLE_SHARD;
+	gettimeofday(&stat.startTime, NULL);
+	g_pbft->mapTxStartTime.insert(std::make_pair(tx->GetHash(), stat));
+	g_connman->PushMessage(g_pbft->leaders[shards[0]], msgMaker.Make(NetMsgType::PBFT_TX, *tx));
+    } else {
+	/* this is a cross-shard tx */
+	stat.type = TxType::CROSS_SHARD;
+	gettimeofday(&stat.startTime, NULL);
+	g_pbft->mapTxStartTime.insert(std::make_pair(tx->GetHash(), stat));
+	for (uint i = 1; i < shards.size(); i++) {
+	    g_connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_LOCK, *tx));
+	}
+    }
+    g_pbft->mapTxid.insert(std::make_pair(tx->GetHash(), tx));
 
     return hashTx.GetHex();
 }
