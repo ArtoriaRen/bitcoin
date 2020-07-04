@@ -129,7 +129,7 @@ public:
     /* we did not put serialization methods here because c++ does not allow
      * virtual template method.
      */
-    virtual void Execute(const int seq) const = 0; // seq is passed in because we use it as block height.
+    virtual char Execute(const int seq) const = 0; // seq is passed in because we use it as block height.
     virtual uint256 GetDigest() const = 0;
 //    virtual ~CClientReq(){};
 };
@@ -149,7 +149,7 @@ public:
     void Unserialize(Stream& s) {
 	tx_mutable.Unserialize(s);
     }
-    void Execute(const int seq) const override;
+    char Execute(const int seq) const override;
     uint256 GetDigest() const override;
 };
 
@@ -174,7 +174,7 @@ public:
     void Unserialize(Stream& s) {
 	tx_mutable.Unserialize(s);
     }
-    void Execute(const int seq) const override;
+    char Execute(const int seq) const override;
     uint256 GetDigest() const override;
 };
 
@@ -214,7 +214,7 @@ public:
 	    vInputShardReply[i].Unserialize(s);
 	}
     }
-    void Execute(const int seq) const override;
+    char Execute(const int seq) const override;
     uint256 GetDigest() const override;
 };
 

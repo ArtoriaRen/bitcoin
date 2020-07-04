@@ -6,6 +6,8 @@
 
 #include <tx_placement/tx_placer.h>
 #include <queue>
+#include <fstream>
+#include <string> 
 
 #include "hash.h"
 #include "arith_uint256.h"
@@ -13,6 +15,8 @@
 #include "validation.h"
 #include "chainparams.h"
 #include "txdb.h"
+#include "rpc/server.h"
+#include "core_io.h" // HexStr
 
 
 /* global variable configurable from conf file. */
@@ -42,7 +46,7 @@ std::vector<int32_t> TxPlacer::randomPlace(const CTransaction& tx){
 //    }
 //    std::cout << std::endl;
 
-    /* add the output shard id to the above set */
+    /* get output shard id */
     arith_uint256 txid = UintToArith256(tx.GetHash());
     arith_uint256 quotient = txid / num_committees;
     arith_uint256 outShardId = txid - quotient * num_committees;
@@ -290,20 +294,45 @@ void printShardAffinity(){
 //}
 
 void randomPlaceTxInBlock(){
-//    std::cout << "RANDOM place block " << randomPlaceBlock << std::endl;
-//
-//    CBlock block;
-//    CBlockIndex* pblockindex = chainActive[randomPlaceBlock];
-//    if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
-//	std::cerr << "Block not found on disk" << std::endl;
-//    }
-//    TxPlacer txPlacer(block);
-//
-//    /* start from the second transaction to exclude coinbase tx */
-//    for (uint j = 1; j < block.vtx.size(); j++) {
-//	txPlacer.randomPlaceTxid(block.vtx[j]);
-//    }
-//    txPlacer.printPlaceResult();
+    std::cout << "RANDOM place block " << randomPlaceBlock << std::endl;
+
+    CBlock block;
+    CBlockIndex* pblockindex = chainActive[randomPlaceBlock];
+    if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
+	std::cerr << "Block not found on disk" << std::endl;
+    }
+    TxPlacer txPlacer;
+
+    const int maxShardSpan = 16;
+    std::ofstream txHexFiles[maxShardSpan];
+    std::string fileNameSuffix("shardTx");
+    for (int i = 0; i < maxShardSpan; i++) {
+	txHexFiles[i].open(std::to_string(i + 1) + fileNameSuffix, std::ofstream::out | std::ofstream::trunc);
+    }
+
+    std::cout << "The block has " <<  block.vtx.size() -1 << " non-coinbase tx." << std::endl;
+    /* start from the second transaction to exclude coinbase tx */
+    for (uint j = 1; j < block.vtx.size(); j++) {
+	std::vector<int32_t> shards = txPlacer.randomPlace(*block.vtx[j]);
+	std::cout << "tx No. "  <<  j << " : ";
+	for (int shard : shards) 
+	    std::cout << shard << ", ";
+	std::cout << std::endl;
+
+	std::vector<int32_t>::iterator it = std::find(shards.begin() + 1, shards.end(), shards[0]);
+	std::string hexstr = EncodeHexTx(*block.vtx[j], RPCSerializationFlags());
+//	std::cout << hexstr << std::endl;
+	if (it == shards.end()) {
+	    /* the output shard is different than any input shards. */
+	    txHexFiles[shards.size() - 1] << hexstr << std::endl;
+	} else {
+	    txHexFiles[shards.size() - 2] << hexstr << std::endl;
+	}
+    }
+    for (int i = 0; i < maxShardSpan; i++) {
+	txHexFiles[i].close();
+    }
+    std::cout << "Grouping tx finishes. " << randomPlaceBlock << std::endl;
 }
 
 //void smartPlaceTxInBlock(const std::shared_ptr<const CBlock> pblock){

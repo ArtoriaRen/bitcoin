@@ -808,7 +808,7 @@ void InitParameterInteraction()
     }
 
     if (gArgs.IsArgSet("-startblock")) {
-         randomPlaceBlock = gArgs.GetArg("-startblock", 600000);
+        randomPlaceBlock = gArgs.GetArg("-startblock", 600000);
     }
     if (gArgs.IsArgSet("-endblock")) {
         blockEnd = gArgs.GetArg("-endblock", 600001);

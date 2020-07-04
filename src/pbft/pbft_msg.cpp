@@ -55,7 +55,7 @@ void CReply::getHash(uint256& result) const {
 	    .Finalize((unsigned char*)&result);
 }
 
-void TxReq::Execute(const int seq) const {
+char TxReq::Execute(const int seq) const {
     /* -------------logic from Bitcoin code for tx processing--------- */
     CTransaction tx(tx_mutable);
     
@@ -69,7 +69,7 @@ void TxReq::Execute(const int seq) const {
      * maturity check. */
     if (!Consensus::CheckTxInputs(tx, state, view, INT_MAX, txfee)) {
 	std::cerr << __func__ << ": Consensus::CheckTxInputs: " << tx.GetHash().ToString() << ", " << FormatStateMessage(state) << std::endl;
-	return;
+	return 'n';
     }
 
     // GetTransactionSigOpCost counts 3 types of sigops:
@@ -80,7 +80,7 @@ void TxReq::Execute(const int seq) const {
     nSigOpsCost += GetTransactionSigOpCost(tx, view, flags);
     if (nSigOpsCost > MAX_BLOCK_SIGOPS_COST) { 
 	std::cerr << __func__ << ": ConnectBlock(): too many sigops" << std::endl;
-	return;
+	return 'n';
     }
 
     PrecomputedTransactionData txdata(tx);
@@ -91,7 +91,7 @@ void TxReq::Execute(const int seq) const {
 		<< tx.GetHash().ToString() 
 		<< " failed with " << FormatStateMessage(state)
 		<< std::endl;
-	return;
+	return 'n';
     }
 
 //	    CTxUndo undoDummy;
@@ -105,7 +105,7 @@ void TxReq::Execute(const int seq) const {
 
     std::cout << __func__ << ": excuted tx " << tx.GetHash().ToString()
 	    << " at log slot " << seq << std::endl;
-
+    return 'y';
 }
 
 uint256 TxReq::GetDigest() const {
@@ -113,7 +113,7 @@ uint256 TxReq::GetDigest() const {
 }
 
 
-void LockReq::Execute(const int seq) const {
+char LockReq::Execute(const int seq) const {
     /* we did not check if there is any input coins belonging our shard because
      * we believe the client is honest and will not send an LOCK req to a 
      * irrelavant shard. In OmniLedger, we already beleive in the client to be 
@@ -133,7 +133,7 @@ void LockReq::Execute(const int seq) const {
      * We use INT_MAX as block height, so that we never fail coinbase maturity check. */
     if (!Consensus::CheckLockReqInputs(tx, state, view, INT_MAX, totalValueInOfShard)) {
 	std::cerr << __func__ << ": Consensus::CheckTxInputs: " << tx.GetHash().ToString() << ", " << FormatStateMessage(state) << std::endl;
-	return;
+	return 'n';
     }
 
     /* Step 2: count sig ops. Do this in the output shard. */
@@ -157,7 +157,7 @@ void LockReq::Execute(const int seq) const {
 		<< tx.GetHash().ToString() 
 		<< " failed with " << FormatStateMessage(state)
 		<< std::endl;
-	return;
+	return 'n';
     }
 
     /* Step 4: spent the input coins in our shard and store them in the global map 
@@ -169,6 +169,7 @@ void LockReq::Execute(const int seq) const {
     assert(flushed);
     /* -------------logic from Bitcoin code for tx processing--------- */
     std::cout << __func__ << ": locked input UTXOs for tx " << tx.GetHash().GetHex().substr(1, 10) << " at log slot " << seq << std::endl;
+    return 'y';
 }
 
 uint256 LockReq::GetDigest() const {
@@ -208,11 +209,11 @@ uint256 UnlockToCommitReq::GetDigest() const {
 
 bool checkInputShardReplySigs(const std::vector<CInputShardReply>& vReplies);
 
-void UnlockToCommitReq::Execute(const int seq) const {
+char UnlockToCommitReq::Execute(const int seq) const {
     /* ------TODO: Verify the sigs of input shards. This needs <id, pubkey> map.---- */
     if (!checkInputShardReplySigs(vInputShardReply)) {
         std::cout << __func__ << ": verify sigs fail!" << std::endl;
-	return;
+	return 'n';
     }
 
     /* -------------logic from Bitcoin code for tx processing--------- */
@@ -235,7 +236,7 @@ void UnlockToCommitReq::Execute(const int seq) const {
 
     if (!Consensus::CheckInputsCommitReq(tx, state, view, INT_MAX, totalInputValue)) {
 	std::cerr << __func__ << ": Consensus::CheckTxInputs: " << tx.GetHash().ToString() << ", " << FormatStateMessage(state) << std::endl;
-	return;
+	return 'n';
     }
 
     /* Step 2: count sig ops. Do this in the output shard. */
@@ -247,7 +248,7 @@ void UnlockToCommitReq::Execute(const int seq) const {
     nSigOpsCost += GetTransactionSigOpCostInOutShard(tx, view, flags);
     if (nSigOpsCost > MAX_BLOCK_SIGOPS_COST) { 
 	std::cerr << __func__ << ": ConnectBlock(): too many sigops" << std::endl;
-	return;
+	return 'n';
     }
 
     /* Step 3: check sigScript for input UTXOs in our shard. Done by input shard. */
@@ -264,8 +265,7 @@ void UnlockToCommitReq::Execute(const int seq) const {
     assert(flushed);
     /* -------------logic from Bitcoin code for tx processing--------- */
     std::cout << __func__ << ":  commit tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << std::endl;
-
-
+    return 'y';
 }
 
 bool checkInputShardReplySigs(const std::vector<CInputShardReply>& vReplies) {

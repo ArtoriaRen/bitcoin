@@ -27,7 +27,7 @@ std::string leaderAddrString;
 std::string clientAddrString;
 int32_t pbftID; 
 
-CPbft::CPbft() : localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedIndex(-1), client(nullptr), peers(std::vector<CNode*>(groupSize * num_committees)), privateKey(CKey()) {
+CPbft::CPbft() : localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize * num_committees)), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
@@ -156,9 +156,14 @@ bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
 	/* if some seq ahead of the cMsg.seq is not in the reply phase yet, 
 	 * cMsg.seq will not be executed.
 	 */
-	if (executeTransaction(cMsg.seq) == (int)cMsg.seq) {
-	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-	    /* send reply to client only once. */
+	int startReplySeq = lastExecutedSeq + 1; 
+	executeTransaction(cMsg.seq); // this updates the lastExecutedIndex  
+	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+	/* send reply to for all log slots that are in the reply phase.
+	 * Since lastExecutedSeq increaes monotonically, this logic guarantees 
+	 * to send reply to client only once. 
+	 */
+	for (int i = startReplySeq; i <= lastExecutedSeq; i++) {
 	    if (log[cMsg.seq].ppMsg.type == ClientReqType::TX || 
 		    log[cMsg.seq].ppMsg.type == ClientReqType::UNLOCK_TO_COMMIT) {
 		CReply reply = assembleReply(cMsg.seq);
@@ -231,9 +236,8 @@ CPbftMessage CPbft::assembleMsg(const uint32_t seq) {
 CReply CPbft::assembleReply(const uint32_t seq) {
     /* 'y' --- execute sucessfully
      * 'n' --- execute fail
-     * Currently we only reply with 'y' b/c servers will exit when an error occurs.
      */
-    CReply toSent('y', log[seq].ppMsg.digest);
+    CReply toSent(log[seq].result, log[seq].ppMsg.digest);
     uint256 hash;
     toSent.getHash(hash);
     privateKey.Sign(hash, toSent.vchSig);
@@ -252,20 +256,24 @@ CInputShardReply CPbft::assembleInputShardReply(const uint32_t seq) {
 
 int CPbft::executeTransaction(const int seq) {
     // execute all lower-seq tx until this one if possible.
-    int i = lastExecutedIndex + 1;
-    for (; i < seq + 1; i++) {
+    int i = lastExecutedSeq + 1;
+    /* We should go on to execute all log slots that are in reply phase even
+     * their seqs are greater than the seq passed in. If we only execute up to
+     * the seq passed in, a slot missing a pbftc msg might permanently block
+     * log slots after it to be executed. */
+    for (; i < logSize; i++) {
         if (log[i].phase == PbftPhase::reply) {
-	    log[i].ppMsg.req->Execute(i);
+	    log[i].result = log[i].ppMsg.req->Execute(i);
         } else {
             break;
         }
     }
-    lastExecutedIndex = i - 1;
+    lastExecutedSeq = i - 1;
     /* if lastExecutedIndex is less than seq, we delay sending reply until 
      * the all requsts up to seq has been executed. This may be triggered 
      * by future requests.
      */
-    return lastExecutedIndex;
+    return lastExecutedSeq;
 }
 
 
