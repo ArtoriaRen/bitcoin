@@ -808,9 +808,6 @@ void InitParameterInteraction()
         }
     }
 
-    if (gArgs.IsArgSet("-synctoheight")) {
-        syncToHeight = gArgs.GetArg("-synctoheight", 10);
-    }
     if (gArgs.IsArgSet("-pbftid")) {
         pbftID = gArgs.GetArg("-pbftid", -1);
     }

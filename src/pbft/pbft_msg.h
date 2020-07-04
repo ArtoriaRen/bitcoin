@@ -119,7 +119,7 @@ public:
 	tx_mutable.Unserialize(s);
     }
 
-    void Execute(const int seq) const;
+    char Execute(const int seq) const;
 };
 
 

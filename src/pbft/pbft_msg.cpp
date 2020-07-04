@@ -35,7 +35,7 @@ CPre_prepare::CPre_prepare(const CPre_prepare& msg): CPbftMessage(msg), tx_mutab
 
 CPre_prepare::CPre_prepare(const CPbftMessage& msg): CPbftMessage(msg) { }
 
-void CPre_prepare::Execute(const int seq) const {
+char CPre_prepare::Execute(const int seq) const {
     /* -------------logic from Bitcoin code for tx processing--------- */
     CTransaction tx(tx_mutable);
     
@@ -49,7 +49,7 @@ void CPre_prepare::Execute(const int seq) const {
      * maturity check. */
     if (!Consensus::CheckTxInputs(tx, state, view, INT_MAX, txfee)) {
 	std::cerr << __func__ << ": Consensus::CheckTxInputs: " << tx.GetHash().ToString() << ", " << FormatStateMessage(state) << std::endl;
-	return;
+	return 'n';
     }
 
     // GetTransactionSigOpCost counts 3 types of sigops:
@@ -60,7 +60,7 @@ void CPre_prepare::Execute(const int seq) const {
     nSigOpsCost += GetTransactionSigOpCost(tx, view, flags);
     if (nSigOpsCost > MAX_BLOCK_SIGOPS_COST) { 
 	std::cerr << __func__ << ": ConnectBlock(): too many sigops" << std::endl;
-	return;
+	return 'n';
     }
 
     PrecomputedTransactionData txdata(tx);
@@ -71,7 +71,7 @@ void CPre_prepare::Execute(const int seq) const {
 		<< tx.GetHash().ToString() 
 		<< " failed with " << FormatStateMessage(state)
 		<< std::endl;
-	return;
+	return 'n';
     }
 
 //	    CTxUndo undoDummy;
@@ -85,6 +85,7 @@ void CPre_prepare::Execute(const int seq) const {
 
     std::cout << __func__ << ": excuted tx " << tx.GetHash().ToString()
 	    << " at log slot " << seq << std::endl;
+    return 'y';
 }
 
 CReply::CReply(): reply(), digest(), peerID(pbftID), sigSize(0), vchSig(){ 
