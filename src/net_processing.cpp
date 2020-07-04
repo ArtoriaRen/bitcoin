@@ -1854,17 +1854,22 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    gettimeofday(&endTime, NULL);
 	    assert(g_pbft->mapTxStartTime.find(reply.digest) != g_pbft->mapTxStartTime.end());
 	    TxStat& stat = g_pbft->mapTxStartTime[reply.digest]; 
+	    if (reply.reply == 'y') {
+		    std::cout << "SUCCEED, ";
+	    } else if (reply.reply == 'n') {
+		    std::cout << "FAIL, ";
+	    } 
 	    std::cout << (stat.type == TxType::SINGLE_SHARD ? "single-shard" : "cross-shard") << ", latency = " << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << " ms" << std::endl;
 	}
 		
-	std::cout << __func__ << ": receivd  PBFT_REPLY for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
+	std::cout << __func__ << ": received PBFT_REPLY for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
     }
 
     else if (strCommand == NetMsgType::OMNI_LOCK_REPLY)
     {
 	CInputShardReply reply;
 	vRecv >> reply;
-	std::cout << __func__ << ": receivd "  << strCommand << "for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
+	std::cout << __func__ << ": received "  << strCommand << "for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
 	if (!g_pbft->checkReplySig(&reply)) {
 	    std::cout << strCommand << " from " << reply.peerID << " sig verification fail"  << std::endl;
 	} else {
@@ -1875,7 +1880,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	int shardID = reply.peerID/CPbft::groupSize;
 	std::vector<CInputShardReply>& shardReplies = g_pbft->inputShardReplyMap[reply.digest].lockReply[shardID];
 	shardReplies.push_back(reply);
-        std::cout << "num of lock replies from shard " << shardID << " becomes " << shardReplies.size() << std::endl;
 	/* Check if the client has accumulated enough replies from every shard. If so, send a unlock_to_commit req to the output shard. */
 	bool isLeastReplyShard = true;
 	uint reply_threshold = 2 * CPbft::nFaulty + 1;
@@ -1887,7 +1891,12 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		break;
 	    }
 	}
-	if (isLeastReplyShard && shardReplies.size() == reply_threshold) {
+	if (isLeastReplyShard && shardReplies.size() == reply_threshold && reply.reply == 'y') {
+	    if (reply.reply == 'y') {
+		    std::cout << "LOCK SUCCEED, ";
+	    } else if (reply.reply == 'n') {
+		    std::cout << "LOCK FAIL, ";
+	    } 
 	    /* assemble a vector including (2f + 1) replies for every shard */
 	    std::vector<CInputShardReply> vReply;
 	    vReply.reserve(reply_threshold * g_pbft->inputShardReplyMap[reply.digest].lockReply.size());
@@ -1898,15 +1907,10 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             
 	    assert(g_pbft->mapTxid.find(reply.digest) != g_pbft->mapTxid.end());
 	    UnlockToCommitReq commitReq(std::move(CMutableTransaction(*g_pbft->mapTxid[reply.digest])), vReply.size(), std::move(vReply));
-	//g_pbft->vInputShardReplies.push_back(reply);
-	//if(g_pbft->vInputShardReplies.size() == 3) {
-	//    UnlockToCommitReq commitReq(std::move(CMutableTransaction(*g_pbft->mapTxid[reply.digest])), 3, g_pbft->vInputShardReplies);
-	    std::cout << "sending unlock_to_commit with req_hash = " << commitReq.GetDigest().GetHex() << std::endl;
-	    // TODO: create an unlock to commit req and sent it to the output shard leader.  
 	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-	    // TODO: need an <id, pnode, pubkey> map. Can be implemented with a vector.
 	    TxPlacer txPlacer;
 	    int32_t outputShard = txPlacer.randomPlaceUTXO(g_pbft->mapTxid[reply.digest]->GetHash());
+	    std::cout << "sending unlock_to_commit with req_hash = " << commitReq.GetDigest().GetHex().substr(0, 10) << " to shard " << outputShard << std::endl;
 	    connman->PushMessage(g_pbft->leaders[outputShard], msgMaker.Make(NetMsgType::OMNI_UNLOCK_COMMIT, commitReq));
 	    /* add the new req digest with the tx start time to the stat map. */
             g_pbft->mapTxStartTime.insert(std::make_pair(commitReq.GetDigest(), g_pbft->mapTxStartTime[reply.digest]));

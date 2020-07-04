@@ -1029,6 +1029,10 @@ UniValue sendrawtransaction(const JSONRPCRequest& request)
     std::vector<int32_t> shards = txPlacer.randomPlace(*tx);
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
     assert(shards.size() >= 2); // there must be at least one output shard and one input shard.
+    std::cout << "tx "  <<  tx->GetHash().GetHex().substr(0, 10) << " : ";
+    for (int shard : shards)
+	std::cout << shard << ", ";
+    std::cout << std::endl;
     struct TxStat stat;
     if (shards.size() == 2 && shards[0] == shards[1]) {
 	/* this is a single shard tx */
@@ -1042,6 +1046,7 @@ UniValue sendrawtransaction(const JSONRPCRequest& request)
 	gettimeofday(&stat.startTime, NULL);
 	g_pbft->mapTxStartTime.insert(std::make_pair(tx->GetHash(), stat));
 	for (uint i = 1; i < shards.size(); i++) {
+	    g_pbft->inputShardReplyMap[tx->GetHash()].lockReply.insert(std::make_pair(shards[i], std::vector<CInputShardReply>()));
 	    g_connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_LOCK, *tx));
 	}
     }
