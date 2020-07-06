@@ -335,6 +335,28 @@ void randomPlaceTxInBlock(){
     std::cout << "Grouping tx finishes. " << randomPlaceBlock << std::endl;
 }
 
+void extractRawTxInBlock(){
+    std::cout << "extract raw tx in block " << randomPlaceBlock << std::endl;
+
+    CBlock block;
+    CBlockIndex* pblockindex = chainActive[randomPlaceBlock];
+    if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
+	std::cerr << "Block not found on disk" << std::endl;
+    }
+
+    std::ofstream txHexFile;
+    txHexFile.open("tx_" + std::to_string(randomPlaceBlock) + ".out" , std::ofstream::out | std::ofstream::trunc);
+
+    /* if we do not process coinbase tx, tx spending its output would fail. */
+    std::cout << "The block has " <<  block.vtx.size() << " tx." << std::endl;
+    for (uint j = 0; j < block.vtx.size(); j++) {
+	std::string hexstr = EncodeHexTx(*block.vtx[j], RPCSerializationFlags());
+	txHexFile << hexstr << std::endl;
+    }
+    txHexFile.close();
+    std::cout << "extracting tx finishes. " << std::endl;
+}
+
 //void smartPlaceTxInBlock(const std::shared_ptr<const CBlock> pblock){
 //    std::cout << "SMART place block " << chainActive.Height() + 1 << std::endl;
 //    TxPlacer txPlacer;

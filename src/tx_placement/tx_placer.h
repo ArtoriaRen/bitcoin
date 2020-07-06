@@ -52,6 +52,7 @@ void assignShardAffinity();
 void incrementalAssignShardAffinity();
 void printShardAffinity();
 //void smartPlaceTxInBlocks();
+void extractRawTxInBlock();
 
 /* place tx in the newly generated or received block. This only work for 
  * future blocks because we cannot assign shard affinity to input UTXOs of

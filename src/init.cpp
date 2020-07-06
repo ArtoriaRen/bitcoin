@@ -1776,5 +1776,6 @@ bool AppInitMain()
     //assignShardAffinity();
     //printShardAffinity();
     //randomPlaceTxInBlock();
+    //extractRawTxInBlock();
     return true;
 }
