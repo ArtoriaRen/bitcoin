@@ -632,26 +632,26 @@ static bool AcceptToMemoryPoolWorker(const CChainParams& chainparams, CTxMemPool
         CCoinsViewMemPool viewMemPool(pcoinsTip.get(), pool);
         view.SetBackend(viewMemPool);
 
-        // do all inputs exist?
-        for (const CTxIn txin : tx.vin) {
-            if (!pcoinsTip->HaveCoinInCache(txin.prevout)) {
-                coins_to_uncache.push_back(txin.prevout);
-            }
-            if (!view.HaveCoin(txin.prevout)) {
-                // Are inputs missing because we already have the tx?
-                for (size_t out = 0; out < tx.vout.size(); out++) {
-                    // Optimistically just do efficient check of cache for outputs
-                    if (pcoinsTip->HaveCoinInCache(COutPoint(hash, out))) {
-                        return state.Invalid(false, REJECT_DUPLICATE, "txn-already-known");
-                    }
-                }
-                // Otherwise assume this might be an orphan tx for which we just haven't seen parents yet
-                if (pfMissingInputs) {
-                    *pfMissingInputs = true;
-                }
-                return false; // fMissingInputs and !state.IsInvalid() is used to detect this condition, don't set state.Invalid()
-            }
-        }
+	// do all inputs exist?
+	for (const CTxIn txin : tx.vin) {
+	    if (!pcoinsTip->HaveCoinInCache(txin.prevout)) {
+		coins_to_uncache.push_back(txin.prevout);
+	    }
+	    if (!view.HaveCoin(txin.prevout)) {
+		// Are inputs missing because we already have the tx?
+		for (size_t out = 0; out < tx.vout.size(); out++) {
+		    // Optimistically just do efficient check of cache for outputs
+		    if (pcoinsTip->HaveCoinInCache(COutPoint(hash, out))) {
+			return state.Invalid(false, REJECT_DUPLICATE, "txn-already-known");
+		    }
+		}
+		// Otherwise assume this might be an orphan tx for which we just haven't seen parents yet
+		if (pfMissingInputs) {
+		    *pfMissingInputs = true;
+		}
+		return false; // fMissingInputs and !state.IsInvalid() is used to detect this condition, don't set state.Invalid()
+	    }
+	}
 
         // Bring the best block into scope
         view.GetBestBlock();
