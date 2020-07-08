@@ -145,6 +145,7 @@ public:
         bool m_use_addrman_outgoing = true;
         std::vector<std::string> m_specified_outgoing;
         std::vector<std::string> m_added_nodes;
+	bool isForClientConnection = false;
     };
 
     void Init(const Options& connOptions) {
@@ -324,7 +325,7 @@ private:
 
     bool BindListenPort(const CService &bindAddr, std::string& strError, bool fWhitelisted = false);
     bool Bind(const CService &addr, unsigned int flags);
-    bool InitBinds(const std::vector<CService>& binds, const std::vector<CService>& whiteBinds);
+    bool InitBinds(const std::vector<CService>& binds, const std::vector<CService>& whiteBinds, bool isForClientConnection);
     void ThreadOpenAddedConnections();
     void AddOneShot(const std::string& strDest);
     void ProcessOneShot();

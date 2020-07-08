@@ -99,6 +99,11 @@ unsigned short GetListenPort()
     return (unsigned short)(gArgs.GetArg("-port", Params().GetDefaultPort()));
 }
 
+unsigned short GetClientListenPort()
+{
+    return (unsigned short)(gArgs.GetArg("-portclient", Params().GetDefaultPort()));
+}
+
 // find 'best' local address for a particular peer
 bool GetLocal(CService& addr, const CNetAddr *paddrPeer)
 {
@@ -2228,7 +2233,7 @@ bool CConnman::Bind(const CService &addr, unsigned int flags) {
     return true;
 }
 
-bool CConnman::InitBinds(const std::vector<CService>& binds, const std::vector<CService>& whiteBinds) {
+bool CConnman::InitBinds(const std::vector<CService>& binds, const std::vector<CService>& whiteBinds, bool isForClientConnection) {
     bool fBound = false;
     for (const auto& addrBind : binds) {
         fBound |= Bind(addrBind, (BF_EXPLICIT | BF_REPORT_ERROR));
@@ -2239,8 +2244,13 @@ bool CConnman::InitBinds(const std::vector<CService>& binds, const std::vector<C
     if (binds.empty() && whiteBinds.empty()) {
         struct in_addr inaddr_any;
         inaddr_any.s_addr = INADDR_ANY;
-        fBound |= Bind(CService(in6addr_any, GetListenPort()), BF_NONE);
-        fBound |= Bind(CService(inaddr_any, GetListenPort()), !fBound ? BF_REPORT_ERROR : BF_NONE);
+	if (!isForClientConnection) {
+	    fBound |= Bind(CService(in6addr_any, GetListenPort()), BF_NONE);
+	    fBound |= Bind(CService(inaddr_any, GetListenPort()), !fBound ? BF_REPORT_ERROR : BF_NONE);
+	} else {
+	    fBound |= Bind(CService(in6addr_any, GetClientListenPort()), BF_NONE);
+	    fBound |= Bind(CService(inaddr_any, GetClientListenPort()), !fBound ? BF_REPORT_ERROR : BF_NONE);
+	}
     }
     return fBound;
 }
@@ -2260,7 +2270,7 @@ bool CConnman::Start(CScheduler& scheduler, const Options& connOptions)
         nMaxOutboundCycleStartTime = 0;
     }
 
-    if (fListen && !InitBinds(connOptions.vBinds, connOptions.vWhiteBinds)) {
+    if (fListen && !InitBinds(connOptions.vBinds, connOptions.vWhiteBinds, connOptions.isForClientConnection)) {
         if (clientInterface) {
             clientInterface->ThreadSafeMessageBox(
                 _("Failed to listen on any port. Use -listen=0 if you want this."),

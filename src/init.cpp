@@ -74,7 +74,9 @@ static const bool DEFAULT_REST_ENABLE = false;
 static const bool DEFAULT_STOPAFTERBLOCKIMPORT = false;
 
 std::unique_ptr<CConnman> g_connman;
+std::unique_ptr<CConnman> g_client_connman;
 std::unique_ptr<PeerLogicValidation> peerLogic;
+std::unique_ptr<ClientReqLogic> clientLogic;
 
  
 
@@ -170,6 +172,8 @@ void Interrupt()
     InterruptTorControl();
     if (g_connman)
         g_connman->Interrupt();
+    if (g_client_connman)
+        g_client_connman->Interrupt();
 }
 
 void Shutdown()
@@ -201,8 +205,10 @@ void Shutdown()
     // using the other before destroying them.
     if (peerLogic) UnregisterValidationInterface(peerLogic.get());
     if (g_connman) g_connman->Stop();
+    if (g_client_connman) g_client_connman->Stop();
     peerLogic.reset();
     g_connman.reset();
+    g_client_connman.reset();
 
     StopTorControl();
 
@@ -1294,11 +1300,15 @@ bool AppInitMain()
 
     assert(!g_connman);
     g_connman = std::unique_ptr<CConnman>(new CConnman(GetRand(std::numeric_limits<uint64_t>::max()), GetRand(std::numeric_limits<uint64_t>::max())));
+    assert(!g_client_connman);
+    g_client_connman = std::unique_ptr<CConnman>(new CConnman(GetRand(std::numeric_limits<uint64_t>::max()), GetRand(std::numeric_limits<uint64_t>::max())));
     assert(!g_pbft);
     g_pbft = std::unique_ptr<CPbft>(new CPbft());
     CConnman& connman = *g_connman;
+    CConnman& client_connman = *g_client_connman;
     peerLogic.reset(new PeerLogicValidation(&connman, g_pbft.get(), scheduler));
     RegisterValidationInterface(peerLogic.get());
+    clientLogic.reset(new ClientReqLogic(&client_connman, g_pbft.get(), scheduler));
 
     // sanitize comments per BIP-0014, format user agent and check total size
     std::vector<std::string> uacomments;
@@ -1745,6 +1755,38 @@ bool AppInitMain()
         }
     }
     if (!connman.Start(scheduler, connOptions)) {
+        return false;
+    }
+
+    /* ---- start client req thread. ----- */
+    CConnman::Options clientConnOptions;
+    clientConnOptions.nLocalServices = nLocalServices;
+    clientConnOptions.nMaxConnections = nMaxConnections;
+    clientConnOptions.nMaxOutbound = std::min(MAX_OUTBOUND_CONNECTIONS, clientConnOptions.nMaxConnections);
+    clientConnOptions.nMaxAddnode = MAX_ADDNODE_CONNECTIONS;
+    clientConnOptions.nMaxFeeler = 1;
+//    clientConnOptions.nBestHeight = chain_active_height;
+//    clientConnOptions.uiInterface = &uiInterface;
+    clientConnOptions.m_msgproc = clientLogic.get();
+    clientConnOptions.nSendBufferMaxSize = 1000*gArgs.GetArg("-maxsendbuffer", DEFAULT_MAXSENDBUFFER);
+    clientConnOptions.nReceiveFloodSize = 1000*gArgs.GetArg("-maxreceivebuffer", DEFAULT_MAXRECEIVEBUFFER);
+    /* server do not initiate connection to clients. */
+//    clientConnOptions.m_added_nodes = gArgs.GetArgs("-addnode");
+
+    clientConnOptions.nMaxOutboundTimeframe = nMaxOutboundTimeframe;
+    clientConnOptions.nMaxOutboundLimit = nMaxOutboundLimit;
+    clientConnOptions.isForClientConnection = true;
+    /* server do not initiate connection to clients. */
+    // Initiate outbound connections unless connect=0
+//    clientConnOptions.m_use_addrman_outgoing = !gArgs.IsArgSet("-connect");
+//    if (!clientConnOptions.m_use_addrman_outgoing) {
+//        const auto connect = gArgs.GetArgs("-connect");
+//        if (connect.size() != 1 || connect[0] != "0") {
+//            clientConnOptions.m_specified_outgoing = connect;
+//        }
+//    }
+
+    if (!client_connman.Start(scheduler, clientConnOptions)) {
         return false;
     }
 
