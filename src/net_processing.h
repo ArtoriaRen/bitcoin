@@ -10,6 +10,7 @@
 #include <validationinterface.h>
 #include <consensus/params.h>
 #include <pbft/pbft.h>
+#include <queue>
 
 /** Default for -maxorphantx, maximum number of orphan transactions kept in memory */
 static const unsigned int DEFAULT_MAX_ORPHAN_TRANSACTIONS = 100;
@@ -69,6 +70,20 @@ public:
 
 private:
     int64_t m_stale_tip_check_time; //! Next time to check for stale tip
+};
+
+
+class ClientReqLogic: public NetEventsInterface{
+private:
+    CConnman* const connman;
+    CPbft* const pbft;
+    std::queue<std::shared_ptr<CClientReq>> reqQueue;
+public:
+    explicit ClientReqLogic(CConnman* connman, CPbft* pbft, CScheduler &scheduler);
+    void InitializeNode(CNode* pnode) override;
+    void FinalizeNode(NodeId nodeid, bool& fUpdateConnectionTime) override;
+    bool ProcessMessages(CNode* pfrom, std::atomic<bool>& interrupt) override;
+    bool SendMessages(CNode* pto, std::atomic<bool>& interrupt) override;
 };
 
 struct CNodeStateStats {
