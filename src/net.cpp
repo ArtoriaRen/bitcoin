@@ -1459,6 +1459,10 @@ void CConnman::WakeMessageHandler()
     condMsgProc.notify_one();
 }
 
+void CConnman::SetLastNodeId(NodeId value)
+{
+     nLastNodeId = value;	
+}
 
 
 

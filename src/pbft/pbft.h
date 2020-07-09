@@ -14,17 +14,43 @@
 #ifndef PBFT_H
 #define PBFT_H
 #include "pbft/pbft_log_entry.h"
+#include "pbft/pbft_msg.h"
 #include "key.h"
 #include "net.h"
 #include "pubkey.h"
 #include <unordered_map>
+#include <queue>
+#include <mutex>
+#include <condition_variable>
+#include <memory>
 
 extern bool fIsClient; // if this node is a pbft client.
 extern std::string clientAddrString;
-extern int32_t pbftID; 
+extern int32_t pbftID;
+
+class ThreadSafeQueue {
+public:
+    ThreadSafeQueue();
+    ~ThreadSafeQueue();
+
+    CTransactionRef& front();
+    void pop_front();
+
+    void push_back(const CTransactionRef& item);
+    void push_back(CTransactionRef&& item);
+
+    int size();
+    bool empty();
+
+private:
+    std::deque<CTransactionRef> queue_;
+    std::mutex mutex_;
+    std::condition_variable cond_;
+};
 
 class CPbft{
 public:
+    // TODO: may need to recycle log slots for throughput test. Consider deque.
     static const size_t logSize = 1000;  
     static const size_t groupSize = 4;
     static const uint32_t nFaulty = 1;
@@ -43,6 +69,16 @@ public:
     std::vector<CNode*> peers;  
     std::unordered_map<int32_t, CPubKey> pubKeyMap;
 
+    /* the number of req that are between pre_prepare and reply phase. 
+     * Initially we start pbft consensus for this number of req. Later, once a 
+     * req  enters the reply phase, another req at the front of the reqQueue is 
+     * added to the pbft log and start consensus process. */
+    static const int nMaxReqInFly = 10; 
+    int nReqInFly; 
+    int nextInFlyIdx;
+    /* a queue storing client req waiting for being processed. */
+    ThreadSafeQueue reqQueue;
+
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
     bool ProcessPP(CConnman* connman, CPre_prepare& ppMsg);
@@ -59,6 +95,10 @@ public:
     bool checkMsg(CPbftMessage* msg);
     /*return the last executed seq */
     int executeTransaction(const int seq);
+
+    inline bool isLeader(){
+	return pbftID % groupSize == 0;
+    }
 
 private:
     // private ECDSA key used to sign messages
