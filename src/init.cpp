@@ -1767,36 +1767,35 @@ bool AppInitMain()
         return false;
     }
 
-    /* ---- start client req thread. ----- */
-    CConnman::Options clientConnOptions;
-    clientConnOptions.nLocalServices = nLocalServices;
-    clientConnOptions.nMaxConnections = nMaxConnections;
-    clientConnOptions.nMaxOutbound = std::min(MAX_OUTBOUND_CONNECTIONS, clientConnOptions.nMaxConnections);
-    clientConnOptions.nMaxAddnode = MAX_ADDNODE_CONNECTIONS;
-    clientConnOptions.nMaxFeeler = 1;
-//    clientConnOptions.nBestHeight = chain_active_height;
-//    clientConnOptions.uiInterface = &uiInterface;
-    clientConnOptions.m_msgproc = clientLogic.get();
-    clientConnOptions.nSendBufferMaxSize = 1000*gArgs.GetArg("-maxsendbuffer", DEFAULT_MAXSENDBUFFER);
-    clientConnOptions.nReceiveFloodSize = 1000*gArgs.GetArg("-maxreceivebuffer", DEFAULT_MAXRECEIVEBUFFER);
-    /* server do not initiate connection to clients. */
-//    clientConnOptions.m_added_nodes = gArgs.GetArgs("-addnode");
+    /* ---- start client req listening thread. ----- */
+    if (g_pbft->isLeader()) {
+	CConnman::Options clientConnOptions;
+	clientConnOptions.nLocalServices = nLocalServices;
+	clientConnOptions.nMaxConnections = nMaxConnections;
+	clientConnOptions.nMaxOutbound = std::min(MAX_OUTBOUND_CONNECTIONS, clientConnOptions.nMaxConnections);
+	clientConnOptions.nMaxAddnode = MAX_ADDNODE_CONNECTIONS;
+	clientConnOptions.nMaxFeeler = 1;
+    //    clientConnOptions.nBestHeight = chain_active_height;
+    //    clientConnOptions.uiInterface = &uiInterface;
+	clientConnOptions.m_msgproc = clientLogic.get();
+	clientConnOptions.nSendBufferMaxSize = 1000*gArgs.GetArg("-maxsendbuffer", DEFAULT_MAXSENDBUFFER);
+	clientConnOptions.nReceiveFloodSize = 1000*gArgs.GetArg("-maxreceivebuffer", DEFAULT_MAXRECEIVEBUFFER);
+	/* server do not initiate connection to clients. */
+    //    clientConnOptions.m_added_nodes = gArgs.GetArgs("-addnode");
 
-    clientConnOptions.nMaxOutboundTimeframe = nMaxOutboundTimeframe;
-    clientConnOptions.nMaxOutboundLimit = nMaxOutboundLimit;
-    clientConnOptions.isForClientConnection = true;
-    /* server do not initiate connection to clients. */
-    // Initiate outbound connections unless connect=0
-//    clientConnOptions.m_use_addrman_outgoing = !gArgs.IsArgSet("-connect");
-//    if (!clientConnOptions.m_use_addrman_outgoing) {
-//        const auto connect = gArgs.GetArgs("-connect");
-//        if (connect.size() != 1 || connect[0] != "0") {
-//            clientConnOptions.m_specified_outgoing = connect;
-//        }
-//    }
+	clientConnOptions.nMaxOutboundTimeframe = nMaxOutboundTimeframe;
+	clientConnOptions.nMaxOutboundLimit = nMaxOutboundLimit;
+	clientConnOptions.isForClientConnection = true;
 
-    if (!client_connman.Start(scheduler, clientConnOptions)) {
-        return false;
+	/* do not connect to seed node.
+	 * we also leave connOptions.m_specified_outgoing unset, so this client req
+	 * listen thread will not connect to anyone.
+	 */
+	clientConnOptions.m_use_addrman_outgoing = false;
+
+	if (!client_connman.Start(scheduler, clientConnOptions)) {
+	    return false;
+	}
     }
 
     // ********************************************************* Step 12: finished

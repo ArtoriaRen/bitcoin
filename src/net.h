@@ -315,6 +315,7 @@ public:
     unsigned int GetReceiveFloodSize() const;
 
     void WakeMessageHandler();
+    void SetLastNodeId(NodeId value);
 private:
     struct ListenSocket {
         SOCKET socket;

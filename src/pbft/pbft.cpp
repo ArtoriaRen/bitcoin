@@ -27,7 +27,55 @@ std::string leaderAddrString;
 std::string clientAddrString;
 int32_t pbftID; 
 
-CPbft::CPbft() : localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize * num_committees)), privateKey(CKey()) {
+ThreadSafeQueue::ThreadSafeQueue() { }
+
+ThreadSafeQueue::~ThreadSafeQueue() { }
+
+ClientReqRef& ThreadSafeQueue::front() {
+    std::unique_lock<std::mutex> mlock(mutex_);
+    while (queue_.empty()) {
+        cond_.wait(mlock);
+    }
+    return queue_.front();
+}
+
+void ThreadSafeQueue::pop_front() {
+    std::unique_lock<std::mutex> mlock(mutex_);
+    while (queue_.empty()) {
+        cond_.wait(mlock);
+    }
+    queue_.pop_front();
+}
+
+void ThreadSafeQueue::push_back(const ClientReqRef& item) {
+    std::unique_lock<std::mutex> mlock(mutex_);
+    queue_.push_back(item);
+    mlock.unlock(); // unlock before notificiation to minimize mutex con
+    cond_.notify_one(); // notify one waiting thread
+
+}
+
+void ThreadSafeQueue::push_back(ClientReqRef&& item) {
+    std::unique_lock<std::mutex> mlock(mutex_);
+    queue_.push_back(std::move(item));
+    mlock.unlock(); // unlock before notificiation to minimize mutex con
+    cond_.notify_one(); // notify one waiting thread
+
+}
+
+int ThreadSafeQueue::size() {
+    std::unique_lock<std::mutex> mlock(mutex_);
+    int size = queue_.size();
+    mlock.unlock();
+    return size;
+}
+
+bool ThreadSafeQueue::empty() {
+    std::unique_lock<std::mutex> mlock(mutex_);
+    return queue_.empty();
+}
+
+CPbft::CPbft() : localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize * num_committees)), nReqInFly(0), nextInFlyIdx(0), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));

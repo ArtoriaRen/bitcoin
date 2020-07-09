@@ -77,7 +77,6 @@ class ClientReqLogic: public NetEventsInterface{
 private:
     CConnman* const connman;
     CPbft* const pbft;
-    std::queue<std::shared_ptr<CClientReq>> reqQueue;
 public:
     explicit ClientReqLogic(CConnman* connman, CPbft* pbft, CScheduler &scheduler);
     void InitializeNode(CNode* pnode) override;

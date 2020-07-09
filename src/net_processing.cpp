@@ -659,7 +659,7 @@ void ClientReqLogic::FinalizeNode(NodeId nodeid, bool& fUpdateConnectionTime) {
         assert(nPeersWithValidatedDownloads == 0);
         assert(g_outbound_peers_with_protect_from_disconnect == 0);
     }
-    LogPrint(BCLog::NET, "Cleared nodestate for peer=%d\n", nodeid);
+    LogPrint(BCLog::NET, "Cleared nodestate for client=%d\n", nodeid);
 }
 
 bool GetNodeStateStats(NodeId nodeid, CNodeStateStats &stats) {
@@ -858,6 +858,10 @@ PeerLogicValidation::PeerLogicValidation(CConnman* connmanIn, CPbft* pbftIn, CSc
 }
 
 ClientReqLogic::ClientReqLogic(CConnman* connmanIn, CPbft* pbftIn, CScheduler &scheduler) : connman(connmanIn), pbft(pbftIn) {
+    /* Because client nodes and peer nodes will both be put in a global mapNodeState, 
+     * we add an offset of 100 to client node ids.
+     */
+    connman->SetLastNodeId(100);
 }
 
 void PeerLogicValidation::BlockConnected(const std::shared_ptr<const CBlock>& pblock, const CBlockIndex* pindex, const std::vector<CTransactionRef>& vtxConflicted) {
@@ -1890,9 +1894,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	}
     }
 
-    /* TODO : take client req from the reqQueue when need to process new req. 
-     * Probably we should do this when there are, e.g., 10 reqs in fly. Should 
-     * turn this number to get best thoroughput. */
 //    /* The pbft leader receiving a tx will assemble pp message. */
 //    else if (strCommand == NetMsgType::PBFT_TX || strCommand == NetMsgType::OMNI_LOCK) {
 //        CTransactionRef ptx;
@@ -2996,6 +2997,37 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         LogPrint(BCLog::NET, "Unknown command \"%s\" from peer=%d\n", SanitizeString(strCommand), pfrom->GetId());
     }
 
+    /* TODO : take client req from the reqQueue when need to process new req. 
+     * Probably we should do this when there are, e.g., 10 reqs in fly. Should 
+     * tune this number to get best thoroughput.
+     * reqQueue is threadsafe, so we do not acquire lock before querying its size.
+     */ 
+
+    if (pbft->isLeader() && pbft->reqQueue.size() > 0 &&  pbft->nReqInFly < pbft->nMaxReqInFly) {
+	while (!pbft->reqQueue.empty() && pbft->nReqInFly < pbft->nMaxReqInFly) {
+	    ClientReqRef req = pbft->reqQueue.front();
+	    pbft->reqQueue.pop_front();
+	    /* send ppMsg for this reqs.*/
+	    CPre_prepare ppMsg = pbft->assemblePPMsg(req, ClientReqType::TX);
+	    pbft->log[ppMsg.seq].ppMsg = ppMsg;
+	    pbft->log[ppMsg.seq].phase = PbftPhase::prepare;
+	    const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
+	    std::cout << ", log slot "<< ppMsg.seq << " for tx = "
+		    << pbft->log[ppMsg.seq].ppMsg.req->GetDigest().GetHex().substr(0, 10)
+		    << ", peers.size = " << pbft->peers.size()<< std::endl;
+	    uint32_t start_peerID = pbftID + 1; // skip the leader id b/c it is myself
+	    uint32_t end_peerID = start_peerID + CPbft::groupSize - 1;
+	    for (uint32_t i = start_peerID; i < end_peerID; i++) {
+		connman->PushMessage(pbft->peers[i], msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
+	    }
+
+	    pbft->nReqInFly++;
+	}
+
+
+    }
+
+
 
 
     return true;
@@ -3151,7 +3183,7 @@ bool PeerLogicValidation::ProcessMessages(CNode* pfrom, std::atomic<bool>& inter
     return fMoreWork;
 }
 
-bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman* connman, CPbft* pbft, std::queue<std::shared_ptr<CClientReq>>& reqQ, const std::atomic<bool>& interruptMsgProc)
+bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman* connman, CPbft* pbft, const std::atomic<bool>& interruptMsgProc)
 {
     std::cout << __func__ << ": " << strCommand << std::endl;
     LogPrint(BCLog::NET, "received: %s (%u bytes) peer=%d\n", SanitizeString(strCommand), vRecv.size(), pfrom->GetId());
@@ -3480,9 +3512,9 @@ bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CD
     else if (strCommand == NetMsgType::PBFT_TX) {
         CTransactionRef ptx;
         vRecv >> ptx;
-	std::shared_ptr<CClientReq> req = std::make_shared<TxReq>(*ptx);
-	reqQ.push(req);
-	std::cout << __func__ << ": push to req queue tx = " << ptx->ToString() << std::endl;
+	ClientReqRef req = std::make_shared<TxReq>(*ptx);
+	pbft->reqQueue.push_back(req);
+	std::cout << __func__ << ": push to req queue tx = " << ptx->GetHash().GetHex().substr(0, 10) << std::endl;
     }
 
 //    else if (strCommand == NetMsgType::OMNI_LOCK) {
@@ -3512,6 +3544,7 @@ bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CD
 //	    connman->PushMessage(pbft->peers[i], msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
 //	}
 //    }
+    
     else if (strCommand == NetMsgType::GETADDR)
     {
         // This asymmetric behavior for inbound and outbound connections was introduced
@@ -3616,7 +3649,7 @@ bool ClientReqLogic::ProcessMessages(CNode* pfrom, std::atomic<bool>& interruptM
     bool fRet = false;
     try
     {
-        fRet = ProcessClientMessage(pfrom, strCommand, vRecv, msg.nTime, chainparams, connman, pbft, reqQueue, interruptMsgProc);
+        fRet = ProcessClientMessage(pfrom, strCommand, vRecv, msg.nTime, chainparams, connman, pbft, interruptMsgProc);
         if (interruptMsgProc)
             return false;
         if (!pfrom->vRecvGetData.empty())
@@ -4341,7 +4374,6 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
 
 bool ClientReqLogic::SendMessages(CNode* pto, std::atomic<bool>& interruptMsgProc)
 {
-
     const Consensus::Params& consensusParams = Params().GetConsensus();
     {
         // Don't send anything until the version handshake is complete
