@@ -28,24 +28,27 @@ extern bool fIsClient; // if this node is a pbft client.
 extern std::string clientAddrString;
 extern int32_t pbftID;
 
-typedef std::shared_ptr<CClientReq> ClientReqRef;
+typedef struct TypedReq{
+    ClientReqType type;
+    std::shared_ptr<CClientReq> pReq;
+} TypedReq;
 
 class ThreadSafeQueue {
 public:
     ThreadSafeQueue();
     ~ThreadSafeQueue();
 
-    ClientReqRef& front();
+    TypedReq& front();
     void pop_front();
 
-    void push_back(const ClientReqRef& item);
-    void push_back(ClientReqRef&& item);
+    void push_back(const TypedReq& item);
+    void push_back(TypedReq&& item);
 
     int size();
     bool empty();
 
 private:
-    std::deque<ClientReqRef> queue_;
+    std::deque<TypedReq> queue_;
     std::mutex mutex_;
     std::condition_variable cond_;
 };

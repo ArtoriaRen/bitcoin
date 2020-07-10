@@ -3011,10 +3011,10 @@ bool PeerLogicValidation::SendPPMessages(){
 	    && pbft->reqQueue.size() > 0 
 	    &&  pbft->nReqInFly < pbft->nMaxReqInFly) {
 	while (!pbft->reqQueue.empty() && pbft->nReqInFly < pbft->nMaxReqInFly) {
-	    ClientReqRef req = pbft->reqQueue.front();
+	    TypedReq req = pbft->reqQueue.front();
 	    pbft->reqQueue.pop_front();
 	    /* send ppMsg for this reqs.*/
-	    CPre_prepare ppMsg = pbft->assemblePPMsg(req, ClientReqType::TX);
+	    CPre_prepare ppMsg = pbft->assemblePPMsg(req.pReq, req.type);
 	    pbft->log[ppMsg.seq].ppMsg = ppMsg;
 	    pbft->log[ppMsg.seq].phase = PbftPhase::prepare;
 	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
@@ -3511,9 +3511,32 @@ bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CD
     else if (strCommand == NetMsgType::PBFT_TX) {
         CTransactionRef ptx;
         vRecv >> ptx;
-	ClientReqRef req = std::make_shared<TxReq>(*ptx);
-	pbft->reqQueue.push_back(req);
+	std::shared_ptr<CClientReq> req = std::make_shared<TxReq>(*ptx);
+	TypedReq typedReq = {ClientReqType::TX, req};
+	pbft->reqQueue.push_back(typedReq);
 	std::cout << __func__ << ": push to req queue tx = " << ptx->GetHash().GetHex().substr(0, 10) << std::endl;
+        g_connman->WakeMessageHandler();
+    }
+
+    /* received a lock req, put it in queue . */
+    else if (strCommand == NetMsgType::OMNI_LOCK) {
+        CTransactionRef ptx;
+        vRecv >> ptx;
+	std::shared_ptr<CClientReq> req = std::make_shared<LockReq>(*ptx);
+	TypedReq typedReq = {ClientReqType::LOCK, req};
+	pbft->reqQueue.push_back(typedReq);
+	std::cout << __func__ << ": push to req queue lockreq. tx = " << ptx->GetHash().GetHex().substr(0, 10) << std::endl;
+        g_connman->WakeMessageHandler();
+    }
+
+    /* received an unlock_to_commit req, put it in queue . */
+    else if (strCommand == NetMsgType::OMNI_UNLOCK_COMMIT) {
+	std::shared_ptr<UnlockToCommitReq> pUnlockCommitReq(new UnlockToCommitReq());
+        vRecv >> *pUnlockCommitReq;
+	TypedReq typedReq = {ClientReqType::LOCK, pUnlockCommitReq};
+	pbft->reqQueue.push_back(typedReq);
+	CTransaction tx(pUnlockCommitReq->tx_mutable);
+	std::cout << __func__ << ": push to req queue lockreq. tx = " << tx.GetHash().GetHex().substr(0, 10) << std::endl;
         g_connman->WakeMessageHandler();
     }
 

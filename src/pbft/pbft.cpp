@@ -31,7 +31,7 @@ ThreadSafeQueue::ThreadSafeQueue() { }
 
 ThreadSafeQueue::~ThreadSafeQueue() { }
 
-ClientReqRef& ThreadSafeQueue::front() {
+TypedReq& ThreadSafeQueue::front() {
     std::unique_lock<std::mutex> mlock(mutex_);
     while (queue_.empty()) {
         cond_.wait(mlock);
@@ -47,7 +47,7 @@ void ThreadSafeQueue::pop_front() {
     queue_.pop_front();
 }
 
-void ThreadSafeQueue::push_back(const ClientReqRef& item) {
+void ThreadSafeQueue::push_back(const TypedReq& item) {
     std::unique_lock<std::mutex> mlock(mutex_);
     queue_.push_back(item);
     mlock.unlock(); // unlock before notificiation to minimize mutex con
@@ -55,7 +55,7 @@ void ThreadSafeQueue::push_back(const ClientReqRef& item) {
 
 }
 
-void ThreadSafeQueue::push_back(ClientReqRef&& item) {
+void ThreadSafeQueue::push_back(TypedReq&& item) {
     std::unique_lock<std::mutex> mlock(mutex_);
     queue_.push_back(std::move(item));
     mlock.unlock(); // unlock before notificiation to minimize mutex con
@@ -151,10 +151,14 @@ bool CPbft::ProcessP(CConnman* connman, CPbftMessage& pMsg, bool fCheck) {
 
     /* count the number of prepare msg. enter commit if greater than 2f */
     log[pMsg.seq].prepareCount++;
-    /* In the if condition, we use == (nFaulty << 1) instead of >= (nFaulty << 1),
-     * so that we do not re-send commit msg every time another prepare msg is received.
+    /* In the if condition, we use >= (nFaulty << 1) withou worrying about 
+     * sending more than one cMsg beacuse the log phase will turn to commit 
+     * at the first time the if conditions are met. Thus the code in the if
+     * block will not be executed more than once.
+     * We use >= instead of == to tolerate receiving more than enough pMsg 
+     * before the ppMsg arrives.
      */
-    if (log[pMsg.seq].phase == PbftPhase::prepare && log[pMsg.seq].prepareCount == (nFaulty << 1)) {
+    if (log[pMsg.seq].phase == PbftPhase::prepare && log[pMsg.seq].prepareCount >= (nFaulty << 1)) {
 	/* Enter commit phase. */
         log[pMsg.seq].phase = PbftPhase::commit;
 	/* make a cMsg */
@@ -196,7 +200,7 @@ bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
 
     // count the number of commit msg. enter execute if greater than 2f+1
     log[cMsg.seq].commitCount++;
-    if (log[cMsg.seq].phase == PbftPhase::commit && log[cMsg.seq].commitCount == (nFaulty << 1) + 1) {
+    if (log[cMsg.seq].phase == PbftPhase::commit && log[cMsg.seq].commitCount >= (nFaulty << 1) + 1) {
         // enter reply phase
         std::cout << "enter reply phase" << std::endl;
         log[cMsg.seq].phase = PbftPhase::reply;
