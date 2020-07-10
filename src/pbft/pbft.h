@@ -108,8 +108,6 @@ private:
     CKey privateKey;
 };
 
-
-
 extern std::unique_ptr<CPbft> g_pbft;
 #endif /* PBFT_H */
 

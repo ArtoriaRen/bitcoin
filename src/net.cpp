@@ -2001,7 +2001,7 @@ void CConnman::OpenNetworkConnection(const CAddress& addrConnect, bool fCountFai
     }
 }
 
-void CConnman::ThreadMessageHandler()
+void CConnman::ThreadMessageHandler(bool isForClientConnection)
 {
     while (!flagInterruptMsgProc)
     {
@@ -2035,6 +2035,10 @@ void CConnman::ThreadMessageHandler()
             if (flagInterruptMsgProc)
                 return;
         }
+
+	if (!isForClientConnection) {
+	    m_msgproc->SendPPMessages();
+	}
 
         {
             LOCK(cs_vNodes);
@@ -2370,7 +2374,7 @@ bool CConnman::Start(CScheduler& scheduler, const Options& connOptions)
         threadOpenConnections = std::thread(&TraceThread<std::function<void()> >, "opencon", std::function<void()>(std::bind(&CConnman::ThreadOpenConnections, this, connOptions.m_specified_outgoing)));
 
     // Process messages
-    threadMessageHandler = std::thread(&TraceThread<std::function<void()> >, "msghand", std::function<void()>(std::bind(&CConnman::ThreadMessageHandler, this)));
+    threadMessageHandler = std::thread(&TraceThread<std::function<void()> >, "msghand", std::function<void()>(std::bind(&CConnman::ThreadMessageHandler, this, connOptions.isForClientConnection)));
 
     // Dump network addresses
     scheduler.scheduleEvery(std::bind(&CConnman::DumpData, this), DUMP_ADDRESSES_INTERVAL * 1000);

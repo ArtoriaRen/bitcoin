@@ -63,7 +63,7 @@ public:
     * @return                      True if there is more work to be done
     */
     bool SendMessages(CNode* pto, std::atomic<bool>& interrupt) override;
-
+    bool SendPPMessages() override;
     void ConsiderEviction(CNode *pto, int64_t time_in_seconds);
     void CheckForStaleTipAndEvictPeers(const Consensus::Params &consensusParams);
     void EvictExtraOutboundPeers(int64_t time_in_seconds);
@@ -83,6 +83,7 @@ public:
     void FinalizeNode(NodeId nodeid, bool& fUpdateConnectionTime) override;
     bool ProcessMessages(CNode* pfrom, std::atomic<bool>& interrupt) override;
     bool SendMessages(CNode* pto, std::atomic<bool>& interrupt) override;
+    bool SendPPMessages() override;
 };
 
 struct CNodeStateStats {

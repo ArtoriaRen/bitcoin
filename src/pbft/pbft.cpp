@@ -103,7 +103,7 @@ bool CPbft::ProcessPP(CConnman* connman, CPre_prepare& ppMsg) {
 
     std::cout << "digest = " << ppMsg.digest.GetHex() << std::endl;
 
-    /* Enter prepare phase. add the pMsg of from the node itself. */
+    /* Enter prepare phase. */
     log[ppMsg.seq].phase = PbftPhase::prepare;
     /* make a pMsg */
     CPbftMessage pMsg = assembleMsg(ppMsg.seq);
@@ -155,9 +155,8 @@ bool CPbft::ProcessP(CConnman* connman, CPbftMessage& pMsg, bool fCheck) {
      * so that we do not re-send commit msg every time another prepare msg is received.
      */
     if (log[pMsg.seq].phase == PbftPhase::prepare && log[pMsg.seq].prepareCount == (nFaulty << 1)) {
-	/* Enter commit phase. add the cMsg of from the node itself. */
+	/* Enter commit phase. */
         log[pMsg.seq].phase = PbftPhase::commit;
-	log[pMsg.seq].commitCount++;
 	/* make a cMsg */
 	CPbftMessage cMsg = assembleMsg(pMsg.seq);
 	/* send the cMsg to other peers */
@@ -171,7 +170,7 @@ bool CPbft::ProcessP(CConnman* connman, CPbftMessage& pMsg, bool fCheck) {
 	    connman->PushMessage(peers[i], msgMaker.Make(NetMsgType::PBFT_C, cMsg));
 	}
 	/* add the cMsg to our own log.
-	 * We should do this after we send the pMsg to other peers so that we always 
+	 * We should do this after we send the cMsg to other peers so that we always 
 	 * send cMsg before execute tx. 
 	 */
 	ProcessC(connman, cMsg, false);
