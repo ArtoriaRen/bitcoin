@@ -1848,6 +1848,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	} else {
 	    std::cout << strCommand << " sig ok" << std::endl;
 	}
+	std::cout << __func__ << ": received PBFT_REPLY for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
 	g_pbft->replyMap[reply.digest].emplace(pfrom->GetAddrName());
 	if (g_pbft->replyMap[reply.digest].size() == 2 * CPbft::nFaulty + 1) {
 	    struct timeval endTime;
@@ -1862,7 +1863,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    std::cout << (stat.type == TxType::SINGLE_SHARD ? "single-shard" : "cross-shard") << ", latency = " << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << " ms" << std::endl;
 	}
 		
-	std::cout << __func__ << ": received PBFT_REPLY for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
     }
 
     else if (strCommand == NetMsgType::OMNI_LOCK_REPLY)
@@ -1883,7 +1883,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	/* Check if the client has accumulated enough replies from every shard. If so, send a unlock_to_commit req to the output shard. */
 	bool isLeastReplyShard = true;
 	uint reply_threshold = 2 * CPbft::nFaulty + 1;
-        std::cout << "num of input shards = " << g_pbft->inputShardReplyMap[reply.digest].lockReply.size() << std::endl;
+        //std::cout << "num of input shards = " << g_pbft->inputShardReplyMap[reply.digest].lockReply.size() << std::endl;
 	for (auto& p: g_pbft->inputShardReplyMap[reply.digest].lockReply) {
 	    std::cout << "shardId = " << p.first << ": number of lock replies = " << p.second.size() << std::endl;
 	    if (p.second.size() < shardReplies.size()) {
@@ -1894,9 +1894,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	if (isLeastReplyShard && shardReplies.size() == reply_threshold && reply.reply == 'y') {
 	    if (reply.reply == 'y') {
 		    std::cout << "LOCK SUCCEED, ";
-	    } else if (reply.reply == 'n') {
-		    std::cout << "LOCK FAIL, ";
-	    } 
+	    }  
 	    /* assemble a vector including (2f + 1) replies for every shard */
 	    std::vector<CInputShardReply> vReply;
 	    vReply.reserve(reply_threshold * g_pbft->inputShardReplyMap[reply.digest].lockReply.size());
@@ -1914,7 +1912,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    connman->PushMessage(g_pbft->leaders[outputShard], msgMaker.Make(NetMsgType::OMNI_UNLOCK_COMMIT, commitReq));
 	    /* add the new req digest with the tx start time to the stat map. */
             g_pbft->mapTxStartTime.insert(std::make_pair(commitReq.GetDigest(), g_pbft->mapTxStartTime[reply.digest]));
-	}
+	} else if (isLeastReplyShard && shardReplies.size() == reply_threshold && reply.reply == 'n') {
+	    std::cout << "LOCK FAIL " << std::endl;
+        }
     }
 
     else if (strCommand == NetMsgType::SENDHEADERS)
