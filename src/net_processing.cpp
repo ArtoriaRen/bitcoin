@@ -2979,13 +2979,19 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         LogPrint(BCLog::NET, "Unknown command \"%s\" from peer=%d\n", SanitizeString(strCommand), pfrom->GetId());
     }
 
+    return true;
+}
+
+bool PeerLogicValidation::SendPPMessages(){
     /* TODO : take client req from the reqQueue when need to process new req. 
      * Probably we should do this when there are, e.g., 10 reqs in fly. Should 
      * tune this number to get best thoroughput.
      * reqQueue is threadsafe, so we do not acquire lock before querying its size.
      */ 
 
-    if (pbft->isLeader() && pbft->reqQueue.size() > 0 &&  pbft->nReqInFly < pbft->nMaxReqInFly) {
+    if (pbft->isLeader() 
+	    && pbft->reqQueue.size() > 0 
+	    &&  pbft->nReqInFly < pbft->nMaxReqInFly) {
 	while (!pbft->reqQueue.empty() && pbft->nReqInFly < pbft->nMaxReqInFly) {
 	    CTransactionRef req = pbft->reqQueue.front();
 	    pbft->reqQueue.pop_front();
@@ -2993,7 +2999,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    CPre_prepare ppMsg = pbft->assemblePPMsg(*req);
 	    pbft->log[ppMsg.seq].ppMsg = ppMsg;
 	    pbft->log[ppMsg.seq].phase = PbftPhase::prepare;
-	    const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
+	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	    std::cout << ", log slot "<< ppMsg.seq << " for tx = "
 		    << pbft->log[ppMsg.seq].ppMsg.tx_mutable.GetHash().GetHex().substr(0, 10)
 		    << ", peers.size = " << pbft->peers.size()<< std::endl;
@@ -3002,7 +3008,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    for (uint32_t i = start_peerID; i < end_peerID; i++) {
 		connman->PushMessage(pbft->peers[i], msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
 	    }
-
 	    pbft->nReqInFly++;
 	}
     }
@@ -3490,6 +3495,7 @@ bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CD
         vRecv >> ptx;
         pbft->reqQueue.push_back(ptx);
         std::cout << __func__ << ": push to req queue tx = " << ptx->GetHash().GetHex().substr(0, 10) << std::endl;
+        g_connman->WakeMessageHandler();
     }
 
     else if (strCommand == NetMsgType::GETADDR)
@@ -3790,7 +3796,6 @@ public:
 
 bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptMsgProc)
 {
-    const Consensus::Params& consensusParams = Params().GetConsensus();
     {
         // Don't send anything until the version handshake is complete
         if (!pto->fSuccessfullyConnected || pto->fDisconnect)
@@ -3834,7 +3839,6 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
 
         if (SendRejectsAndCheckIfBanned(pto, connman))
             return true;
-        CNodeState &state = *State(pto->GetId());
 
         // Address refresh broadcast
         int64_t nNow = GetTimeMicros();
@@ -4319,9 +4323,13 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
     return true;
 }
 
+bool ClientReqLogic::SendPPMessages() {
+    std::cout << "should not call the SendPPMsg of client listening thread." << std::endl;
+    return true;
+}
+
 bool ClientReqLogic::SendMessages(CNode* pto, std::atomic<bool>& interruptMsgProc)
 {
-    const Consensus::Params& consensusParams = Params().GetConsensus();
     {
         // Don't send anything until the version handshake is complete
         if (!pto->fSuccessfullyConnected || pto->fDisconnect)
@@ -4365,7 +4373,6 @@ bool ClientReqLogic::SendMessages(CNode* pto, std::atomic<bool>& interruptMsgPro
 
         if (SendRejectsAndCheckIfBanned(pto, connman))
             return true;
-        CNodeState &state = *State(pto->GetId());
 
         // Address refresh broadcast
         int64_t nNow = GetTimeMicros();
