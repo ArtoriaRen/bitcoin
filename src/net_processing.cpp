@@ -1894,54 +1894,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	}
     }
 
-//    /* The pbft leader receiving a tx will assemble pp message. */
-//    else if (strCommand == NetMsgType::PBFT_TX || strCommand == NetMsgType::OMNI_LOCK) {
-//        CTransactionRef ptx;
-//        vRecv >> ptx;
-//	CPre_prepare ppMsg;
-//	if (strCommand == NetMsgType::PBFT_TX) {
-//	    std::shared_ptr<TxReq> ptxReq(new TxReq(*ptx));
-//	    ppMsg = pbft->assemblePPMsg(ptxReq, ClientReqType::TX);
-//	} else {
-//	    std::shared_ptr<LockReq> plockReq(new LockReq(*ptx));
-//	    ppMsg = pbft->assemblePPMsg(plockReq, ClientReqType::LOCK);
-//	}
-//	/* add the ppMsg to the leader's own log. */
-//	pbft->log[ppMsg.seq].ppMsg = ppMsg;
-//	pbft->log[ppMsg.seq].phase = PbftPhase::prepare;
-//	const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
-//	std::cout << __func__ << ": received tx = " << ptx->ToString()
-//		<< ", peers.size = " << pbft->peers.size()
-//		<< ", log slot "<< ppMsg.seq << " for tx = "
-//		<< pbft->log[ppMsg.seq].ppMsg.req->GetDigest().GetHex() << std::endl;
-//	uint32_t start_peerID = pbftID + 1; // skip the leader id b/c it is myself
-//	uint32_t end_peerID = start_peerID + CPbft::groupSize - 1;
-//	for (uint32_t i = start_peerID; i < end_peerID; i++) {
-//	    connman->PushMessage(pbft->peers[i], msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
-//	}
-//    }
-//
-//    else if (strCommand == NetMsgType::OMNI_UNLOCK_COMMIT) {
-//	std::shared_ptr<UnlockToCommitReq> pUnlockCommitReq(new UnlockToCommitReq());
-//        vRecv >> *pUnlockCommitReq;
-//	CPre_prepare ppMsg;
-//	ppMsg = pbft->assemblePPMsg(pUnlockCommitReq, ClientReqType::UNLOCK_TO_COMMIT);
-//	/* add the ppMsg to the leader's own log. */
-//	pbft->log[ppMsg.seq].ppMsg = ppMsg;
-//	pbft->log[ppMsg.seq].phase = PbftPhase::prepare;
-//	const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
-//	CTransaction tx(pUnlockCommitReq->tx_mutable);
-//	std::cout << __func__ << ": received tx = " << tx.GetHash().GetHex().substr(0, 10)
-//		<< ", peers.size = " << pbft->peers.size()
-//		<< ", log slot "<< ppMsg.seq << " for req = "
-//		<< pbft->log[ppMsg.seq].ppMsg.req->GetDigest().GetHex() << std::endl;
-//	uint32_t start_peerID = pbftID + 1; // skip the leader id b/c it is myself
-//	uint32_t end_peerID = start_peerID + CPbft::groupSize - 1;
-//	for (uint32_t i = start_peerID; i < end_peerID; i++) {
-//	    connman->PushMessage(pbft->peers[i], msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
-//	}
-//    }
-
     else if (strCommand == NetMsgType::PBFT_PP) {
         CPre_prepare ppMsg;
         vRecv >> ppMsg;
@@ -3018,7 +2970,7 @@ bool PeerLogicValidation::SendPPMessages(){
 	    pbft->log[ppMsg.seq].ppMsg = ppMsg;
 	    pbft->log[ppMsg.seq].phase = PbftPhase::prepare;
 	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-	    std::cout << ", log slot "<< ppMsg.seq << " for tx = "
+	    std::cout << __func__ << ": log slot "<< ppMsg.seq << " for req = "
 		    << pbft->log[ppMsg.seq].ppMsg.req->GetDigest().GetHex().substr(0, 10)
 		    << ", peers.size = " << pbft->peers.size()<< std::endl;
 	    uint32_t start_peerID = pbftID + 1; // skip the leader id b/c it is myself
@@ -3533,41 +3485,13 @@ bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CD
     else if (strCommand == NetMsgType::OMNI_UNLOCK_COMMIT) {
 	std::shared_ptr<UnlockToCommitReq> pUnlockCommitReq(new UnlockToCommitReq());
         vRecv >> *pUnlockCommitReq;
-	TypedReq typedReq = {ClientReqType::LOCK, pUnlockCommitReq};
+	TypedReq typedReq = {ClientReqType::UNLOCK_TO_COMMIT, pUnlockCommitReq};
 	pbft->reqQueue.push_back(typedReq);
 	CTransaction tx(pUnlockCommitReq->tx_mutable);
-	std::cout << __func__ << ": push to req queue lockreq. tx = " << tx.GetHash().GetHex().substr(0, 10) << std::endl;
+	std::cout << __func__ << ": push to req queue unlockCommitReq. tx = " << tx.GetHash().GetHex().substr(0, 10) << std::endl;
         g_connman->WakeMessageHandler();
     }
 
-//    else if (strCommand == NetMsgType::OMNI_LOCK) {
-//        CTransactionRef ptx;
-//        vRecv >> ptx;
-//	std::shared_ptr<LockReq> plockReq(new LockReq(*ptx));
-//	ppMsg = pbft->assemblePPMsg(plockReq, ClientReqType::LOCK);
-//    }
-//
-//    else if (strCommand == NetMsgType::OMNI_UNLOCK_COMMIT) {
-//	std::shared_ptr<UnlockToCommitReq> pUnlockCommitReq(new UnlockToCommitReq());
-//        vRecv >> *pUnlockCommitReq;
-//	CPre_prepare ppMsg;
-//	ppMsg = pbft->assemblePPMsg(pUnlockCommitReq, ClientReqType::UNLOCK_TO_COMMIT);
-//	/* add the ppMsg to the leader's own log. */
-//	pbft->log[ppMsg.seq].ppMsg = ppMsg;
-//	pbft->log[ppMsg.seq].phase = PbftPhase::prepare;
-//	const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
-//	CTransaction tx(pUnlockCommitReq->tx_mutable);
-//	std::cout << __func__ << ": received tx = " << tx.GetHash().GetHex().substr(0, 10)
-//		<< ", peers.size = " << pbft->peers.size()
-//		<< ", log slot "<< ppMsg.seq << " for req = "
-//		<< pbft->log[ppMsg.seq].ppMsg.req->GetDigest().GetHex() << std::endl;
-//	uint32_t start_peerID = pbftID + 1; // skip the leader id b/c it is myself
-//	uint32_t end_peerID = start_peerID + CPbft::groupSize - 1;
-//	for (uint32_t i = start_peerID; i < end_peerID; i++) {
-//	    connman->PushMessage(pbft->peers[i], msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
-//	}
-//    }
-    
     else if (strCommand == NetMsgType::GETADDR)
     {
         // This asymmetric behavior for inbound and outbound connections was introduced

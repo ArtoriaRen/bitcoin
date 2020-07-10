@@ -297,7 +297,7 @@ CReply CPbft::assembleReply(const uint32_t seq) {
 }
 
 CInputShardReply CPbft::assembleInputShardReply(const uint32_t seq) {
-    CInputShardReply toSent('y', log[seq].ppMsg.digest, ((LockReq*)log[seq].ppMsg.req.get())->totalValueInOfShard);
+    CInputShardReply toSent(log[seq].result, log[seq].ppMsg.digest, ((LockReq*)log[seq].ppMsg.req.get())->totalValueInOfShard);
     uint256 hash;
     toSent.getHash(hash);
     privateKey.Sign(hash, toSent.vchSig);
