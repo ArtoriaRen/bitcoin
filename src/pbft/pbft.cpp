@@ -8,7 +8,7 @@
 #include<string.h>
 #include <netinet/in.h>
 #include "pbft/pbft.h"
-#include "init.h"
+#include "validation.h"
 #include "pbft/pbft_msg.h"
 #include "crypto/aes.h"
 #include "consensus/tx_verify.h"
@@ -19,7 +19,7 @@ std::string leaderAddrString;
 std::string clientAddrString;
 int32_t pbftID; 
 
-CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nextInFlyIdx(0), privateKey(CKey()) {
+CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nextInFlyIdx(0), clientConnMan(nullptr), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
@@ -203,6 +203,14 @@ bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
 	CReply cReply = assembleReply(cMsg.seq);
 	for (int i = startReplySeq; i <= lastExecutedSeq; i++) {
             connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, cReply));
+	}
+	/* wake up the client-listening thread to send results to clients. The 
+	 * client-listening thread is probably already up if the client sends 
+	 * request too frequently. 
+	 * The following code cause linking errors still not fixed.
+	 */
+	if (isLeader()) {
+	    clientConnMan->WakeMessageHandler();
 	}
     }
     return true;

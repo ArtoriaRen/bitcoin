@@ -78,6 +78,9 @@ public:
     int nextInFlyIdx;
     /* a queue storing client req waiting for being processed. */
     ThreadSafeQueue reqQueue;
+    /* we need the client conn man to wake up the client listening thread to send
+     * reply back the client as soon as possible. */
+    CConnman* clientConnMan;
 
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
