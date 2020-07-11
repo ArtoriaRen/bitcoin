@@ -1769,6 +1769,7 @@ bool AppInitMain()
 
     /* ---- start client req listening thread. ----- */
     if (g_pbft->isLeader()) {
+	g_pbft->clientConnMan = &client_connman; 
 	CConnman::Options clientConnOptions;
 	clientConnOptions.nLocalServices = nLocalServices;
 	clientConnOptions.nMaxConnections = nMaxConnections;

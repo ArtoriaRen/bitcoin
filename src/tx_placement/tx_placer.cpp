@@ -34,10 +34,12 @@ std::vector<int32_t> TxPlacer::randomPlace(const CTransaction& tx){
     
     /* add the input shard ids to the set */
     for(uint32_t i = 0; i < tx.vin.size(); i++) {
-	arith_uint256 txid = UintToArith256(tx.vin[i].prevout.hash);
-	arith_uint256 quotient = txid / num_committees;
-	arith_uint256 inShardId = txid - quotient * num_committees;
-	inputShardIds.insert((int)(inShardId.GetLow64()));
+	if (!tx.vin[i].prevout.IsNull()) { // do not calculate shard for dummy coinbase input.
+	    arith_uint256 txid = UintToArith256(tx.vin[i].prevout.hash);
+	    arith_uint256 quotient = txid / num_committees;
+	    arith_uint256 inShardId = txid - quotient * num_committees;
+	    inputShardIds.insert((int)(inShardId.GetLow64()));
+	}
     }
 
 //    std::cout << "tx " << tx->GetHash().GetHex() << " spans shards : ";
