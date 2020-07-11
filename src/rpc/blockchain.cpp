@@ -35,6 +35,7 @@
 
 #include <mutex>
 #include <condition_variable>
+#include "tx_placement/tx_placer.h"
 
 struct CUpdatedBlock
 {
@@ -1440,6 +1441,32 @@ UniValue preciousblock(const JSONRPCRequest& request)
     return NullUniValue;
 }
 
+UniValue sendtxinblocks(const JSONRPCRequest& request)
+{
+    if (request.fHelp || request.params.size() != 2)
+        throw std::runtime_error(
+            "sendtxinblocks \"startblockheight\" \"endblockheight\"\n"
+            "\nSend all transactions in blocks from startblockheight to endblockheight.\n"
+            "\nArguments:\n"
+            "1. \"startblockheight\"   (numerical, required) the block height of the first block\n"
+            "2. \"endblockheight\"   (numerical, required) the block height of the last block + 1\n"
+            "\nResult:\n"
+            "\nExamples:\n"
+            + HelpExampleCli("sendtxinblocks", "\"startblockheight\" \"endblockheight\"")
+            + HelpExampleRpc("sendtxinblocks", "\"startblockheight\" \"endblockheight\"")
+        );
+
+    std::cout << "parsing the first argument" << std::endl;
+    int txStartBlock = request.params[0].get_int();
+    std::cout << "parsing the second argument" << std::endl;
+    int txEndBlock = request.params[1].get_int();
+    for (int i = txStartBlock; i < txEndBlock; i++) {
+	sendTxInBlock(i);
+    }
+
+    return NullUniValue;
+}
+
 UniValue invalidateblock(const JSONRPCRequest& request)
 {
     if (request.fHelp || request.params.size() != 1)
@@ -1638,6 +1665,7 @@ static const CRPCCommand commands[] =
 
     { "blockchain",         "preciousblock",          &preciousblock,          {"blockhash"} },
 
+    { "blockchain",         "sendtxinblocks",         &sendtxinblocks,         {"startblockheight","endblockheight"} },
     /* Not shown in help */
     { "hidden",             "invalidateblock",        &invalidateblock,        {"blockhash"} },
     { "hidden",             "reconsiderblock",        &reconsiderblock,        {"blockhash"} },

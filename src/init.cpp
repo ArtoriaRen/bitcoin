@@ -812,6 +812,12 @@ void InitParameterInteraction()
     if (gArgs.IsArgSet("-pbftid")) {
         pbftID = gArgs.GetArg("-pbftid", -1);
     }
+//    if (gArgs.IsArgSet("-txstartblock")) {
+//        txStartBlock = gArgs.GetArg("-txstartblock", 600000);
+//    }
+//    if (gArgs.IsArgSet("-txendblock")) {
+//        txEndBlock = gArgs.GetArg("-txendblock", 600001);
+//    }
 }
 
 static std::string ResolveErrMsg(const char * const optname, const std::string& strBind)

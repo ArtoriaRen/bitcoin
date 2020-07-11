@@ -20,6 +20,8 @@
 
 extern uint32_t num_committees;
 extern int lastAssignedAffinity;
+//extern uint32_t txStartBlock;
+//extern uint32_t txEndBlock;
 
 class TxPlacer{
 public:
@@ -41,5 +43,6 @@ public:
     // TODO: smartPlaceSorted
 };
 
+void sendTxInBlock(uint32_t block_height);
 #endif /* TX_PLACER_H */
 

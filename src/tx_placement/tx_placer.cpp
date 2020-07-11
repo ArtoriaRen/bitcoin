@@ -11,9 +11,13 @@
 #include "chain.h"
 #include "validation.h"
 #include "chainparams.h"
+#include "netmessagemaker.h"
+#include "pbft/pbft.h"
 
 uint32_t num_committees;
 int lastAssignedAffinity = -1;
+//uint32_t txStartBlock;
+//uint32_t txEndBlock;
 
 TxPlacer::TxPlacer():totalTxNum(0){}
 
@@ -24,10 +28,12 @@ std::vector<int32_t> TxPlacer::randomPlace(const CTransaction& tx){
 
     /* add the input shard ids to the set */
     for(uint32_t i = 0; i < tx.vin.size(); i++) {
-	arith_uint256 txid = UintToArith256(tx.vin[i].prevout.hash);
-	arith_uint256 quotient = txid / num_committees;
-	arith_uint256 inShardId = txid - quotient * num_committees;
-	inputShardIds.insert((int)(inShardId.GetLow64()));
+	if (!tx.vin[i].prevout.IsNull()) { // do not calculate shard for dummy coinbase input.
+	    arith_uint256 txid = UintToArith256(tx.vin[i].prevout.hash);
+	    arith_uint256 quotient = txid / num_committees;
+	    arith_uint256 inShardId = txid - quotient * num_committees;
+	    inputShardIds.insert((int)(inShardId.GetLow64()));
+	}
     }
 
 //    std::cout << "tx " << tx->GetHash().GetHex() << " spans shards : ";
@@ -74,4 +80,46 @@ void TxPlacer::printPlaceResult(){
 	    std::cout << "\t\t" << p.first << "-shard tx count = " << p.second << std::endl;
 	}
     }
+}
+
+void sendTxInBlock(uint32_t block_height) {
+    CBlock block;
+    CBlockIndex* pblockindex = chainActive[block_height];
+    if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
+        std::cerr << "Block not found on disk" << std::endl;
+    }
+    std::cout << __func__ << "sending " << block.vtx.size() << " tx in block " << block_height << std::endl;
+    for (uint j = 0; j < block.vtx.size(); j++) {
+	CTransactionRef tx = block.vtx[j];
+	const uint256& hashTx = tx->GetHash();
+	/* get the input shards and output shards id*/
+	TxPlacer txPlacer;
+	std::vector<int32_t> shards = txPlacer.randomPlace(*tx);
+	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+	assert((tx->IsCoinBase() && shards.size() == 1) || (!tx->IsCoinBase() && shards.size() >= 2)); // there must be at least one output shard and one input shard for non-coinbase tx.
+	std::cout << "tx "  <<  hashTx.GetHex().substr(0, 10) << " : ";
+	for (int shard : shards)
+	    std::cout << shard << ", ";
+	std::cout << std::endl;
+	struct TxStat stat;
+	if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
+	    /* this is a single shard tx */
+	    stat.type = TxType::SINGLE_SHARD;
+	    gettimeofday(&stat.startTime, NULL);
+	    g_pbft->mapTxStartTime.insert(std::make_pair(hashTx, stat));
+	    g_connman->PushMessage(g_pbft->leaders[shards[0]], msgMaker.Make(NetMsgType::PBFT_TX, *tx));
+	} else {
+	    /* this is a cross-shard tx */
+	    stat.type = TxType::CROSS_SHARD;
+	    gettimeofday(&stat.startTime, NULL);
+	    g_pbft->mapTxStartTime.insert(std::make_pair(hashTx, stat));
+	    for (uint i = 1; i < shards.size(); i++) {
+		g_pbft->inputShardReplyMap[hashTx].lockReply.insert(std::make_pair(shards[i], std::vector<CInputShardReply>()));
+		g_connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_LOCK, *tx));
+	    }
+	}
+    g_pbft->mapTxid.insert(std::make_pair(hashTx, tx));
+    }
+
+
 }

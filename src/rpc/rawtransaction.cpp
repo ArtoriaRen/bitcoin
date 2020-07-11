@@ -1028,7 +1028,7 @@ UniValue sendrawtransaction(const JSONRPCRequest& request)
     TxPlacer txPlacer;
     std::vector<int32_t> shards = txPlacer.randomPlace(*tx);
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-    assert(shards.size() >= 2); // there must be at least one output shard and one input shard.
+    assert((tx->IsCoinBase() && shards.size() == 1) || (!tx->IsCoinBase() && shards.size() >= 2)); // there must be at least one output shard and one input shard for non-coinbase tx.
     std::cout << "tx "  <<  hashTx.GetHex().substr(0, 10) << " : ";
     for (int shard : shards)
 	std::cout << shard << ", ";
