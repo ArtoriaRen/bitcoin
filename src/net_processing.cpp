@@ -1887,6 +1887,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	std::pair<int32_t, CPubKey> idPubkey;
 	vRecv >> idPubkey;
 	pbft->pubKeyMap.insert(std::make_pair(idPubkey.first, idPubkey.second));
+	/* we still need to check clientID here because client connects to followers'
+	 * peer-logic thread.
+	 */
 	if (idPubkey.first == CPbft::clientID) {
 	    pbft->client = pfrom;
 	} else {
@@ -3454,8 +3457,6 @@ bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CD
 	pbft->pubKeyMap.insert(std::make_pair(idPubkey.first, idPubkey.second));
 	if (idPubkey.first == CPbft::clientID) {
 	    pbft->client = pfrom;
-	} else {
-	    pbft->peers[idPubkey.first] = pfrom;
 	}
     }
 
