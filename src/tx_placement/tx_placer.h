@@ -43,6 +43,7 @@ public:
     // TODO: smartPlaceSorted
 };
 
-void sendTxInBlock(uint32_t block_height);
+//uint32_t sendTxInBlock(uint32_t block_height, struct timeval& expected_last_send_time, int txSendPeriod);
+uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod);
 #endif /* TX_PLACER_H */
 

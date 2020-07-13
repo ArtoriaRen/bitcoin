@@ -36,6 +36,7 @@
 #include <mutex>
 #include <condition_variable>
 #include "tx_placement/tx_placer.h"
+#include <sys/time.h>
 
 struct CUpdatedBlock
 {
@@ -1443,27 +1444,38 @@ UniValue preciousblock(const JSONRPCRequest& request)
 
 UniValue sendtxinblocks(const JSONRPCRequest& request)
 {
-    if (request.fHelp || request.params.size() != 2)
+    if (request.fHelp || request.params.size() != 3)
         throw std::runtime_error(
-            "sendtxinblocks \"startblockheight\" \"endblockheight\"\n"
+            "sendtxinblocks \"startblockheight\" \"endblockheight\" \"sendrate\"\n"
             "\nSend all transactions in blocks from startblockheight to endblockheight.\n"
             "\nArguments:\n"
             "1. \"startblockheight\"   (numerical, required) the block height of the first block\n"
             "2. \"endblockheight\"   (numerical, required) the block height of the last block + 1\n"
+            "3. \"sendrate\"   (numerical, required) the frequency at which tx are sent\n"
             "\nResult:\n"
             "\nExamples:\n"
-            + HelpExampleCli("sendtxinblocks", "\"startblockheight\" \"endblockheight\"")
-            + HelpExampleRpc("sendtxinblocks", "\"startblockheight\" \"endblockheight\"")
+            + HelpExampleCli("sendtxinblocks", "\"startblockheight\" \"endblockheight\" \"sendrate\"")
+            + HelpExampleRpc("sendtxinblocks", "\"startblockheight\" \"endblockheight\" \"sendrate\"")
         );
 
-    std::cout << "parsing the first argument" << std::endl;
     int txStartBlock = request.params[0].get_int();
-    std::cout << "parsing the second argument" << std::endl;
     int txEndBlock = request.params[1].get_int();
+    int txSendRate = request.params[2].get_int();
+    int txSendPeriod = 1000000 / txSendRate; // in us
+    struct timeval startTime, endTime;//, expectedLastSendTime;
+    uint32_t txCnt = 0;
+    gettimeofday(&startTime, NULL); 
+//    expectedLastSendTime = startTime;
     for (int i = txStartBlock; i < txEndBlock; i++) {
-	sendTxInBlock(i);
+//	txCnt += sendTxInBlock(i, expectedLastSendTime, txSendPeriod);
+	txCnt += sendTxInBlock(i, txSendPeriod);
     }
-
+    gettimeofday(&endTime, NULL);
+    int sendDuration = (endTime.tv_sec - startTime.tv_sec) * 1000000 
+	    + (endTime.tv_usec - startTime.tv_usec);
+    std::cout << __func__ << ": send " << txCnt << " tx in " << sendDuration
+	    << " us, actual sending rate = " << (double)txCnt * 1000000 / sendDuration  
+	    << " tx/sec" << std::endl;
     return NullUniValue;
 }
 
@@ -1665,7 +1677,7 @@ static const CRPCCommand commands[] =
 
     { "blockchain",         "preciousblock",          &preciousblock,          {"blockhash"} },
 
-    { "blockchain",         "sendtxinblocks",         &sendtxinblocks,         {"startblockheight","endblockheight"} },
+    { "blockchain",         "sendtxinblocks",         &sendtxinblocks,         {"startblockheight","endblockheight","sendrate"} },
     /* Not shown in help */
     { "hidden",             "invalidateblock",        &invalidateblock,        {"blockhash"} },
     { "hidden",             "reconsiderblock",        &reconsiderblock,        {"blockhash"} },

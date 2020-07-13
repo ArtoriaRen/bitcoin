@@ -13,6 +13,11 @@
 #include "chainparams.h"
 #include "netmessagemaker.h"
 #include "pbft/pbft.h"
+#include <thread>
+#include <chrono>
+#include <time.h>
+
+static const uint32_t SEC = 1000000; // 1 sec = 10^6 microsecond
 
 uint32_t num_committees;
 int lastAssignedAffinity = -1;
@@ -82,13 +87,15 @@ void TxPlacer::printPlaceResult(){
     }
 }
 
-void sendTxInBlock(uint32_t block_height) {
+//uint32_t sendTxInBlock(uint32_t block_height, struct timeval& expected_last_send_time, int txSendPeriod) {
+uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
     CBlock block;
     CBlockIndex* pblockindex = chainActive[block_height];
     if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
         std::cerr << "Block not found on disk" << std::endl;
     }
     std::cout << __func__ << "sending " << block.vtx.size() << " tx in block " << block_height << std::endl;
+    uint32_t cnt = 0;
     for (uint j = 0; j < block.vtx.size(); j++) {
 	CTransactionRef tx = block.vtx[j];
 	const uint256& hashTx = tx->GetHash();
@@ -101,6 +108,33 @@ void sendTxInBlock(uint32_t block_height) {
 	for (int shard : shards)
 	    std::cout << shard << ", ";
 	std::cout << std::endl;
+
+	/*-----calculate how long we should sleep------*/
+//	struct timeval current;
+//	struct timespec sleep_length = {0, 0};
+//	if (expected_last_send_time.tv_usec + txSendPeriod > SEC){
+//	    /* we assume that (expected_last_send_time.tv_usec + txSendPeriod) < 2 SEC */
+//	    expected_last_send_time.tv_sec++;
+//	    expected_last_send_time.tv_usec = expected_last_send_time.tv_usec + txSendPeriod - SEC;
+//	} else {
+//	    expected_last_send_time.tv_usec += txSendPeriod;
+//	}
+//	/* now expected_last_send_time becomes the time at which we should send this tx. */
+//	gettimeofday(&current, NULL);
+//	if (current.tv_sec < expected_last_send_time.tv_sec || (current.tv_sec == expected_last_send_time.tv_sec && current.tv_usec < expected_last_send_time.tv_usec)) {
+//	    /* we are not reach the expected sending time yet, so sleep for a while.
+//	     * we assume that this thread should never sleep more than 1 second. */
+//	    sleep_length.tv_nsec = (expected_last_send_time.tv_sec - current.tv_sec) * SEC * 1000
+//		    + (expected_last_send_time.tv_usec - current.tv_usec) * 1000;
+//	    nanosleep((const timespec*)&sleep_length, NULL);
+//	    std::cout << __func__ << ": slept " << sleep_length.tv_sec << "s " 
+//		    << sleep_length.tv_nsec << "ns" << std::endl;
+//	} else {
+//	    std::cout << __func__ << ": do not sleep" << std::endl;
+//	}
+
+
+	/* send tx and collect time info to calculate latency. */
 	struct TxStat stat;
 	if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
 	    /* this is a single shard tx */
@@ -118,8 +152,10 @@ void sendTxInBlock(uint32_t block_height) {
 		g_connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_LOCK, *tx));
 	    }
 	}
-    g_pbft->mapTxid.insert(std::make_pair(hashTx, tx));
+	g_pbft->mapTxid.insert(std::make_pair(hashTx, tx));
+	cnt++;
+	const struct timespec sleep_length = {0, txSendPeriod * 1000};
+	nanosleep(&sleep_length, NULL);
     }
-
-
+    return cnt;
 }
