@@ -24,8 +24,6 @@
 #include <condition_variable>
 #include <memory>
 
-extern bool fIsClient; // if this node is a pbft client.
-extern std::string clientAddrString;
 extern int32_t pbftID;
 
 class ThreadSafeQueue {
@@ -51,7 +49,7 @@ private:
 class CPbft{
 public:
     // TODO: may need to recycle log slots for throughput test. Consider deque.
-    static const size_t logSize = 1000;  
+    static const size_t logSize = 3000;  
     static const size_t groupSize = 4;
     static const uint32_t nFaulty = 1;
     static const int32_t clientID = 65; // the pbftID of the client.
@@ -75,7 +73,6 @@ public:
      * added to the pbft log and start consensus process. */
     static const int nMaxReqInFly = 10; 
     int nReqInFly; 
-    int nextInFlyIdx;
     /* a queue storing client req waiting for being processed. */
     ThreadSafeQueue reqQueue;
     /* we need the client conn man to wake up the client listening thread to send
