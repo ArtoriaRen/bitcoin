@@ -1033,6 +1033,8 @@ UniValue sendrawtransaction(const JSONRPCRequest& request)
     for (int shard : shards)
 	std::cout << shard << ", ";
     std::cout << std::endl;
+    g_pbft->replyMap[hashTx].clear();
+    g_pbft->mapTxStartTime.erase(hashTx);
     struct TxStat stat;
     if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
 	/* this is a single shard tx */

@@ -134,7 +134,10 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
 //	}
 
 
-	/* send tx and collect time info to calculate latency. */
+	/* send tx and collect time info to calculate latency. 
+	 * We also remove all reply msg for this req to ease testing with sending a req multi times. */
+	g_pbft->replyMap[hashTx].clear();
+	g_pbft->mapTxStartTime.erase(hashTx);
 	struct TxStat stat;
 	if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
 	    /* this is a single shard tx */

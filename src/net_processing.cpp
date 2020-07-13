@@ -1853,6 +1853,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	if (g_pbft->replyMap[reply.digest].size() == 2 * CPbft::nFaulty + 1) {
 	    struct timeval endTime;
 	    gettimeofday(&endTime, NULL);
+	    /* ---- calculate latency ---- */
 	    assert(g_pbft->mapTxStartTime.find(reply.digest) != g_pbft->mapTxStartTime.end());
 	    TxStat& stat = g_pbft->mapTxStartTime[reply.digest]; 
 	    if (reply.reply == 'y') {
@@ -1861,6 +1862,18 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		    std::cout << "FAIL, ";
 	    } 
 	    std::cout << (stat.type == TxType::SINGLE_SHARD ? "single-shard" : "cross-shard") << ", latency = " << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << " ms" << std::endl;
+	    /* ---- calculate throughput using the last completed 100 tx ---- */
+	    uint32_t& thruCnt = g_pbft->thruCnt;
+	    struct timeval& thruStartTime = g_pbft->thruStartTime;
+	    float thruput = 0;
+	    thruCnt++;
+	    if (thruCnt % 100 == 0) {
+		if (thruStartTime.tv_sec != 0) {
+		    thruput = 100 * 1000000 / ((endTime.tv_sec - thruStartTime.tv_sec) * 1000000 + (endTime.tv_usec - thruStartTime.tv_usec));
+		}
+		thruStartTime = endTime;
+		std::cout << "throughput = " << thruput << std::endl;
+	    }
 	}
 		
     }
