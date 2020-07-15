@@ -25,6 +25,8 @@ bool fIsClient; // if this node is a pbft client.
 std::string leaderAddrString;
 std::string clientAddrString;
 int32_t pbftID; 
+int32_t nMaxReqInFly; 
+int32_t QSizePrintPeriod;
 
 ThreadSafeQueue::ThreadSafeQueue() { }
 
@@ -74,7 +76,7 @@ bool ThreadSafeQueue::empty() {
     return queue_.empty();
 }
 
-CPbft::CPbft() : localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize * num_committees)), nReqInFly(0), clientConnMan(nullptr), privateKey(CKey()) {
+CPbft::CPbft() : localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize * num_committees)), nReqInFly(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
@@ -90,6 +92,7 @@ bool CPbft::ProcessPP(CConnman* connman, CPre_prepare& ppMsg) {
     }
 
     // check if the digest matches client req
+    std::cout << "ppMsg.digest = " << ppMsg.digest.GetHex() << ", get = " << ppMsg.req->GetDigest().GetHex() << std::endl;
     if (ppMsg.digest != ppMsg.req->GetDigest()) {
 	std::cerr << "digest does not match client tx. Client txid = " << ppMsg.req->GetDigest().GetHex() << ", but digest = " << ppMsg.digest.GetHex() << std::endl;
 	return false;
@@ -215,8 +218,10 @@ bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
 	 * to send reply to client only once. 
 	 */
 	for (int i = startReplySeq; i <= lastExecutedSeq; i++) {
-	    if (log[cMsg.seq].ppMsg.type == ClientReqType::TX || 
-		    log[cMsg.seq].ppMsg.type == ClientReqType::UNLOCK_TO_COMMIT) {
+	    ClientReqType& reqType = log[cMsg.seq].ppMsg.type; 
+	    if (reqType == ClientReqType::TX 
+		    || reqType == ClientReqType::UNLOCK_TO_COMMIT  
+		    || reqType == ClientReqType::UNLOCK_TO_ABORT) {
 		CReply reply = assembleReply(cMsg.seq);
 		connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
 	    } else if (log[cMsg.seq].ppMsg.type == ClientReqType::LOCK) {

@@ -18,9 +18,12 @@
 
 void UpdateLockCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo, int nHeight);
 
-void UpdateUnlockCommitCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo, int nHeight);
+void UpdateUnlockCommitCoins(const CTransaction& tx, CCoinsViewCache& inputs, int nHeight);
 
-std::unordered_map<uint256, CTxUndo, BlockHasher> mapTxUndo;
+void UpdateUnlockAbortCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo);
+
+/* key is txid, value is input Coins in our shard. */
+static std::unordered_map<uint256, CTxUndo, BlockHasher> mapTxUndo;
 
 CPbftMessage::CPbftMessage(): view(0), seq(0), digest(), peerID(pbftID), sigSize(0), vchSig(){
     vchSig.reserve(72); // the expected sig size is 72 bytes.
@@ -207,7 +210,6 @@ uint256 UnlockToCommitReq::GetDigest() const {
 bool checkInputShardReplySigs(const std::vector<CInputShardReply>& vReplies);
 
 char UnlockToCommitReq::Execute(const int seq) const {
-    /* ------TODO: Verify the sigs of input shards. This needs <id, pubkey> map.---- */
     if (!checkInputShardReplySigs(vInputShardReply)) {
         std::cout << __func__ << ": verify sigs fail!" << std::endl;
 	return 'n';
@@ -255,9 +257,7 @@ char UnlockToCommitReq::Execute(const int seq) const {
      * for possibly future UnlockToAbort processing. 
      * 2) In output shard: add output coins to coinsview.
      */
-    CTxUndo txUndo;
-    UpdateUnlockCommitCoins(tx, view, txUndo, seq);
-    mapTxUndo.insert(std::make_pair(tx.GetHash(), txUndo));
+    UpdateUnlockCommitCoins(tx, view, seq);
     bool flushed = view.Flush(); // flush to pcoinsTip
     assert(flushed);
     /* -------------logic from Bitcoin code for tx processing--------- */
@@ -282,4 +282,56 @@ bool checkInputShardReplySigs(const std::vector<CInputShardReply>& vReplies) {
     }
     std::cout << __func__ << ": sig ok" << std::endl;
     return true;
+}
+
+UnlockToAbortReq::UnlockToAbortReq(): tx_mutable(CMutableTransaction()) {
+    vNegativeReply.resize(2 * CPbft::nFaulty + 1);
+}
+
+UnlockToAbortReq::UnlockToAbortReq(const CTransaction& txIn, const std::vector<CInputShardReply>& lockFailReplies) : tx_mutable(txIn), vNegativeReply(lockFailReplies){
+    assert(vNegativeReply.size() == 2 * CPbft::nFaulty + 1);
+}
+
+uint256 UnlockToAbortReq::GetDigest() const {
+    uint256 tx_hash(tx_mutable.GetHash());
+    CHash256 hasher;
+    hasher.Write((const unsigned char*)tx_hash.begin(), tx_hash.size());
+    for (uint i = 0; i < vNegativeReply.size(); i++) {
+	uint256 tmp;
+	vNegativeReply[i].getHash(tmp);
+	hasher.Write((const unsigned char*)tmp.begin(), tmp.size());
+
+    }
+    uint256 result;
+    hasher.Finalize((unsigned char*)&result);
+    return result;
+}
+
+char UnlockToAbortReq::Execute(const int seq) const {
+    if (!checkInputShardReplySigs(vNegativeReply)) {
+        std::cout << __func__ << ": verify sigs fail!" << std::endl;
+	return 'n';
+    }
+
+    /* -------------logic from Bitcoin code for tx processing--------- */
+    CTransaction tx(tx_mutable);
+    
+    CValidationState state;
+    CCoinsViewCache view(pcoinsTip.get());
+    unsigned int flags = SCRIPT_VERIFY_NONE; // only verify pay to public key hash
+
+    /* Step 1: check all replies are negative. */
+    for (auto r: vNegativeReply) {
+	assert(r.reply == 'n');
+    }
+
+    /* Step 2: 
+     * add input UTXOs in our shard back to the coinsview.
+     */
+    UpdateUnlockAbortCoins(tx, view, mapTxUndo[tx.GetHash()]);
+    bool flushed = view.Flush(); // flush to pcoinsTip
+    assert(flushed);
+    /* -------------logic from Bitcoin code for tx processing--------- */
+    std::cout << __func__ << ":  abort tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << std::endl;
+    return 'y';
 }

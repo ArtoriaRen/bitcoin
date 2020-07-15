@@ -23,8 +23,11 @@
 #include <mutex>
 #include <condition_variable>
 #include <memory>
+#include <chrono>
 
 extern int32_t pbftID;
+extern int32_t nMaxReqInFly; 
+extern int32_t QSizePrintPeriod;
 
 typedef struct TypedReq{
     ClientReqType type;
@@ -76,13 +79,14 @@ public:
      * Initially we start pbft consensus for this number of req. Later, once a 
      * req  enters the reply phase, another req at the front of the reqQueue is 
      * added to the pbft log and start consensus process. */
-    static const int nMaxReqInFly = 10; 
     int nReqInFly; 
     /* a queue storing client req waiting for being processed. */
     ThreadSafeQueue reqQueue;
     /* we need the client conn man to wake up the client listening thread to send
      * reply back the client as soon as possible. */
     CConnman* clientConnMan;
+
+    std::chrono::milliseconds lastQSizePrintTime;
 
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
@@ -101,6 +105,15 @@ public:
     bool checkMsg(CPbftMessage* msg);
     /*return the last executed seq */
     int executeTransaction(const int seq);
+
+    inline void printQueueSize(){
+	    /* log queue size if we have reached the period. */
+	    std::chrono::milliseconds current = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
+	    if (current - lastQSizePrintTime > std::chrono::milliseconds(QSizePrintPeriod)) {
+		std::cout << "queue size log, " << current.count() << "," << reqQueue.size() << std::endl; // time stamp is in milliseconds. TODO: change is to seconds for a long throughput test.
+		lastQSizePrintTime = current;
+	    }
+    }
 
     inline bool isLeader(){
 	return pbftID % groupSize == 0;

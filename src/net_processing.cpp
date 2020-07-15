@@ -32,6 +32,7 @@
 #include <tx_placement/tx_placer.h>
 #include <pubkey.h>
 #include <queue>
+#include <chrono>
 
 #if defined(NDEBUG)
 # error "Bitcoin cannot be compiled without assertions."
@@ -2962,10 +2963,9 @@ bool PeerLogicValidation::SendPPMessages(){
      * reqQueue is threadsafe, so we do not acquire lock before querying its size.
      */ 
 
-    if (pbft->isLeader() 
-	    && pbft->reqQueue.size() > 0 
-	    &&  pbft->nReqInFly < pbft->nMaxReqInFly) {
-	while (!pbft->reqQueue.empty() && pbft->nReqInFly < pbft->nMaxReqInFly) {
+    if (pbft->isLeader() && pbft->reqQueue.size() > 0) {
+	pbft->printQueueSize(); // only log queue size here cuz it will not change anywhere else
+	while (!pbft->reqQueue.empty() && pbft->nReqInFly < nMaxReqInFly) {
 	    TypedReq req = pbft->reqQueue.front();
 	    pbft->reqQueue.pop_front();
 	    /* send ppMsg for this reqs.*/
@@ -3467,8 +3467,8 @@ bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CD
 	std::shared_ptr<CClientReq> req = std::make_shared<TxReq>(*ptx);
 	TypedReq typedReq = {ClientReqType::TX, req};
 	pbft->reqQueue.push_back(typedReq);
-	std::cout << __func__ << ": push to req queue tx = " << ptx->GetHash().GetHex().substr(0, 10) << std::endl;
         g_connman->WakeMessageHandler();
+	//std::cout << __func__ << ": push to req queue tx = " << ptx->GetHash().GetHex().substr(0, 10) << std::endl;
     }
 
     /* received a lock req, put it in queue . */
@@ -3478,8 +3478,8 @@ bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CD
 	std::shared_ptr<CClientReq> req = std::make_shared<LockReq>(*ptx);
 	TypedReq typedReq = {ClientReqType::LOCK, req};
 	pbft->reqQueue.push_back(typedReq);
-	std::cout << __func__ << ": push to req queue lockreq. tx = " << ptx->GetHash().GetHex().substr(0, 10) << std::endl;
         g_connman->WakeMessageHandler();
+//	std::cout << __func__ << ": push to req queue lockreq. tx = " << ptx->GetHash().GetHex().substr(0, 10) << std::endl;
     }
 
     /* received an unlock_to_commit req, put it in queue . */
@@ -3488,9 +3488,20 @@ bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CD
         vRecv >> *pUnlockCommitReq;
 	TypedReq typedReq = {ClientReqType::UNLOCK_TO_COMMIT, pUnlockCommitReq};
 	pbft->reqQueue.push_back(typedReq);
-	CTransaction tx(pUnlockCommitReq->tx_mutable);
-	std::cout << __func__ << ": push to req queue unlockCommitReq. tx = " << tx.GetHash().GetHex().substr(0, 10) << std::endl;
         g_connman->WakeMessageHandler();
+//	CTransaction tx(pUnlockCommitReq->tx_mutable);
+//	std::cout << __func__ << ": push to req queue unlockCommitReq. tx = " << tx.GetHash().GetHex().substr(0, 10) << std::endl;
+    }
+
+    /* received an unlock_to_abort req, put it in queue . */
+    else if (strCommand == NetMsgType::OMNI_UNLOCK_ABORT) {
+	std::shared_ptr<UnlockToAbortReq> pUnlockAbortReq(new UnlockToAbortReq());
+        vRecv >> *pUnlockAbortReq;
+	TypedReq typedReq = {ClientReqType::UNLOCK_TO_ABORT, pUnlockAbortReq};
+	pbft->reqQueue.push_back(typedReq);
+        g_connman->WakeMessageHandler();
+//	CTransaction tx(pUnlockCommitReq->tx_mutable);
+//	std::cout << __func__ << ": push to req queue unlockCommitReq. tx = " << tx.GetHash().GetHex().substr(0, 10) << std::endl;
     }
 
     else if (strCommand == NetMsgType::GETADDR)

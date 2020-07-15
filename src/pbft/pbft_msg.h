@@ -25,6 +25,8 @@ enum PbftPhase {pre_prepare, prepare, commit, reply, end};
  */
 enum ClientReqType {TX, LOCK, UNLOCK_TO_COMMIT, UNLOCK_TO_ABORT};
 
+class CPbft;
+
 class CPre_prepare;
 
 class CPbftMessage {
@@ -218,6 +220,35 @@ public:
     uint256 GetDigest() const override;
 };
 
+class UnlockToAbortReq: public CClientReq {
+public:
+    CMutableTransaction tx_mutable;
+    /* We need only lock-fail replies from only one input shard to abort the tx,
+     * i.e. 2f + 1 negative replies from the same shard. 
+     */
+    std::vector<CInputShardReply> vNegativeReply;
+
+    UnlockToAbortReq();
+    UnlockToAbortReq(const CTransaction& txIn, const std::vector<CInputShardReply>& lockFailReplies);
+
+    template<typename Stream>
+    void Serialize(Stream& s) const{
+	tx_mutable.Serialize(s);
+	for (auto reply: vNegativeReply) {
+	    reply.Serialize(s);
+	}
+    }
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+	tx_mutable.Unserialize(s);
+	for (uint i = 0; i < vNegativeReply.size(); i++) {
+	     vNegativeReply[i].Unserialize(s);
+	}
+    }
+    char Execute(const int seq) const override;
+    uint256 GetDigest() const override;
+};
+
 /* We currently do not verify the proof-of-rejection part of OmniLeder.
  * proof-of-rejection verification requires every peer to know the publickey
  * of every committee. In our case of lacking threshold signature implementation,
@@ -277,6 +308,9 @@ public:
 	} else if (type == ClientReqType::UNLOCK_TO_COMMIT) {
 	    assert(req != nullptr);
 	    static_cast<UnlockToCommitReq*>(req.get())->Serialize(s);
+	} else if (type == ClientReqType::UNLOCK_TO_ABORT) {
+	    assert(req != nullptr);
+	    static_cast<UnlockToAbortReq*>(req.get())->Serialize(s);
 	}  
     }
     
@@ -293,6 +327,9 @@ public:
 	} else if(type == ClientReqType::UNLOCK_TO_COMMIT) {
 	    req.reset(new UnlockToCommitReq());
 	    static_cast<UnlockToCommitReq*>(req.get())->Unserialize(s);
+	} else if(type == ClientReqType::UNLOCK_TO_ABORT) {
+	    req.reset(new UnlockToAbortReq());
+	    static_cast<UnlockToAbortReq*>(req.get())->Unserialize(s);
 	}
     }
 };
