@@ -1862,17 +1862,17 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		    std::cout << "FAIL, ";
 	    } 
 	    std::cout << (stat.type == TxType::SINGLE_SHARD ? "single-shard" : "cross-shard") << ", latency = " << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << " ms" << std::endl;
-	    /* ---- calculate throughput using the last completed 100 tx ---- */
-	    uint32_t& thruCnt = g_pbft->thruCnt;
+	    /* ---- calculate throughput using the last completed thruInteval tx ---- */
+	    uint32_t& nCompletedTx = g_pbft->nCompletedTx;
 	    struct timeval& thruStartTime = g_pbft->thruStartTime;
-	    float thruput = 0;
-	    thruCnt++;
-	    if (thruCnt % 100 == 0) {
+	    uint32_t thruput = 0;
+	    nCompletedTx++;
+	    if (nCompletedTx % thruInterval == 0) {
 		if (thruStartTime.tv_sec != 0) {
-		    thruput = 100 * 1000000 / ((endTime.tv_sec - thruStartTime.tv_sec) * 1000000 + (endTime.tv_usec - thruStartTime.tv_usec));
+		    thruput = thruInterval * 1000000 / ((endTime.tv_sec - thruStartTime.tv_sec) * 1000000 + (endTime.tv_usec - thruStartTime.tv_usec));
 		}
 		thruStartTime = endTime;
-		std::cout << "throughput = " << thruput << std::endl;
+		std::cout << "To tx " <<  nCompletedTx << ": throughput = " << thruput << std::endl;
 	    }
 	}
 		
@@ -1882,6 +1882,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     {
 	CInputShardReply reply;
 	vRecv >> reply;
+	if (g_pbft->inputShardReplyMap[reply.digest].done) {
+	    return true;
+	}
 	std::cout << __func__ << ": received "  << strCommand << "for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
 	if (!g_pbft->checkReplySig(&reply)) {
 	    std::cout << strCommand << " from " << reply.peerID << " sig verification fail"  << std::endl;
@@ -1889,13 +1892,12 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    std::cout << strCommand << " sig ok" << std::endl;
 	}
 
-	// TODO: the client must create the right number of shards in the inputShardReplyMap so that we can decide if we can send an unlocktocommit req by checking if every shard has sent us enough replies.
 	int shardID = reply.peerID/CPbft::groupSize;
 	std::vector<CInputShardReply>& shardReplies = g_pbft->inputShardReplyMap[reply.digest].lockReply[shardID];
 	shardReplies.push_back(reply);
+
 	/* Check if the client has accumulated enough replies from every shard. If so, send a unlock_to_commit req to the output shard. */
 	bool isLeastReplyShard = true;
-	uint reply_threshold = 2 * CPbft::nFaulty + 1;
         //std::cout << "num of input shards = " << g_pbft->inputShardReplyMap[reply.digest].lockReply.size() << std::endl;
 	for (auto& p: g_pbft->inputShardReplyMap[reply.digest].lockReply) {
 	    std::cout << "shardId = " << p.first << ": number of lock replies = " << p.second.size() << std::endl;
@@ -1904,7 +1906,28 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		break;
 	    }
 	}
-	if (isLeastReplyShard && shardReplies.size() == reply_threshold && reply.reply == 'y') {
+
+	/* Check if we should send a unlock_to_abort req for the tx */
+	uint reply_threshold = 2 * CPbft::nFaulty + 1;
+	if (shardReplies.size() == reply_threshold && reply.reply == 'n') {
+	    std::cout << "LOCK FAIL " << std::endl;
+	    /* assemble a unlock_to_abort req including (2f + 1) replies from this shard */
+	    assert(g_pbft->mapTxid.find(reply.digest) != g_pbft->mapTxid.end());
+	    UnlockToAbortReq abortReq(std::move(CMutableTransaction(*g_pbft->mapTxid[reply.digest])), shardReplies);
+	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+	    TxPlacer txPlacer;
+	    CTransactionRef tx = g_pbft->mapTxid[reply.digest];
+	    std::vector<int32_t> shards = txPlacer.randomPlace(*tx);
+	    std::cout << "sending unlock_to_ABORT with req_hash = " << abortReq.GetDigest().GetHex().substr(0, 10) << " to shards: " << std::endl;
+	    for (uint i = 1; i < shards.size(); i++) {
+		std::cout << shards[i] << ", ";
+		connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_UNLOCK_ABORT, abortReq));
+	    }
+	    /* add the new req digest with the tx start time to the stat map. */
+            g_pbft->mapTxStartTime.insert(std::make_pair(abortReq.GetDigest(), g_pbft->mapTxStartTime[reply.digest]));
+	    /* mark the tx is final and no further unlock_to_abort or unlock_to_commit should be sent.*/
+	    g_pbft->inputShardReplyMap[reply.digest].done = true;
+	} else if (isLeastReplyShard && shardReplies.size() == reply_threshold && reply.reply == 'y') {
 	    if (reply.reply == 'y') {
 		    std::cout << "LOCK SUCCEED, ";
 	    }  
@@ -1921,13 +1944,13 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	    TxPlacer txPlacer;
 	    int32_t outputShard = txPlacer.randomPlaceUTXO(g_pbft->mapTxid[reply.digest]->GetHash());
-	    std::cout << "sending unlock_to_commit with req_hash = " << commitReq.GetDigest().GetHex().substr(0, 10) << " to shard " << outputShard << std::endl;
+	    std::cout << "sending unlock_to_COMMIT with req_hash = " << commitReq.GetDigest().GetHex().substr(0, 10) << " to shard " << outputShard << std::endl;
 	    connman->PushMessage(g_pbft->leaders[outputShard], msgMaker.Make(NetMsgType::OMNI_UNLOCK_COMMIT, commitReq));
 	    /* add the new req digest with the tx start time to the stat map. */
             g_pbft->mapTxStartTime.insert(std::make_pair(commitReq.GetDigest(), g_pbft->mapTxStartTime[reply.digest]));
-	} else if (isLeastReplyShard && shardReplies.size() == reply_threshold && reply.reply == 'n') {
-	    std::cout << "LOCK FAIL " << std::endl;
-        }
+	    /* mark the tx is final so that we do not need to process future replies for this req. */
+	    g_pbft->inputShardReplyMap[reply.digest].done = true;
+	} 
     }
 
     else if (strCommand == NetMsgType::SENDHEADERS)

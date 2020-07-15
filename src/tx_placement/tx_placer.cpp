@@ -152,6 +152,7 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
 	    g_pbft->mapTxStartTime.insert(std::make_pair(hashTx, stat));
 	    for (uint i = 1; i < shards.size(); i++) {
 		g_pbft->inputShardReplyMap[hashTx].lockReply.insert(std::make_pair(shards[i], std::vector<CInputShardReply>()));
+		g_pbft->inputShardReplyMap[hashTx].done = false;
 		g_connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_LOCK, *tx));
 	    }
 	}
