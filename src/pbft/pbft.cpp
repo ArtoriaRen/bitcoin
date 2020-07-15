@@ -92,7 +92,6 @@ bool CPbft::ProcessPP(CConnman* connman, CPre_prepare& ppMsg) {
     }
 
     // check if the digest matches client req
-    std::cout << "ppMsg.digest = " << ppMsg.digest.GetHex() << ", get = " << ppMsg.req->GetDigest().GetHex() << std::endl;
     if (ppMsg.digest != ppMsg.req->GetDigest()) {
 	std::cerr << "digest does not match client tx. Client txid = " << ppMsg.req->GetDigest().GetHex() << ", but digest = " << ppMsg.digest.GetHex() << std::endl;
 	return false;

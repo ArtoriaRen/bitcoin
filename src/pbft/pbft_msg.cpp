@@ -327,11 +327,21 @@ char UnlockToAbortReq::Execute(const int seq) const {
 
     /* Step 2: 
      * add input UTXOs in our shard back to the coinsview.
+     * The client sends an abort req to all input shards, so an input shard should
+     * check if it has locked some UTXOs (in the case that this shard vote abort,
+     * it must have failed to lock UTXOs). The input shard should only restore
+     * UTXOs if it has locked them.
      */
-    UpdateUnlockAbortCoins(tx, view, mapTxUndo[tx.GetHash()]);
-    bool flushed = view.Flush(); // flush to pcoinsTip
-    assert(flushed);
-    /* -------------logic from Bitcoin code for tx processing--------- */
-    std::cout << __func__ << ":  abort tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << std::endl;
+    if (mapTxUndo.find(tx.GetHash()) != mapTxUndo.end()) {
+	std::cout << __func__ << ":  abort tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << ", restoring locked UTXOs."<< std::endl;
+	UpdateUnlockAbortCoins(tx, view, mapTxUndo[tx.GetHash()]);
+	bool flushed = view.Flush(); // flush to pcoinsTip
+	assert(flushed);
+    } else {
+	std::cout << __func__ << ":  abort tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << ", no UTXO to restore."<< std::endl;
+    }
+
+    /* ------------- end logic from Bitcoin code for tx processing--------- */
+
     return 'y';
 }
