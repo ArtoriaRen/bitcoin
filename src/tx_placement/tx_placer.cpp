@@ -32,8 +32,8 @@ std::vector<int32_t> TxPlacer::randomPlace(const CTransaction& tx){
 	    std::set<int> inputShardIds;
 
     /* add the input shard ids to the set */
-    for(uint32_t i = 0; i < tx.vin.size(); i++) {
-	if (!tx.vin[i].prevout.IsNull()) { // do not calculate shard for dummy coinbase input.
+    if (!tx.IsCoinBase()) { // do not calculate shard for dummy coinbase input.
+	for(uint32_t i = 0; i < tx.vin.size(); i++) {
 	    arith_uint256 txid = UintToArith256(tx.vin[i].prevout.hash);
 	    arith_uint256 quotient = txid / num_committees;
 	    arith_uint256 inShardId = txid - quotient * num_committees;
@@ -152,7 +152,7 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
 	    g_pbft->mapTxStartTime.insert(std::make_pair(hashTx, stat));
 	    for (uint i = 1; i < shards.size(); i++) {
 		g_pbft->inputShardReplyMap[hashTx].lockReply.insert(std::make_pair(shards[i], std::vector<CInputShardReply>()));
-		g_pbft->inputShardReplyMap[hashTx].done = false;
+		g_pbft->inputShardReplyMap[hashTx].decision = '\0';
 		g_connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_LOCK, *tx));
 	    }
 	}
