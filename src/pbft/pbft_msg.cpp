@@ -168,7 +168,7 @@ char LockReq::Execute(const int seq) const {
     bool flushed = view.Flush(); // flush to pcoinsTip
     assert(flushed);
     /* -------------logic from Bitcoin code for tx processing--------- */
-    std::cout << __func__ << ": locked input UTXOs for tx " << tx.GetHash().GetHex().substr(1, 10) << " at log slot " << seq << std::endl;
+    std::cout << __func__ << ": locked input UTXOs for tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << std::endl;
     return 'y';
 }
 
@@ -340,7 +340,6 @@ char UnlockToAbortReq::Execute(const int seq) const {
     } else {
 	std::cout << __func__ << ":  abort tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << ", no UTXO to restore."<< std::endl;
     }
-
     /* ------------- end logic from Bitcoin code for tx processing--------- */
 
     return 'y';

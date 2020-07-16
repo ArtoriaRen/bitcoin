@@ -1531,24 +1531,10 @@ bool CheckInputs(const CTransaction& tx, CValidationState &state, const CCoinsVi
 
 bool CheckLockInputs(const CTransaction& tx, CValidationState &state, const CCoinsViewCache &inputs, bool fScriptChecks, unsigned int flags, bool cacheSigStore, bool cacheFullScriptStore, PrecomputedTransactionData& txdata, std::vector<CScriptCheck> *pvChecks)
 {
-    int32_t myShardId = pbftID/CPbft::groupSize;
-    /*----pick out input UTXOs in our shard----*/
-    TxPlacer txPlacer;
-    std::vector<CTxIn> vinInMyShard;
-    for (CTxIn input: tx.vin) {
-	/* for random placement */
-	if (txPlacer.randomPlaceUTXO(input.prevout.hash) != myShardId)
-	    continue;
-	/* for smart placement */
-//	if (input.shardAffinity != CPbft::shardID)
-//		continue;
-	vinInMyShard.push_back(input);
-    }
-
     if (!tx.IsCoinBase())
     {
         if (pvChecks)
-            pvChecks->reserve(vinInMyShard.size());
+            pvChecks->reserve(tx.vin.size());
 
         // The first loop above does all the inexpensive checks.
         // Only if ALL inputs pass do we perform expensive ECDSA signature checks.
@@ -1575,11 +1561,16 @@ bool CheckLockInputs(const CTransaction& tx, CValidationState &state, const CCoi
                 return true;
             }
 
-            for (unsigned int i = 0; i < vinInMyShard.size(); i++) {
+	    int32_t myShardId = pbftID/CPbft::groupSize;
+	    TxPlacer txPlacer;
+            for (unsigned int i = 0; i < tx.vin.size(); i++) {
 		// TODO: check shardAffinity
 //		if (tx.vin[i].shardId != MyShardID)
 //		    continue;
-                const COutPoint &prevout =  vinInMyShard[i].prevout;
+		if (txPlacer.randomPlaceUTXO(tx.vin[i].prevout.hash) != myShardId)
+		    continue;
+		
+                const COutPoint &prevout = tx.vin[i].prevout;
                 const Coin& coin = inputs.AccessCoin(prevout);
                 assert(!coin.IsSpent());
 
