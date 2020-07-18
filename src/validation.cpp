@@ -46,6 +46,8 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/thread.hpp>
+#include <tx_placement/tx_placer.h>
+#include "pbft/pbft.h"
 
 #if defined(NDEBUG)
 # error "Bitcoin cannot be compiled without assertions."

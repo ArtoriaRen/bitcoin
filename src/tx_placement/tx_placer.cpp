@@ -16,6 +16,7 @@
 #include <thread>
 #include <chrono>
 #include <time.h>
+#include "txdb.h"
 
 static const uint32_t SEC = 1000000; // 1 sec = 10^6 microsecond
 
@@ -32,13 +33,8 @@ std::vector<int32_t> TxPlacer::randomPlace(const CTransaction& tx){
 	    std::set<int> inputShardIds;
 
     /* add the input shard ids to the set */
-<<<<<<< HEAD
-    if (!tx.IsCoinBase()) { // do not calculate shard for dummy coinbase input.
-	for(uint32_t i = 0; i < tx.vin.size(); i++) {
-=======
     if (!tx.IsCoinBase()) { // do not calculate input shard for coinbase.
 	    for(uint32_t i = 0; i < tx.vin.size(); i++) {
->>>>>>> bd5ca0d84... enable smart placement; fix bug: affinity stats should include the second, third, .... txout of transactions
 	    arith_uint256 txid = UintToArith256(tx.vin[i].prevout.hash);
 	    arith_uint256 quotient = txid / num_committees;
 	    arith_uint256 inShardId = txid - quotient * num_committees;
@@ -63,12 +59,8 @@ std::vector<int32_t> TxPlacer::randomPlace(const CTransaction& tx){
 	/* inputShardIds.size() + 1 is the shard span of this tx. */
 	shardCntMap[tx.vin.size()][inputShardIds.size() + 1]++;
     }
-<<<<<<< HEAD
-
-=======
     
     /* prepare a resultant vector for return */
->>>>>>> bd5ca0d84... enable smart placement; fix bug: affinity stats should include the second, third, .... txout of transactions
     std::vector<int32_t> ret(inputShardIds.size() + 1);
     ret[0] = (int32_t)(outShardId.GetLow64());// put the outShardIt as the first element
     std::copy(inputShardIds.begin(), inputShardIds.end(), ret.begin() + 1);
@@ -82,10 +74,6 @@ int32_t TxPlacer::randomPlaceUTXO(const uint256& txid) {
 	return (int32_t)(inShardId.GetLow64());
 }
 
-<<<<<<< HEAD
-int32_t TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCache& cache){
-	return -1;
-=======
 std::vector<int32_t> TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCache& cache){
     /* random place coinbase tx */
     if (!tx.IsCoinBase()) { 
@@ -132,7 +120,6 @@ std::vector<int32_t> TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCach
     ret[0] = outputShard ;// put the outShardIt as the first element
     std::copy(inputShardIds.begin(), inputShardIds.end(), ret.begin() + 1);
     return ret;
->>>>>>> bd5ca0d84... enable smart placement; fix bug: affinity stats should include the second, third, .... txout of transactions
 }
 
 /*
