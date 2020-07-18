@@ -979,7 +979,7 @@ UniValue assignaffinity(const JSONRPCRequest& request)
             + HelpExampleRpc("assignaffinity", "")
         );
 
-    UniValue ret(UniValue::VOBJ);
+    UniValue ret(UniValue::VNULL);
 
     assignShardAffinity();
     return ret;

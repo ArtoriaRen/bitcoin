@@ -1290,17 +1290,14 @@ void CChainState::InvalidBlockFound(CBlockIndex *pindex, const CValidationState 
 
 void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo, int nHeight)
 {
-//    /* get the shard affinity for output UTXOs*/
-//    int32_t outputShard = -1;
-//    /* txPlacer may be null if UpdateCoins is called from checkmempool */
-//    if (txPlacer != nullptr){
-//	if (tx.IsCoinBase()){
-//	    lastAssignedAffinity = (lastAssignedAffinity + 1) % num_committees;
-//	    outputShard = lastAssignedAffinity;
-//	} else {
-//	    outputShard = txPlacer->smartPlace(tx, inputs);
-//	}
-//    }
+    /* get the shard affinity for output UTXOs*/
+    int32_t outputShard = -1;
+    TxPlacer txPlacer;
+    if (tx.IsCoinBase()){
+	outputShard = txPlacer.randomPlaceUTXO(tx.GetHash());
+    } else {
+	outputShard = txPlacer.smartPlaceUTXO(tx.vin[0].prevout, inputs);
+    }
     
     /* TODO: output shard should be the shard of the first input and should be the id
      * of this shard. 
@@ -1320,7 +1317,7 @@ void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txund
         }
     }
     // add outputs
-    AddCoins(inputs, tx, nHeight);
+    AddCoins(inputs, tx, nHeight, outputShard);
 }
 
 void UpdateLockCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo, int nHeight)
@@ -1333,11 +1330,11 @@ void UpdateLockCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &t
     std::vector<CTxIn> vinInMyShard;
     for (CTxIn input: tx.vin) {
 	/* for random placement */
-	if (txPlacer.randomPlaceUTXO(input.prevout.hash) != myShardId)
-	    continue;
+//	if (txPlacer.randomPlaceUTXO(input.prevout.hash) != myShardId)
+//	    continue;
 	/* for smart placement */
-//	if (input.shardAffinity != CPbft::shardID)
-//		continue;
+	if (txPlacer.smartPlaceUTXO(input.prevout, inputs) != myShardId)
+		continue;
 	vinInMyShard.push_back(input);
     }
 
@@ -1358,7 +1355,8 @@ void UpdateUnlockCommitCoins(const CTransaction& tx, CCoinsViewCache& inputs, in
      * of the txid */
     int32_t myShardId = pbftID/CPbft::groupSize;
     TxPlacer txPlacer;
-    assert(txPlacer.randomPlaceUTXO(tx.GetHash()) == myShardId);
+//    assert(txPlacer.randomPlaceUTXO(tx.GetHash()) == myShardId);
+    assert(txPlacer.smartPlaceUTXO(tx.vin[0].prevout, inputs) == myShardId);
     
     /* TODO: for smart placement
      * output shard should be the shard of the first input and should be the id
@@ -1368,7 +1366,7 @@ void UpdateUnlockCommitCoins(const CTransaction& tx, CCoinsViewCache& inputs, in
 //    for (uint i = 0, )
 
     // add outputs
-    AddCoins(inputs, tx, nHeight);
+    AddCoins(inputs, tx, nHeight, myShardId);
 }
 
 int ApplyTxInUndo(Coin&& undo, CCoinsViewCache& view, const COutPoint& out);
@@ -1382,11 +1380,11 @@ void UpdateUnlockAbortCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTx
     std::vector<CTxIn> vinInMyShard;
     for (CTxIn input: tx.vin) {
 	/* for random placement */
-	if (txPlacer.randomPlaceUTXO(input.prevout.hash) != myShardId)
-	    continue;
+//	if (txPlacer.randomPlaceUTXO(input.prevout.hash) != myShardId)
+//	    continue;
 	/* for smart placement */
-//	if (input.shardAffinity != CPbft::shardID)
-//		continue;
+	if (txPlacer.smartPlaceUTXO(input.prevout, inputs) != myShardId)
+		continue;
 	vinInMyShard.push_back(input);
     }
 
@@ -4117,7 +4115,7 @@ bool CChainState::RollforwardBlock(const CBlockIndex* pindex, CCoinsViewCache& i
 
     for (const CTransactionRef& tx : block.vtx) {
 	/* get the shard affinity for output UTXOs*/
-//	int32_t shardAffinity = getShardAffinityForTx(inputs, *tx);
+	int32_t shardAffinity = getShardAffinityForTx(inputs, *tx);
 
         if (!tx->IsCoinBase()) {
             for (const CTxIn &txin : tx->vin) {
@@ -4125,7 +4123,7 @@ bool CChainState::RollforwardBlock(const CBlockIndex* pindex, CCoinsViewCache& i
             }
         }
         // Pass check = true as every addition may be an overwrite.
-        AddCoins(inputs, *tx, pindex->nHeight, true);
+        AddCoins(inputs, *tx, pindex->nHeight, shardAffinity, true);
     }
     return true;
 }

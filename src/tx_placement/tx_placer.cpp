@@ -33,8 +33,8 @@ std::vector<int32_t> TxPlacer::randomPlace(const CTransaction& tx){
     std::set<int> inputShardIds;
     
     /* add the input shard ids to the set */
-    for(uint32_t i = 0; i < tx.vin.size(); i++) {
-	if (!tx.vin[i].prevout.IsNull()) { // do not calculate shard for dummy coinbase input.
+    if (!tx.IsCoinBase()) { // do not calculate input shard for coinbase.
+	    for(uint32_t i = 0; i < tx.vin.size(); i++) {
 	    arith_uint256 txid = UintToArith256(tx.vin[i].prevout.hash);
 	    arith_uint256 quotient = txid / num_committees;
 	    arith_uint256 inShardId = txid - quotient * num_committees;
@@ -60,6 +60,7 @@ std::vector<int32_t> TxPlacer::randomPlace(const CTransaction& tx){
 	shardCntMap[tx.vin.size()][inputShardIds.size() + 1]++;
     }
     
+    /* prepare a resultant vector for return */
     std::vector<int32_t> ret(inputShardIds.size() + 1);
     ret[0] = (int32_t)(outShardId.GetLow64());// put the outShardIt as the first element
     std::copy(inputShardIds.begin(), inputShardIds.end(), ret.begin() + 1);
@@ -73,45 +74,68 @@ int32_t TxPlacer::randomPlaceUTXO(const uint256& txid) {
 	return (int32_t)(inShardId.GetLow64());
 }
 
-int32_t TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCache& cache){
-//    int32_t outputShard = -1;
-//    std::set<int> shardIds;
-//    const Coin& firstUtxoIn = cache.AccessCoin(tx.vin[0].prevout);
-//    /* if the coin is not found, an empty coin with null CTxOut is returned. */
-//    if (firstUtxoIn.IsSpent()) {
-//	std::cerr << "not found first input: " << tx.vin[0].prevout.ToString() << std::endl;
-//    }
-//
-//    /* add output shard id */
-//    if(firstUtxoIn.shardAffinity != -1) {
-//	outputShard = firstUtxoIn.shardAffinity;
-//	shardIds.insert(firstUtxoIn.shardAffinity);
-//    } else {
-//	/* the first utxo has not been assigned chainAffinity. Assign it now, and
-//	 * the all output UTXOs should be with the same chainAffinity. */
-//	lastAssignedAffinity = (lastAssignedAffinity + 1) % num_committees;
-//	outputShard = lastAssignedAffinity;
-//	shardIds.insert(lastAssignedAffinity);
-//    }
-//    /* add input shard id. (The shard of the first input UXTO has already been 
-//     * considered when adding output shard id, so here we start with the second
-//     * input UTXO.)*/
-//    for(uint32_t i = 1; i < tx.vin.size(); i++) {
-//	const Coin& utxoIn =  cache.AccessCoin(tx.vin[i].prevout);
-//	if(utxoIn.shardAffinity != -1) {
-//	    shardIds.insert(utxoIn.shardAffinity);
-//	} else {
-//	    /* the first utxo has not been assigned chainAffinity. Assign it now, and
-//	     * the all output UTXOs should be with the same chainAffinity. */
-//	    lastAssignedAffinity = (lastAssignedAffinity + 1) % num_committees;
-//	    shardIds.insert(lastAssignedAffinity);
-//	}
-//    }
-//    /* shardIds.size() is the shard span of this tx. */
-//    shardCntMap[tx.vin.size()][shardIds.size()]++;
-//    return outputShard;
-    return -1;
+std::vector<int32_t> TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCache& cache){
+    /* random place coinbase tx */
+    if (!tx.IsCoinBase()) { 
+	return std::vector<int32_t>{randomPlaceUTXO(tx.GetHash())};
+    }
+
+    std::set<int> inputShardIds;
+    /* Add the input shard ids to the set, and assign the outputShard with the 
+     * shard id of the first input UTXO. 
+     * Note: some input UTXOs might not be in the coinsViewCache, so we maintain
+     * a map<txid, shardId> to keep track of the shard id of newly processed tx 
+     * during test.
+     */
+    for(uint32_t i = 0; i < tx.vin.size(); i++) {
+	if (cache.HaveCoin(tx.vin[i].prevout)) {
+	    inputShardIds.insert(cache.AccessCoin(tx.vin[i].prevout).shardAffinity);
+	} 
+	else {
+	    assert(mapTxShard.find(tx.vin[i].prevout.hash) != mapTxShard.end());
+	    inputShardIds.insert(mapTxShard[tx.vin[i].prevout.hash]);
+	}
+    }
+
+    /* get output shard id */
+    int32_t outputShard = -1;
+    if (cache.HaveCoin(tx.vin[0].prevout)) {
+	outputShard = cache.AccessCoin(tx.vin[0].prevout).shardAffinity;
+    }
+    else {
+	assert(mapTxShard.find(tx.vin[0].prevout.hash) != mapTxShard.end());
+	outputShard = mapTxShard[tx.vin[0].prevout.hash];
+    }
+    
+    /* Because this func is called by the 2PC coordinator, it should add the shard
+     * info of this tx to the map for future use. 
+     */
+     mapTxShard.insert(std::make_pair(tx.GetHash(), outputShard));
+
+    /* inputShardIds.size() is the shard span of this tx. */
+    shardCntMap[tx.vin.size()][inputShardIds.size()]++;
+    
+    /* prepare a resultant vector for return */
+    std::vector<int32_t> ret(inputShardIds.size() + 1);
+    ret[0] = outputShard ;// put the outShardIt as the first element
+    std::copy(inputShardIds.begin(), inputShardIds.end(), ret.begin() + 1);
+    return ret;
 }
+
+/*
+ * Strictly speaking, the return value should be either -1 or our shard id, but
+ * as we use the entire chainstate at block 600999 in our test, we also have 
+ * UTXOs not belonging to our shard in our coinsview.
+ */
+int32_t TxPlacer::smartPlaceUTXO(const COutPoint& txin, CCoinsViewCache& cache) {
+    if (!cache.HaveCoin(txin)) {
+	/* this is a coin generated during testing and not belong to our shard. */
+	return -1;
+    } else {
+	return cache.AccessCoin(txin).shardAffinity;
+    }
+}
+
 
 void TxPlacer::printPlaceResult(){
     std::cout << "total tx num = " << totalTxNum << std::endl;
@@ -128,51 +152,52 @@ void TxPlacer::printPlaceResult(){
  * we may be worse than random placement for cross-shard tx because even random
  * placement put UTXOs of the same tx in the same shard. */
 void assignShardAffinity(){
-//    std::cout << "Assigning shard affinity for all UTXOs..." << std::endl;
-//    std::map<uint, uint> affinityCntMap; // key is shard count, value is tx count
-//    std::unordered_map<uint256, int32_t, BlockHasher> tx2affinityMap;
-//    std::unique_ptr<CCoinsViewCursor> pcursor(pcoinsdbview->Cursor());
-//    assert(pcursor);
-//
-//    // iterate the chain state database
-//    while (pcursor->Valid()) {
-//        boost::this_thread::interruption_point();
-//	COutPoint key;
-//        if (!pcursor->GetKey(key)) {
-//            std::cout << __func__ << ": unable to read key" << std::endl;
-//	    continue;
-//        }
-//        Coin coin;
-//        if (pcursor->GetValue(coin)) {
-//	    if (tx2affinityMap.find(key.hash) != tx2affinityMap.end()) {
-//		/* we have assigned affinity to other outputs of this tx,
-//		 * we must use the same shard affinity for this UTXO. */
-//		coin.shardAffinity = tx2affinityMap[key.hash];
-//		pcoinsTip->AddCoin(key, std::move(coin), true);
-//
-//	    } else {
-//		/* this is the first output of its tx that we have ever seen.*/
-//		lastAssignedAffinity = (lastAssignedAffinity + 1) % num_committees;
-//		tx2affinityMap[key.hash] = lastAssignedAffinity;
-//		affinityCntMap[lastAssignedAffinity]++;
-//		coin.shardAffinity = lastAssignedAffinity;
-//		pcoinsTip->AddCoin(key, std::move(coin), true);
-//    //	    std::cout << "chain affinity of " << key.ToString() 
-//    //		    << " = " << coin.chainAffinity 
-//    //		    << std::endl;
-//	    }
-//        } else {
-//            std::cout << __func__ << ": unable to read coin" << std::endl;
-//        }
-//        pcursor->Next();
-//    }
-//    pcoinsTip->Flush();
-//
-//    std::cout << "chain affinity stats : " << std::endl;
-//    for(auto entry: affinityCntMap) {
-//	std::cout << "affinity = " << entry.first << " tx count : "
-//		<< entry.second << std::endl;
-//    }
+    std::cout << "Assigning shard affinity for all UTXOs..." << std::endl;
+    std::map<uint, uint> affinityCntMap; // key is shard count, value is tx count
+    std::unordered_map<uint256, int32_t, BlockHasher> tx2affinityMap;
+    std::unique_ptr<CCoinsViewCursor> pcursor(pcoinsdbview->Cursor());
+    assert(pcursor);
+
+    // iterate the chain state database
+    while (pcursor->Valid()) {
+        boost::this_thread::interruption_point();
+	COutPoint key;
+        if (!pcursor->GetKey(key)) {
+            std::cout << __func__ << ": unable to read key" << std::endl;
+	    continue;
+        }
+        Coin coin;
+        if (pcursor->GetValue(coin)) {
+	    if (tx2affinityMap.find(key.hash) != tx2affinityMap.end()) {
+		/* we have assigned affinity to other outputs of this tx,
+		 * we must use the same shard affinity for this UTXO. */
+		coin.shardAffinity = tx2affinityMap[key.hash];
+		affinityCntMap[coin.shardAffinity]++;
+		pcoinsTip->AddCoin(key, std::move(coin), true);
+
+	    } else {
+		/* this is the first output of its tx that we have ever seen.*/
+		lastAssignedAffinity = (lastAssignedAffinity + 1) % num_committees;
+		tx2affinityMap[key.hash] = lastAssignedAffinity;
+		coin.shardAffinity = lastAssignedAffinity;
+		affinityCntMap[coin.shardAffinity]++;
+		pcoinsTip->AddCoin(key, std::move(coin), true);
+    //	    std::cout << "chain affinity of " << key.ToString() 
+    //		    << " = " << coin.chainAffinity 
+    //		    << std::endl;
+	    }
+        } else {
+            std::cout << __func__ << ": unable to read coin" << std::endl;
+        }
+        pcursor->Next();
+    }
+    pcoinsTip->Flush();
+
+    std::cout << "chain affinity stats : " << std::endl;
+    for(auto entry: affinityCntMap) {
+	std::cout << "affinity = " << entry.first << " tx count : "
+		<< entry.second << std::endl;
+    }
 }
 
 void incrementalAssignShardAffinity(){
@@ -232,34 +257,34 @@ void incrementalAssignShardAffinity(){
 }
 
 void printShardAffinity(){
-//    std::unique_ptr<CCoinsViewCursor> pcursor(pcoinsdbview->Cursor());
-//    assert(pcursor);
-//
-//    std::map<uint, uint> affinityCntMap; // key is shard count, value is tx count
-//    // iterate the chain state database
-//    while (pcursor->Valid()) {
-//        boost::this_thread::interruption_point();
-//	COutPoint key;
-//        if (!pcursor->GetKey(key)) {
-//            std::cout << __func__ << ": unable to read key" << std::endl;
-//	    continue;
-//        }
-//        Coin coin;
-//        if (pcursor->GetValue(coin)) {
-////	    std::cout << "chain affinity of " << key.ToString() 
-////		    << " = " << coin.chainAffinity 
-////		    << std::endl;
-//	    affinityCntMap[coin.shardAffinity]++;
-//        } else {
-//            std::cout << __func__ << ": unable to read coin" << std::endl;
-//        }
-//        pcursor->Next();
-//    }
-//    std::cout << "chain affinity stats : " << std::endl;
-//    for(auto entry: affinityCntMap) {
-//	std::cout << "affinity = " << entry.first << " UTXO count : "
-//		<< entry.second << std::endl;
-//    }
+    std::unique_ptr<CCoinsViewCursor> pcursor(pcoinsdbview->Cursor());
+    assert(pcursor);
+
+    std::map<uint, uint> affinityCntMap; // key is shard count, value is tx count
+    // iterate the chain state database
+    while (pcursor->Valid()) {
+        boost::this_thread::interruption_point();
+	COutPoint key;
+        if (!pcursor->GetKey(key)) {
+            std::cout << __func__ << ": unable to read key" << std::endl;
+	    continue;
+        }
+        Coin coin;
+        if (pcursor->GetValue(coin)) {
+//	    std::cout << "chain affinity of " << key.ToString() 
+//		    << " = " << coin.chainAffinity 
+//		    << std::endl;
+	    affinityCntMap[coin.shardAffinity]++;
+        } else {
+            std::cout << __func__ << ": unable to read coin" << std::endl;
+        }
+        pcursor->Next();
+    }
+    std::cout << "chain affinity stats : " << std::endl;
+    for(auto entry: affinityCntMap) {
+	std::cout << "affinity = " << entry.first << " UTXO count : "
+		<< entry.second << std::endl;
+    }
 }
 
 //void smartPlaceTxInBlocks(){
@@ -371,22 +396,22 @@ void extractRawTxInBlock(){
 
 /* get the shard affinity for tx (i.e. output UTXOs) */
 int32_t getShardAffinityForTx(CCoinsViewCache& cache, const CTransaction& tx) {
-//	/* TODO: we currently use the shard affinity of the first tx input. Sort 
-//	 * input shard affinity by frequence and use the most frequent one in the
-//	 * future. */
-//	int32_t shardAffinity = -1;
-//	if (tx.IsCoinBase()) {
-//	    /* evenly distribute coinbase output to all shards. */
-//	    lastAssignedAffinity = (lastAssignedAffinity + 1) % num_committees;
-//	    shardAffinity = lastAssignedAffinity;
-//	} else {
-//	    //const Coin firstInput = pcoinsTip->AccessCoin(tx.vin[0].prevout); 
-//	    const Coin firstInput = cache.AccessCoin(tx.vin[0].prevout); 
-//	    if (firstInput.IsSpent()) {
-//		std::cout << __func__ << " : first input UTXO not found in coin cache." << std::endl;
-//	    }
-//	    shardAffinity = firstInput.shardAffinity;
-//	}
-//	return shardAffinity;
+	/* TODO: we currently use the shard affinity of the first tx input. Sort 
+	 * input shard affinity by frequence and use the most frequent one in the
+	 * future. */
+	int32_t shardAffinity = -1;
+	if (tx.IsCoinBase()) {
+	    /* evenly distribute coinbase output to all shards. */
+	    lastAssignedAffinity = (lastAssignedAffinity + 1) % num_committees;
+	    shardAffinity = lastAssignedAffinity;
+	} else {
+	    //const Coin firstInput = pcoinsTip->AccessCoin(tx.vin[0].prevout); 
+	    const Coin firstInput = cache.AccessCoin(tx.vin[0].prevout); 
+	    if (firstInput.IsSpent()) {
+		std::cout << __func__ << " : first input UTXO not found in coin cache." << std::endl;
+	    }
+	    shardAffinity = firstInput.shardAffinity;
+	}
+	return shardAffinity;
     return -1;
 }
