@@ -968,6 +968,60 @@ UniValue gettxoutsetinfo(const JSONRPCRequest& request)
     return ret;
 }
 
+UniValue assignaffinity(const JSONRPCRequest& request)
+{
+    if (request.fHelp || request.params.size() != 0)
+        throw std::runtime_error(
+            "assignaffinity\n"
+            "\nAssign affinity to all UTXOs in the chainstate database.\n"
+            "Note this call may take some time.\n"
+            "\nExamples:\n"
+            + HelpExampleCli("assignaffinity", "")
+            + HelpExampleRpc("assignaffinity", "")
+        );
+
+    UniValue ret(UniValue::VNULL);
+
+    assignShardAffinity();
+    return ret;
+}
+
+UniValue incrementalassignaffinity(const JSONRPCRequest& request)
+{
+    if (request.fHelp || request.params.size() != 0)
+        throw std::runtime_error(
+            "assignaffinity\n"
+            "\nAssign affinity to all UTXOs in the chainstate database.\n"
+            "Note this call may take some time.\n"
+            "\nExamples:\n"
+            + HelpExampleCli("incrementalassignaffinity", "")
+            + HelpExampleRpc("incrementalassignaffinity", "")
+        );
+
+    UniValue ret(UniValue::VOBJ);
+
+    incrementalAssignShardAffinity();
+    return ret;
+}
+
+UniValue printaffinity(const JSONRPCRequest& request)
+{
+    if (request.fHelp || request.params.size() != 0)
+        throw std::runtime_error(
+            "printaffinity\n"
+            "\nPrint affinity to all UTXOs in the chainstate database.\n"
+            "\nExamples:\n"
+            + HelpExampleCli("printaffinity", "")
+            + HelpExampleRpc("printaffinity", "")
+        );
+
+    UniValue ret(UniValue::VOBJ);
+
+    FlushStateToDisk();
+    printShardAffinity();
+    return ret;
+}
+
 UniValue gettxout(const JSONRPCRequest& request)
 {
     if (request.fHelp || request.params.size() < 2 || request.params.size() > 3)

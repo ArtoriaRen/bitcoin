@@ -1288,6 +1288,22 @@ void CChainState::InvalidBlockFound(CBlockIndex *pindex, const CValidationState 
 
 void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo, int nHeight)
 {
+    /* get the shard affinity for output UTXOs*/
+    int32_t outputShard = -1;
+    TxPlacer txPlacer;
+    if (tx.IsCoinBase()){
+	outputShard = txPlacer.randomPlaceUTXO(tx.GetHash());
+    } else {
+	outputShard = txPlacer.smartPlaceUTXO(tx.vin[0].prevout, inputs);
+    }
+    
+    /* TODO: output shard should be the shard of the first input and should be the id
+     * of this shard. 
+     * 1. add shard affinity to txout. Client must collect information about its
+     * own txout and specify shard id in tx inputs. */
+//    assert(tx.vin[0].shardAffinity);
+//    int32_t outputShard = -1;
+
     // mark inputs spent
     if (!tx.IsCoinBase()) {
         txundo.vprevout.reserve(tx.vin.size());
@@ -1298,7 +1314,85 @@ void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txund
         }
     }
     // add outputs
-    AddCoins(inputs, tx, nHeight);
+    AddCoins(inputs, tx, nHeight, outputShard);
+}
+
+void UpdateLockCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo, int nHeight)
+{
+    assert(!tx.IsCoinBase()); // coinbase tx has no valid input UTXO, so it should never be in a LockReq.
+
+    int32_t myShardId = pbftID/CPbft::groupSize;
+    /*----pick out input UTXOs in our shard----*/
+    TxPlacer txPlacer;
+    std::vector<CTxIn> vinInMyShard;
+    for (CTxIn input: tx.vin) {
+	/* for random placement */
+//	if (txPlacer.randomPlaceUTXO(input.prevout.hash) != myShardId)
+//	    continue;
+	/* for smart placement */
+	if (txPlacer.smartPlaceUTXO(input.prevout, inputs) != myShardId)
+		continue;
+	vinInMyShard.push_back(input);
+    }
+
+    /* mark inputs in our shard spent */
+    txundo.vprevout.reserve(vinInMyShard.size());
+    for (const CTxIn &txin : vinInMyShard) {
+	txundo.vprevout.emplace_back();
+	bool is_spent = inputs.SpendCoin(txin.prevout, &txundo.vprevout.back());
+//	    std::cout << __func__ << " txundo.prevout shardAffinity = " << txundo.vprevout.back().shardAffinity  << ", height = " << txundo.vprevout.back().nHeight << std::endl;
+	assert(is_spent);
+    }
+}
+
+void UpdateUnlockCommitCoins(const CTransaction& tx, CCoinsViewCache& inputs, int nHeight)
+{
+
+    /* for random placement, our shard id shoud be the random placement output 
+     * of the txid */
+    int32_t myShardId = pbftID/CPbft::groupSize;
+    TxPlacer txPlacer;
+//    assert(txPlacer.randomPlaceUTXO(tx.GetHash()) == myShardId);
+    assert(txPlacer.smartPlaceUTXO(tx.vin[0].prevout, inputs) == myShardId);
+    
+    /* TODO: for smart placement
+     * output shard should be the shard of the first input and should be the id
+     * of this shard. 
+     */
+//    assert(tx.vin[0].shardAffinity == CPbft::shardID);
+//    for (uint i = 0, )
+
+    // add outputs
+    AddCoins(inputs, tx, nHeight, myShardId);
+}
+
+int ApplyTxInUndo(Coin&& undo, CCoinsViewCache& view, const COutPoint& out);
+void UpdateUnlockAbortCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo)
+{
+    assert(!tx.IsCoinBase()); // coinbase tx has no valid input UTXO, so it should never be in a LockReq.
+
+    int32_t myShardId = pbftID/CPbft::groupSize;
+    /*----pick out input UTXOs in our shard----*/
+    TxPlacer txPlacer;
+    std::vector<CTxIn> vinInMyShard;
+    for (CTxIn input: tx.vin) {
+	/* for random placement */
+//	if (txPlacer.randomPlaceUTXO(input.prevout.hash) != myShardId)
+//	    continue;
+	/* for smart placement */
+	if (txPlacer.smartPlaceUTXO(input.prevout, inputs) != myShardId)
+		continue;
+	vinInMyShard.push_back(input);
+    }
+
+    assert(txundo.vprevout.size() == vinInMyShard.size());
+
+    for (unsigned int j = vinInMyShard.size(); j-- > 0;) {
+	const COutPoint &out = vinInMyShard[j].prevout;
+//		std::cout << __func__ << " txundo.prevout shardAffinity = " << txundo.vprevout[j].shardAffinity << std::endl;
+	int res = ApplyTxInUndo(std::move(txundo.vprevout[j]), inputs, out);
+	assert (res != DISCONNECT_FAILED && res != DISCONNECT_UNCLEAN);
+    }
 }
 
 void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, int nHeight)
@@ -3922,13 +4016,16 @@ bool CChainState::RollforwardBlock(const CBlockIndex* pindex, CCoinsViewCache& i
     }
 
     for (const CTransactionRef& tx : block.vtx) {
+	/* get the shard affinity for output UTXOs*/
+	int32_t shardAffinity = getShardAffinityForTx(inputs, *tx);
+
         if (!tx->IsCoinBase()) {
             for (const CTxIn &txin : tx->vin) {
                 inputs.SpendCoin(txin.prevout);
             }
         }
         // Pass check = true as every addition may be an overwrite.
-        AddCoins(inputs, *tx, pindex->nHeight, true);
+        AddCoins(inputs, *tx, pindex->nHeight, shardAffinity, true);
     }
     return true;
 }
