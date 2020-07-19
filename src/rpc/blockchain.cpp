@@ -1727,6 +1727,7 @@ static const CRPCCommand commands[] =
     { "blockchain",         "gettxoutsetinfo",        &gettxoutsetinfo,        {} },
     { "blockchain",         "assignaffinity",         &assignaffinity,         {} },
     { "blockchain",         "incrementalassignaffinity",         &incrementalassignaffinity,         {} },
+    { "blockchain",         "printaffinity",          &printaffinity,          {} },
     { "blockchain",         "pruneblockchain",        &pruneblockchain,        {"height"} },
     { "blockchain",         "savemempool",            &savemempool,            {} },
     { "blockchain",         "verifychain",            &verifychain,            {"checklevel","nblocks"} },

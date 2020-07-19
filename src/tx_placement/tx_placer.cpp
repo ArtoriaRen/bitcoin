@@ -335,7 +335,8 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
 	const uint256& hashTx = tx->GetHash();
 	/* get the input shards and output shards id*/
 	TxPlacer txPlacer;
-	std::vector<int32_t> shards = txPlacer.randomPlace(*tx);
+	CCoinsViewCache view(pcoinsTip.get());
+	std::vector<int32_t> shards = txPlacer.smartPlace(*tx, view);
 	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	assert((tx->IsCoinBase() && shards.size() == 1) || (!tx->IsCoinBase() && shards.size() >= 2)); // there must be at least one output shard and one input shard for non-coinbase tx.
 	std::cout << "tx "  <<  hashTx.GetHex().substr(0, 10) << " : ";
