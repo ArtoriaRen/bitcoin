@@ -76,7 +76,7 @@ int32_t TxPlacer::randomPlaceUTXO(const uint256& txid) {
 
 std::vector<int32_t> TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCache& cache){
     /* random place coinbase tx */
-    if (!tx.IsCoinBase()) { 
+    if (tx.IsCoinBase()) { 
 	return std::vector<int32_t>{randomPlaceUTXO(tx.GetHash())};
     }
 
