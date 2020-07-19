@@ -110,7 +110,7 @@ std::vector<int32_t> TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCach
     /* Because this func is called by the 2PC coordinator, it should add the shard
      * info of this tx to the map for future use. 
      */
-     mapTxShard.insert(std::make_pair(tx.GetHash(), outputShard));
+    mapTxShard.insert(std::make_pair(tx.GetHash(), outputShard));
 
     /* inputShardIds.size() is the shard span of this tx. */
     shardCntMap[tx.vin.size()][inputShardIds.size()]++;
@@ -148,9 +148,6 @@ void TxPlacer::printPlaceResult(){
     }
 }
 
-/* UTXOs produced by the same transaction should be in the same shard. Otherwise,
- * we may be worse than random placement for cross-shard tx because even random
- * placement put UTXOs of the same tx in the same shard. */
 void assignShardAffinity(){
     std::cout << "Assigning shard affinity for all UTXOs..." << std::endl;
     std::map<uint, uint> affinityCntMap; // key is shard count, value is tx count
@@ -393,25 +390,3 @@ void extractRawTxInBlock(){
 //	shardCntMap[pblock->vtx[j]->vin.size()][txPlacer.smartPlace(pblock->vtx[j])]++;
 //    }
 //}
-
-/* get the shard affinity for tx (i.e. output UTXOs) */
-int32_t getShardAffinityForTx(CCoinsViewCache& cache, const CTransaction& tx) {
-	/* TODO: we currently use the shard affinity of the first tx input. Sort 
-	 * input shard affinity by frequence and use the most frequent one in the
-	 * future. */
-	int32_t shardAffinity = -1;
-	if (tx.IsCoinBase()) {
-	    /* evenly distribute coinbase output to all shards. */
-	    lastAssignedAffinity = (lastAssignedAffinity + 1) % num_committees;
-	    shardAffinity = lastAssignedAffinity;
-	} else {
-	    //const Coin firstInput = pcoinsTip->AccessCoin(tx.vin[0].prevout); 
-	    const Coin firstInput = cache.AccessCoin(tx.vin[0].prevout); 
-	    if (firstInput.IsSpent()) {
-		std::cout << __func__ << " : first input UTXO not found in coin cache." << std::endl;
-	    }
-	    shardAffinity = firstInput.shardAffinity;
-	}
-	return shardAffinity;
-    return -1;
-}

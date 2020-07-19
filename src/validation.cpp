@@ -4115,7 +4115,12 @@ bool CChainState::RollforwardBlock(const CBlockIndex* pindex, CCoinsViewCache& i
 
     for (const CTransactionRef& tx : block.vtx) {
 	/* get the shard affinity for output UTXOs*/
-	int32_t shardAffinity = getShardAffinityForTx(inputs, *tx);
+	int32_t shardAffinity;
+	if (tx->IsCoinBase()){
+	    shardAffinity = TxPlacer().randomPlaceUTXO(tx->GetHash());
+	} else {
+	    shardAffinity = TxPlacer().smartPlaceUTXO(tx->vin[0].prevout, inputs);
+	}
 
         if (!tx->IsCoinBase()) {
             for (const CTxIn &txin : tx->vin) {

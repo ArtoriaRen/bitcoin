@@ -77,7 +77,7 @@ public:
         ::Unserialize(s, VARINT(code));
         nHeight = code >> 1;
         fCoinBase = code & 1;
-        //::Unserialize(s, shardAffinity);
+        ::Unserialize(s, shardAffinity);
         ::Unserialize(s, REF(CTxOutCompressor(out)));
     }
 
