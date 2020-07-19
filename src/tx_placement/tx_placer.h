@@ -49,7 +49,9 @@ public:
      * The output shard id might equal one input shard id. */
     std::vector<int32_t> smartPlace(const CTransaction& tx, CCoinsViewCache& cache);
 
-    /* return the shard hosting the UTXO whose producing tx is txid */
+    /* return the shard hosting the UTXO whose producing tx is txid. 
+     * Note: this should be called only by servers, so the func does not 
+     * search mapTxShard. */
     int32_t smartPlaceUTXO(const COutPoint& txin, CCoinsViewCache& cache);
 
     void printPlaceResult();
@@ -80,7 +82,6 @@ void extractRawTxInBlock();
  * historical tx since they had been spent and not exist in chainstate.
  */
 void smartPlaceTxInBlock(const std::shared_ptr<const CBlock> pblock);
-int32_t getShardAffinityForTx(CCoinsViewCache& cache, const CTransaction& tx);
 
 #endif /* TX_PLACER_H */
 
