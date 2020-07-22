@@ -74,7 +74,7 @@ int32_t TxPlacer::randomPlaceUTXO(const uint256& txid) {
 	return (int32_t)(inShardId.GetLow64());
 }
 
-std::vector<int32_t> TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCache& cache){
+std::vector<int32_t> TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCache& cache, uint32_t block_height){
     /* random place coinbase tx */
     if (tx.IsCoinBase()) { 
 	return std::vector<int32_t>{randomPlaceUTXO(tx.GetHash())};
@@ -87,30 +87,24 @@ std::vector<int32_t> TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCach
      * a map<txid, shardId> to keep track of the shard id of newly processed tx 
      * during test.
      */
+    //std::cout << " tx " << tx.GetHash().GetHex().substr(0,10) << " inputs : ";
     for(uint32_t i = 0; i < tx.vin.size(); i++) {
-	if (cache.HaveCoin(tx.vin[i].prevout)) {
-	    inputShardIds.insert(cache.AccessCoin(tx.vin[i].prevout).shardAffinity);
-	} 
-	else {
-	    assert(mapTxShard.find(tx.vin[i].prevout.hash) != mapTxShard.end());
-	    inputShardIds.insert(mapTxShard[tx.vin[i].prevout.hash]);
-	}
+	//std::cout << "Outpoint (" << tx.vin[i].prevout.hash.GetHex().substr(0, 10) << ", " << tx.vin[i].prevout.n << "), ";
+	assert(cache.HaveCoin(tx.vin[i].prevout));
+	inputShardIds.insert(cache.AccessCoin(tx.vin[i].prevout).shardAffinity);
     }
+    //std::cout << std::endl;
 
     /* get output shard id */
-    int32_t outputShard = -1;
-    if (cache.HaveCoin(tx.vin[0].prevout)) {
-	outputShard = cache.AccessCoin(tx.vin[0].prevout).shardAffinity;
-    }
-    else {
-	assert(mapTxShard.find(tx.vin[0].prevout.hash) != mapTxShard.end());
-	outputShard = mapTxShard[tx.vin[0].prevout.hash];
-    }
+    int32_t outputShard = cache.AccessCoin(tx.vin[0].prevout).shardAffinity;
     
     /* Because this func is called by the 2PC coordinator, it should add the shard
-     * info of this tx to the map for future use. 
+     * info of this outputs of tx to coinsviewcache for future use. 
      */
-    mapTxShard.insert(std::make_pair(tx.GetHash(), outputShard));
+    //std::cout << __func__ << ": add to mapTxShard, tx = " << tx.GetHash().GetHex().substr(0, 10) << ", outputShard = " << outputShard << std::endl;
+    AddCoins(cache, tx, block_height, outputShard);
+    bool flushed = cache.Flush(); // flush to pcoinsTip
+    assert(flushed);
 
     /* inputShardIds.size() is the shard span of this tx. */
     shardCntMap[tx.vin.size()][inputShardIds.size()]++;
@@ -327,13 +321,13 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
     }
     std::cout << __func__ << "sending " << block.vtx.size() << " tx in block " << block_height << std::endl;
     uint32_t cnt = 0;
+    TxPlacer txPlacer;
+    CCoinsViewCache view(pcoinsTip.get());
     for (uint j = 0; j < block.vtx.size(); j++) {
 	CTransactionRef tx = block.vtx[j];
 	const uint256& hashTx = tx->GetHash();
 	/* get the input shards and output shards id*/
-	TxPlacer txPlacer;
-	CCoinsViewCache view(pcoinsTip.get());
-	std::vector<int32_t> shards = txPlacer.smartPlace(*tx, view);
+	std::vector<int32_t> shards = txPlacer.smartPlace(*tx, view, block_height);
 	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	assert((tx->IsCoinBase() && shards.size() == 1) || (!tx->IsCoinBase() && shards.size() >= 2)); // there must be at least one output shard and one input shard for non-coinbase tx.
 	std::cout << "tx "  <<  hashTx.GetHex().substr(0, 10) << " : ";

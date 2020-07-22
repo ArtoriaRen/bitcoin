@@ -29,11 +29,6 @@ public:
     std::map<uint, std::map<uint, uint>> shardCntMap; // < input_utxo_count, shard_count, tx_count>
     uint totalTxNum;
 
-    /* A map for 2PC coordinator to figure out where to send lockReq if a tx spends
-     * UTXOs generated during the test. 
-     */
-    std::unordered_map<uint256, int32_t, BlockHasher> mapTxShard; // <txid, shardID>
-
     /* return the number of shards that input UTXOs and output UTXOs span */
     TxPlacer();
 
@@ -47,7 +42,7 @@ public:
     /* return a vector of shard ids. 
      * The first element is the output shard id, and other elements are input shard ids.
      * The output shard id might equal one input shard id. */
-    std::vector<int32_t> smartPlace(const CTransaction& tx, CCoinsViewCache& cache);
+    std::vector<int32_t> smartPlace(const CTransaction& tx, CCoinsViewCache& cache, uint32_t block_height);
 
     /* return the shard hosting the UTXO whose producing tx is txid. 
      * Note: this should be called only by servers, so the func does not 
@@ -82,6 +77,8 @@ void extractRawTxInBlock();
  * historical tx since they had been spent and not exist in chainstate.
  */
 void smartPlaceTxInBlock(const std::shared_ptr<const CBlock> pblock);
+
+extern TxPlacer g_txplacer;
 
 #endif /* TX_PLACER_H */
 
