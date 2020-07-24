@@ -1290,21 +1290,13 @@ void CChainState::InvalidBlockFound(CBlockIndex *pindex, const CValidationState 
 
 void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo, int nHeight)
 {
-    /* get the shard affinity for output UTXOs*/
-    int32_t outputShard = -1;
-    TxPlacer txPlacer;
-    if (tx.IsCoinBase()){
-	outputShard = txPlacer.randomPlaceUTXO(tx.GetHash());
-    } else {
-	outputShard = txPlacer.smartPlaceUTXO(tx.vin[0].prevout, inputs);
-    }
+    /* Use my shard id as the shard id of all output UTXOs. */
+    int32_t myShardId = pbftID/CPbft::groupSize;
     
     /* TODO: output shard should be the shard of the first input and should be the id
      * of this shard. 
-     * 1. add shard affinity to txout. Client must collect information about its
-     * own txout and specify shard id in tx inputs. */
-//    assert(tx.vin[0].shardAffinity);
-//    int32_t outputShard = -1;
+     */
+//  assert(txPlacer.smartPlaceUTXO(tx.vin[0].prevout, inputs) == myShardId);
 
     // mark inputs spent
     if (!tx.IsCoinBase()) {
@@ -1317,7 +1309,7 @@ void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txund
         }
     }
     // add outputs
-    AddCoins(inputs, tx, nHeight, outputShard);
+    AddCoins(inputs, tx, nHeight, myShardId );
 }
 
 void UpdateLockCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo, int nHeight)
@@ -1327,6 +1319,11 @@ void UpdateLockCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &t
     int32_t myShardId = pbftID/CPbft::groupSize;
     /*----pick out input UTXOs in our shard----*/
     TxPlacer txPlacer;
+
+    /* check if we are expecting a unlock_to_commit req in the future for this tx.*/
+    if (txPlacer.smartPlaceUTXO(tx.vin[0].prevout, *pcoinsTip) == myShardId)
+	g_pbft->txToBeCommitted.insert(tx.GetHash());
+
     std::vector<CTxIn> vinInMyShard;
     for (CTxIn input: tx.vin) {
 	/* for random placement */
@@ -1354,9 +1351,12 @@ void UpdateUnlockCommitCoins(const CTransaction& tx, CCoinsViewCache& inputs, in
     /* for random placement, our shard id shoud be the random placement output 
      * of the txid */
     int32_t myShardId = pbftID/CPbft::groupSize;
-    TxPlacer txPlacer;
+//    TxPlacer txPlacer;
 //    assert(txPlacer.randomPlaceUTXO(tx.GetHash()) == myShardId);
-    assert(txPlacer.smartPlaceUTXO(tx.vin[0].prevout, inputs) == myShardId);
+
+    auto iter = g_pbft->txToBeCommitted.find(tx.GetHash());
+    assert(iter != g_pbft->txToBeCommitted.end());
+    g_pbft->txToBeCommitted.erase(iter);
     
     /* TODO: for smart placement
      * output shard should be the shard of the first input and should be the id
@@ -1562,11 +1562,13 @@ bool CheckLockInputs(const CTransaction& tx, CValidationState &state, const CCoi
 	    int32_t myShardId = pbftID/CPbft::groupSize;
 	    TxPlacer txPlacer;
             for (unsigned int i = 0; i < tx.vin.size(); i++) {
-		// TODO: check shardAffinity
-//		if (tx.vin[i].shardId != MyShardID)
+		/* check shardAffinity */
+		/* for random placement */
+//		if (txPlacer.randomPlaceUTXO(tx.vin[i].prevout.hash) != myShardId)
 //		    continue;
-		if (txPlacer.randomPlaceUTXO(tx.vin[i].prevout.hash) != myShardId)
-		    continue;
+		/* for smart placement */
+		if (txPlacer.smartPlaceUTXO(tx.vin[i].prevout, inputs) != myShardId)
+			continue;
 		
                 const COutPoint &prevout = tx.vin[i].prevout;
                 const Coin& coin = inputs.AccessCoin(prevout);

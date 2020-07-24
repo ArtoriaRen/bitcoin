@@ -18,6 +18,7 @@
 #include "key.h"
 #include "net.h"
 #include "pubkey.h"
+#include "validation.h"
 #include <unordered_map>
 #include <queue>
 #include <mutex>
@@ -87,6 +88,12 @@ public:
     CConnman* clientConnMan;
 
     std::chrono::milliseconds lastQSizePrintTime;
+
+    /* A set used when check if we should commit a tx in our shard. 
+     * This is only needed by the smart placement b/c we would have spent the 
+     * tx.vin[0] by the time we are asked to committed the tx, so we cannot use
+     * smartPlaceUTXO(tx.vin[0]) to resolve the output shard of the tx. */
+    std::unordered_set<uint256, BlockHasher> txToBeCommitted;
 
     CPbft();
     // Check Pre-prepare message signature and send Prepare message

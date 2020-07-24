@@ -127,10 +127,10 @@ std::vector<int32_t> TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCach
  * as we use the entire chainstate at block 600999 in our test, we also have 
  * UTXOs not belonging to our shard in our coinsview.
  */
-int32_t TxPlacer::smartPlaceUTXO(const COutPoint& txin, CCoinsViewCache& cache) {
+int32_t TxPlacer::smartPlaceUTXO(const COutPoint& txin, const CCoinsViewCache& cache) {
     if (!cache.HaveCoin(txin)) {
 	/* this is a coin generated during testing and not belong to our shard. */
-	return -1;
+	return -2;
     } else {
 	return cache.AccessCoin(txin).shardAffinity;
     }

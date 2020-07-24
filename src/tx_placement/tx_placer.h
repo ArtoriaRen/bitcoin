@@ -53,7 +53,7 @@ public:
     /* return the shard hosting the UTXO whose producing tx is txid. 
      * Note: this should be called only by servers, so the func does not 
      * search mapTxShard. */
-    int32_t smartPlaceUTXO(const COutPoint& txin, CCoinsViewCache& cache);
+    int32_t smartPlaceUTXO(const COutPoint& txin, const CCoinsViewCache& cache);
 
     void printPlaceResult();
     // TODO: smartPlaceSorted

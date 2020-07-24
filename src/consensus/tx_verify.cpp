@@ -273,20 +273,21 @@ bool Consensus::CheckLockReqInputs(const CTransaction& tx, CValidationState& sta
     std::vector<CTxIn> vinInMyShard;
     for (CTxIn input: tx.vin) {
 	/* for random placement */
-	if (txPlacer.randomPlaceUTXO(input.prevout.hash) != myShardId)
-	    continue;
+//	if (txPlacer.randomPlaceUTXO(input.prevout.hash) != myShardId)
+//	    continue;
 	/* for smart placement */
-//	if (input.shardAffinity != CPbft::shardID)
-//		continue;
+	if (txPlacer.smartPlaceUTXO(input.prevout, inputs) != myShardId)
+		continue;
 	vinInMyShard.push_back(input);
     }
 
-    for (CTxIn input: vinInMyShard) {
-	if (!inputs.HaveCoin(input.prevout)) {
-	    return state.DoS(100, false, REJECT_INVALID, "bad-txns-inputs-missingorspent", false,
-			     strprintf("%s: inputs missing/spent", __func__));
-	}
-    }
+    /* not needed for smart place b/c we have confirmed this in smartPlaceUTXO().*/
+//    for (CTxIn input: vinInMyShard) {
+//	if (!inputs.HaveCoin(input.prevout)) {
+//	    return state.DoS(100, false, REJECT_INVALID, "bad-txns-inputs-missingorspent", false,
+//			     strprintf("%s: inputs missing/spent", __func__));
+//	}
+//    }
 
     CAmount nValueIn = 0;
     for (unsigned int i = 0; i < vinInMyShard.size(); ++i) {
