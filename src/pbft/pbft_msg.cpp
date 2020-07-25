@@ -30,7 +30,20 @@ void CInputShardReply::getHash(uint256& result) const {
 }
 
 UnlockToCommitReq::UnlockToCommitReq(): tx_mutable(CMutableTransaction()) {}
-UnlockToCommitReq::UnlockToCommitReq(const CTransaction& txIn, const uint sigCountIn, std::vector<CInputShardReply>&& vReply) : tx_mutable(txIn), nInputShardReplies(sigCountIn), vInputShardReply(vReply){}
+UnlockToCommitReq::UnlockToCommitReq(const CTransaction& txIn, const uint sigCountIn, std::vector<CInputShardReply>&& vReply) : tx_mutable(txIn), nInputShardReplies(sigCountIn), vInputShardReply(vReply){
+}
+
+uint256 LockReq::GetDigest() const {
+    uint256 tx_hash(tx_mutable.GetHash());
+    CHash256 hasher;
+    hasher.Write((const unsigned char*)tx_hash.begin(), tx_hash.size());
+    for (uint i = 0; i < nOutpointToLock; i++) {
+	hasher .Write((const unsigned char*)&vInputUtxoIdxToLock[i], sizeof(vInputUtxoIdxToLock[i]));
+    }
+    uint256 result;
+    hasher.Finalize((unsigned char*)&result);
+    return result;
+}
 
 uint256 UnlockToCommitReq::GetDigest() const {
     uint256 tx_hash(tx_mutable.GetHash());
