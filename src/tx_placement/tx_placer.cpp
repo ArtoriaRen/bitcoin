@@ -74,13 +74,14 @@ int32_t TxPlacer::randomPlaceUTXO(const uint256& txid) {
 	return (int32_t)(inShardId.GetLow64());
 }
 
-std::vector<int32_t> TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCache& cache, uint32_t block_height){
+std::vector<int32_t> TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCache& cache, std::vector<std::vector<uint32_t> >& vShardUtxoIdxToLock, const uint32_t block_height){
     /* random place coinbase tx */
     if (tx.IsCoinBase()) { 
 	return std::vector<int32_t>{randomPlaceUTXO(tx.GetHash())};
     }
 
-    std::set<int> inputShardIds;
+    /* key is shard id, value is a vector of input utxos in this shard. */
+    std::map<int32_t, std::vector<uint32_t> > mapInputShardUTXO;
     /* Add the input shard ids to the set, and assign the outputShard with the 
      * shard id of the first input UTXO. 
      * Note: some input UTXOs might not be in the coinsViewCache, so we maintain
@@ -91,7 +92,7 @@ std::vector<int32_t> TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCach
     for(uint32_t i = 0; i < tx.vin.size(); i++) {
 	//std::cout << "Outpoint (" << tx.vin[i].prevout.hash.GetHex().substr(0, 10) << ", " << tx.vin[i].prevout.n << "), ";
 	assert(cache.HaveCoin(tx.vin[i].prevout));
-	inputShardIds.insert(cache.AccessCoin(tx.vin[i].prevout).shardAffinity);
+	mapInputShardUTXO[cache.AccessCoin(tx.vin[i].prevout).shardAffinity].push_back(i);
     }
     //std::cout << std::endl;
 
@@ -107,12 +108,18 @@ std::vector<int32_t> TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCach
     assert(flushed);
 
     /* inputShardIds.size() is the shard span of this tx. */
-    shardCntMap[tx.vin.size()][inputShardIds.size()]++;
+    shardCntMap[tx.vin.size()][mapInputShardUTXO.size()]++;
     
     /* prepare a resultant vector for return */
-    std::vector<int32_t> ret(inputShardIds.size() + 1);
-    ret[0] = outputShard ;// put the outShardIt as the first element
-    std::copy(inputShardIds.begin(), inputShardIds.end(), ret.begin() + 1);
+    std::vector<int32_t> ret;
+    ret.reserve(mapInputShardUTXO.size() + 1);
+    ret.push_back(outputShard);// put the outShardId as the first element
+    for (auto it = mapInputShardUTXO.begin(); it != mapInputShardUTXO.end(); it++) 
+    {
+	ret.push_back(it->first);
+	vShardUtxoIdxToLock.push_back(it->second);
+    }
+    assert(vShardUtxoIdxToLock.size() + 1 == ret.size());
     return ret;
 }
 
@@ -121,10 +128,10 @@ std::vector<int32_t> TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCach
  * as we use the entire chainstate at block 600999 in our test, we also have 
  * UTXOs not belonging to our shard in our coinsview.
  */
-int32_t TxPlacer::smartPlaceUTXO(const COutPoint& txin, CCoinsViewCache& cache) {
+int32_t TxPlacer::smartPlaceUTXO(const COutPoint& txin, const CCoinsViewCache& cache) {
     if (!cache.HaveCoin(txin)) {
 	/* this is a coin generated during testing and not belong to our shard. */
-	return -1;
+	return -2;
     } else {
 	return cache.AccessCoin(txin).shardAffinity;
     }
@@ -327,7 +334,8 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
 	CTransactionRef tx = block.vtx[j];
 	const uint256& hashTx = tx->GetHash();
 	/* get the input shards and output shards id*/
-	std::vector<int32_t> shards = txPlacer.smartPlace(*tx, view, block_height);
+	std::vector<std::vector<uint32_t> > vShardUtxoIdxToLock;
+	std::vector<int32_t> shards = txPlacer.smartPlace(*tx, view, vShardUtxoIdxToLock, block_height);
 	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	assert((tx->IsCoinBase() && shards.size() == 1) || (!tx->IsCoinBase() && shards.size() >= 2)); // there must be at least one output shard and one input shard for non-coinbase tx.
 	std::cout << "tx "  <<  hashTx.GetHex().substr(0, 10) << " : ";
@@ -379,6 +387,8 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
 	    for (uint i = 1; i < shards.size(); i++) {
 		g_pbft->inputShardReplyMap[hashTx].lockReply.insert(std::make_pair(shards[i], std::vector<CInputShardReply>()));
 		g_pbft->inputShardReplyMap[hashTx].decision = '\0';
+
+		LockReq lockReq(*tx, vShardUtxoIdxToLock[i - 1]);
 		g_connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_LOCK, *tx));
 	    }
 	}
