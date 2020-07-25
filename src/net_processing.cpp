@@ -1881,7 +1881,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		        /* This info is printed only once for an aborted tx b/c  it is only printed when the number of replies equals (2f+1). Strictly speaking, this is not correct, we should wait for reply for every input shard that have locked some UTXOs. */
 			std::cout << ", ABORTED, ";
 		} else if (reply.reply == 'n') {
-			std::cout << "fail to commit or abort, ";
+			std::cout << " fail to commit or abort, ";
 		} 
 		std::cout << "cross-shard, latency = " << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << " ms" << std::endl;
 	    }
@@ -1961,6 +1961,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    vReply.reserve(reply_threshold * g_pbft->inputShardReplyMap[reply.digest].lockReply.size());
 	    for (auto& p : g_pbft->inputShardReplyMap[reply.digest].lockReply) {
 		/* add the first (2f+1) replies of the current shard to the vector */
+		    std::cout << "shard " << p.first << " locks UTXO of value " << p.second[0].totalValueInOfShard << std::endl;
 		vReply.insert(vReply.end(), p.second.begin(), p.second.begin() + 3);
 	    }
             
@@ -1973,7 +1974,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
 	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	    TxPlacer txPlacer;
-	    int32_t outputShard = txPlacer.randomPlaceUTXO(g_pbft->mapTxid[reply.digest]->GetHash());
+	    //int32_t outputShard = txPlacer.randomPlaceUTXO(g_pbft->mapTxid[reply.digest]->GetHash());
+	    int32_t outputShard = txPlacer.smartPlaceUTXO(g_pbft->mapTxid[reply.digest]->vin[0].prevout, *pcoinsTip);
 	    std::cout << "sending unlock_to_commit with req_hash = " << commitReq.GetDigest().GetHex().substr(0, 10) << " to shard " << outputShard << std::endl;
 	    connman->PushMessage(g_pbft->leaders[outputShard], msgMaker.Make(NetMsgType::OMNI_UNLOCK_COMMIT, commitReq));
 	} 

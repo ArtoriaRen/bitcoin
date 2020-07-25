@@ -338,7 +338,7 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
 	std::vector<int32_t> shards = txPlacer.smartPlace(*tx, view, vShardUtxoIdxToLock, block_height);
 	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	assert((tx->IsCoinBase() && shards.size() == 1) || (!tx->IsCoinBase() && shards.size() >= 2)); // there must be at least one output shard and one input shard for non-coinbase tx.
-	std::cout << "tx "  <<  hashTx.GetHex().substr(0, 10) << " : ";
+	std::cout << j << "-th" << " tx "  <<  hashTx.GetHex().substr(0, 10) << " : ";
 	for (int shard : shards)
 	    std::cout << shard << ", ";
 	std::cout << std::endl;
