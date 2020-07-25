@@ -3473,10 +3473,9 @@ bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CD
 
     /* received a lock req, put it in queue . */
     else if (strCommand == NetMsgType::OMNI_LOCK) {
-        CTransactionRef ptx;
-        vRecv >> ptx;
-	std::shared_ptr<CClientReq> req = std::make_shared<LockReq>(*ptx);
-	TypedReq typedReq = {ClientReqType::LOCK, req};
+	std::shared_ptr<LockReq> pLockReq(new LockReq());
+        vRecv >> *pLockReq;
+	TypedReq typedReq = {ClientReqType::LOCK, pLockReq};
 	pbft->reqQueue.push_back(typedReq);
         g_connman->WakeMessageHandler();
 //	std::cout << __func__ << ": push to req queue lockreq. tx = " << ptx->GetHash().GetHex().substr(0, 10) << std::endl;

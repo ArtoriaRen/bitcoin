@@ -74,51 +74,52 @@ int32_t TxPlacer::randomPlaceUTXO(const uint256& txid) {
 	return (int32_t)(inShardId.GetLow64());
 }
 
-std::vector<int32_t> TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCache& cache){
+std::vector<int32_t> TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCache& cache, std::vector<std::vector<uint32_t> >& vShardUtxoIdxToLock, const uint32_t block_height){
     /* random place coinbase tx */
     if (tx.IsCoinBase()) { 
 	return std::vector<int32_t>{randomPlaceUTXO(tx.GetHash())};
     }
 
-    std::set<int> inputShardIds;
+    /* key is shard id, value is a vector of input utxos in this shard. */
+    std::map<int32_t, std::vector<uint32_t> > mapInputShardUTXO;
     /* Add the input shard ids to the set, and assign the outputShard with the 
      * shard id of the first input UTXO. 
      * Note: some input UTXOs might not be in the coinsViewCache, so we maintain
      * a map<txid, shardId> to keep track of the shard id of newly processed tx 
      * during test.
      */
+    //std::cout << " tx " << tx.GetHash().GetHex().substr(0,10) << " inputs : ";
     for(uint32_t i = 0; i < tx.vin.size(); i++) {
-	if (cache.HaveCoin(tx.vin[i].prevout)) {
-	    inputShardIds.insert(cache.AccessCoin(tx.vin[i].prevout).shardAffinity);
-	} 
-	else {
-	    assert(mapTxShard.find(tx.vin[i].prevout.hash) != mapTxShard.end());
-	    inputShardIds.insert(mapTxShard[tx.vin[i].prevout.hash]);
-	}
+	//std::cout << "Outpoint (" << tx.vin[i].prevout.hash.GetHex().substr(0, 10) << ", " << tx.vin[i].prevout.n << "), ";
+	assert(cache.HaveCoin(tx.vin[i].prevout));
+	mapInputShardUTXO[cache.AccessCoin(tx.vin[i].prevout).shardAffinity].push_back(i);
     }
+    //std::cout << std::endl;
 
     /* get output shard id */
-    int32_t outputShard = -1;
-    if (cache.HaveCoin(tx.vin[0].prevout)) {
-	outputShard = cache.AccessCoin(tx.vin[0].prevout).shardAffinity;
-    }
-    else {
-	assert(mapTxShard.find(tx.vin[0].prevout.hash) != mapTxShard.end());
-	outputShard = mapTxShard[tx.vin[0].prevout.hash];
-    }
+    int32_t outputShard = cache.AccessCoin(tx.vin[0].prevout).shardAffinity;
     
     /* Because this func is called by the 2PC coordinator, it should add the shard
-     * info of this tx to the map for future use. 
+     * info of this outputs of tx to coinsviewcache for future use. 
      */
-    mapTxShard.insert(std::make_pair(tx.GetHash(), outputShard));
+    //std::cout << __func__ << ": add to mapTxShard, tx = " << tx.GetHash().GetHex().substr(0, 10) << ", outputShard = " << outputShard << std::endl;
+    AddCoins(cache, tx, block_height, outputShard);
+    bool flushed = cache.Flush(); // flush to pcoinsTip
+    assert(flushed);
 
     /* inputShardIds.size() is the shard span of this tx. */
-    shardCntMap[tx.vin.size()][inputShardIds.size()]++;
+    shardCntMap[tx.vin.size()][mapInputShardUTXO.size()]++;
     
     /* prepare a resultant vector for return */
-    std::vector<int32_t> ret(inputShardIds.size() + 1);
-    ret[0] = outputShard ;// put the outShardIt as the first element
-    std::copy(inputShardIds.begin(), inputShardIds.end(), ret.begin() + 1);
+    std::vector<int32_t> ret;
+    ret.reserve(mapInputShardUTXO.size() + 1);
+    ret.push_back(outputShard);// put the outShardId as the first element
+    for (auto it = mapInputShardUTXO.begin(); it != mapInputShardUTXO.end(); it++) 
+    {
+	ret.push_back(it->first);
+	vShardUtxoIdxToLock.push_back(it->second);
+    }
+    assert(vShardUtxoIdxToLock.size() + 1 == ret.size());
     return ret;
 }
 

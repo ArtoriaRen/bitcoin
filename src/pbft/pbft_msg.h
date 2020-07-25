@@ -162,19 +162,32 @@ public:
 class LockReq: public CClientReq {
 public:
     CMutableTransaction tx_mutable;
+    uint nOutpointToLock;
+    std::vector<uint32_t> vInputUtxoIdxToLock;
     /* total input amount in our shard. Only in-memory. No need to serialize it. */
     mutable CAmount totalValueInOfShard;
-    
-    LockReq(): tx_mutable(CMutableTransaction()) {}
-    LockReq(const CTransaction& txIn) : tx_mutable(txIn){}
+
+    LockReq() : tx_mutable(CMutableTransaction()) { }
+
+    LockReq(const CTransaction& txIn, const std::vector<uint32_t>& vInputUTXOInShard) : tx_mutable(txIn), nOutpointToLock(vInputUTXOInShard.size()), vInputUtxoIdxToLock(vInputUTXOInShard) { }
 
     template<typename Stream>
-    void Serialize(Stream& s) const{
-	tx_mutable.Serialize(s);
+    void Serialize(Stream& s) const {
+        tx_mutable.Serialize(s);
+	s.write((char*) &nOutpointToLock, sizeof (nOutpointToLock));
+	for (uint i = 0; i < vInputUtxoIdxToLock.size(); i++) {
+	    s.write((char*) &vInputUtxoIdxToLock[i], sizeof (vInputUtxoIdxToLock[i]));
+        }
     }
+
     template<typename Stream>
     void Unserialize(Stream& s) {
-	tx_mutable.Unserialize(s);
+        tx_mutable.Unserialize(s);
+	s.read((char*) &nOutpointToLock, sizeof (nOutpointToLock));
+        vInputUtxoIdxToLock.resize(nOutpointToLock);
+        for (uint i = 0; i < nOutpointToLock; i++) {
+	    s.read((char*) &vInputUtxoIdxToLock[i], sizeof (vInputUtxoIdxToLock[i]));
+        }
     }
     char Execute(const int seq) const override;
     uint256 GetDigest() const override;

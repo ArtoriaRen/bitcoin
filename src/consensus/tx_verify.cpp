@@ -266,28 +266,20 @@ bool Consensus::CheckTxInputs(const CTransaction& tx, CValidationState& state, c
     return true;
 }
 
-bool Consensus::CheckLockReqInputs(const CTransaction& tx, CValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& totalValueIn) {
+bool Consensus::CheckLockReqInputs(const CTransaction& tx, CValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& totalValueIn, const std::vector<uint32_t>& vInputUtxoIdxToLock) {
     int32_t myShardId = pbftID/CPbft::groupSize;
     /*----pick out input UTXOs in our shard----*/
     TxPlacer txPlacer;
     std::vector<CTxIn> vinInMyShard;
-    for (CTxIn input: tx.vin) {
-	/* for random placement */
-//	if (txPlacer.randomPlaceUTXO(input.prevout.hash) != myShardId)
-//	    continue;
-	/* for smart placement */
-	if (txPlacer.smartPlaceUTXO(input.prevout, inputs) != myShardId)
-		continue;
-	vinInMyShard.push_back(input);
+    for (const uint32_t& idx: vInputUtxoIdxToLock) {
+	if (txPlacer.smartPlaceUTXO(tx.vin[idx].prevout, inputs) != myShardId)
+	{
+	    /* The input UTXO is not in our shard. Probably because the tx producing this UTXO is aborted. */
+	    return state.DoS(100, false, REJECT_INVALID, "bad-txns-inputs-missingorspent", false,
+			     strprintf("%s: inputs missing/spent", __func__));
+	}
+	vinInMyShard.push_back(tx.vin[idx]);
     }
-
-    /* not needed for smart place b/c we have confirmed this in smartPlaceUTXO().*/
-//    for (CTxIn input: vinInMyShard) {
-//	if (!inputs.HaveCoin(input.prevout)) {
-//	    return state.DoS(100, false, REJECT_INVALID, "bad-txns-inputs-missingorspent", false,
-//			     strprintf("%s: inputs missing/spent", __func__));
-//	}
-//    }
 
     CAmount nValueIn = 0;
     for (unsigned int i = 0; i < vinInMyShard.size(); ++i) {
