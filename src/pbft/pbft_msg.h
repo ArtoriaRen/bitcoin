@@ -72,7 +72,7 @@ public:
 class CReply {
 public:
     char reply; // execution result
-    uint256 digest; // use the tx header hash as digest.
+    uint256 digest; // the req digest, aka the hash of the req.
     int32_t peerID;
     uint32_t sigSize;
     std::vector<unsigned char> vchSig; //serilized ecdsa signature.
@@ -99,6 +99,7 @@ public:
 	s.read((char*)vchSig.data(), sigSize);
     }
 
+    /* return the hash of the entire msg. */
     void getHash(uint256& result) const;
 };
 
@@ -128,6 +129,8 @@ public:
 
 class CClientReq{
 public:
+    CMutableTransaction tx_mutable;
+    CClientReq(const CTransaction& tx): tx_mutable(tx) {}
     /* we did not put serialization methods here because c++ does not allow
      * virtual template method.
      */
@@ -138,10 +141,8 @@ public:
 
 class TxReq: public CClientReq {
 public:
-    CMutableTransaction tx_mutable;
-    
-    TxReq(): tx_mutable(CMutableTransaction()) {}
-    TxReq(const CTransaction& txIn) : tx_mutable(txIn){}
+    TxReq(): CClientReq(CMutableTransaction()) {}
+    TxReq(const CTransaction& txIn) : CClientReq(txIn){}
 
     template<typename Stream>
     void Serialize(Stream& s) const{
@@ -161,15 +162,14 @@ public:
  */
 class LockReq: public CClientReq {
 public:
-    CMutableTransaction tx_mutable;
     uint nOutpointToLock;
     std::vector<uint32_t> vInputUtxoIdxToLock;
     /* total input amount in our shard. Only in-memory. No need to serialize it. */
     mutable CAmount totalValueInOfShard;
 
-    LockReq() : tx_mutable(CMutableTransaction()) { }
+    LockReq() : CClientReq(CMutableTransaction()) { }
 
-    LockReq(const CTransaction& txIn, const std::vector<uint32_t>& vInputUTXOInShard) : tx_mutable(txIn), nOutpointToLock(vInputUTXOInShard.size()), vInputUtxoIdxToLock(vInputUTXOInShard) { }
+    LockReq(const CTransaction& txIn, const std::vector<uint32_t>& vInputUTXOInShard) : CClientReq(txIn), nOutpointToLock(vInputUTXOInShard.size()), vInputUtxoIdxToLock(vInputUTXOInShard) { }
 
     template<typename Stream>
     void Serialize(Stream& s) const {
@@ -195,7 +195,6 @@ public:
 
 class UnlockToCommitReq: public CClientReq {
 public:
-    CMutableTransaction tx_mutable;
     /* number of signatures from input shards. The output shard deems the first
      * three sigs are for the UTXOs appear first in the input list, ... 
      * TODO: figure out which publickey to use when verify the sigs.
@@ -235,7 +234,6 @@ public:
 
 class UnlockToAbortReq: public CClientReq {
 public:
-    CMutableTransaction tx_mutable;
     /* We need only lock-fail replies from only one input shard to abort the tx,
      * i.e. 2f + 1 negative replies from the same shard. 
      */
@@ -346,8 +344,6 @@ public:
 	}
     }
 };
-
-
 
 
 

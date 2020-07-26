@@ -16,14 +16,17 @@
 #include "script/interpreter.h"
 #include "undo.h"
 
-void UpdateLockCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo, int nHeight);
+
+void UpdateLockCoins(const CTransaction& tx, const std::vector<uint32_t>& vInputUtxoIdxToLock, CCoinsViewCache& inputs, TxUndoInfo& undoInfo, int nHeight);
 
 void UpdateUnlockCommitCoins(const CTransaction& tx, CCoinsViewCache& inputs, int nHeight);
 
-void UpdateUnlockAbortCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo);
+void UpdateUnlockAbortCoins(const CTransaction& tx, CCoinsViewCache& inputs, TxUndoInfo& undoInfo);
+
+
 
 /* key is txid, value is input Coins in our shard. */
-static std::unordered_map<uint256, CTxUndo, BlockHasher> mapTxUndo;
+static std::unordered_map<uint256, TxUndoInfo, BlockHasher> mapTxUndo;
 
 CPbftMessage::CPbftMessage(): view(0), seq(0), digest(), peerID(pbftID), sigSize(0), vchSig(){
     vchSig.reserve(72); // the expected sig size is 72 bytes.
@@ -152,7 +155,7 @@ char LockReq::Execute(const int seq) const {
     PrecomputedTransactionData txdata(tx);
     std::vector<CScriptCheck> vChecks;
     bool fCacheResults = false; /* Don't cache results if we're actually connecting blocks (still consult the cache, though) */
-    if (!CheckLockInputs(tx, state, view, fScriptChecks, flags, fCacheResults, fCacheResults, txdata, nullptr)) {  // do not use multithreads to check scripts
+    if (!CheckLockInputs(tx, vInputUtxoIdxToLock, state, view, fScriptChecks, flags, fCacheResults, fCacheResults, txdata, nullptr)) {  // do not use multithreads to check scripts
 	std::cerr << __func__ << ": ConnectBlock(): CheckInputs on " 
 		<< tx.GetHash().ToString() 
 		<< " failed with " << FormatStateMessage(state)
@@ -162,9 +165,9 @@ char LockReq::Execute(const int seq) const {
 
     /* Step 4: spent the input coins in our shard and store them in the global map 
      * for possibly future UnlockToAbort processing. */
-    CTxUndo txUndo;
-    UpdateLockCoins(tx, view, txUndo, seq);
-    mapTxUndo.insert(std::make_pair(tx.GetHash(), txUndo));
+    TxUndoInfo undoInfo;
+    UpdateLockCoins(tx, vInputUtxoIdxToLock, view, undoInfo, seq);
+    mapTxUndo.insert(std::make_pair(tx.GetHash(), undoInfo));
     bool flushed = view.Flush(); // flush to pcoinsTip
     assert(flushed);
     /* -------------logic from Bitcoin code for tx processing--------- */
@@ -173,7 +176,15 @@ char LockReq::Execute(const int seq) const {
 }
 
 uint256 LockReq::GetDigest() const {
-    return tx_mutable.GetHash();
+    uint256 tx_hash(tx_mutable.GetHash());
+    CHash256 hasher;
+    hasher.Write((const unsigned char*)tx_hash.begin(), tx_hash.size());
+    for (uint i = 0; i < nOutpointToLock; i++) {
+	hasher .Write((const unsigned char*)&vInputUtxoIdxToLock[i], sizeof(vInputUtxoIdxToLock[i]));
+    }
+    uint256 result;
+    hasher.Finalize((unsigned char*)&result);
+    return result;
 }
 
 CInputShardReply::CInputShardReply(): CReply() {};
@@ -189,8 +200,8 @@ void CInputShardReply::getHash(uint256& result) const {
 	    .Finalize((unsigned char*)&result);
 }
 
-UnlockToCommitReq::UnlockToCommitReq(): tx_mutable(CMutableTransaction()) {}
-UnlockToCommitReq::UnlockToCommitReq(const CTransaction& txIn, const uint sigCountIn, std::vector<CInputShardReply>&& vReply) : tx_mutable(txIn), nInputShardReplies(sigCountIn), vInputShardReply(vReply){}
+UnlockToCommitReq::UnlockToCommitReq(): CClientReq(CMutableTransaction()) {}
+UnlockToCommitReq::UnlockToCommitReq(const CTransaction& txIn, const uint sigCountIn, std::vector<CInputShardReply>&& vReply) : CClientReq(txIn), nInputShardReplies(sigCountIn), vInputShardReply(vReply){}
 
 uint256 UnlockToCommitReq::GetDigest() const {
     uint256 tx_hash(tx_mutable.GetHash());
@@ -284,11 +295,11 @@ bool checkInputShardReplySigs(const std::vector<CInputShardReply>& vReplies) {
     return true;
 }
 
-UnlockToAbortReq::UnlockToAbortReq(): tx_mutable(CMutableTransaction()) {
+UnlockToAbortReq::UnlockToAbortReq(): CClientReq(CMutableTransaction()) {
     vNegativeReply.resize(2 * CPbft::nFaulty + 1);
 }
 
-UnlockToAbortReq::UnlockToAbortReq(const CTransaction& txIn, const std::vector<CInputShardReply>& lockFailReplies) : tx_mutable(txIn), vNegativeReply(lockFailReplies){
+UnlockToAbortReq::UnlockToAbortReq(const CTransaction& txIn, const std::vector<CInputShardReply>& lockFailReplies) : CClientReq(txIn), vNegativeReply(lockFailReplies){
     assert(vNegativeReply.size() == 2 * CPbft::nFaulty + 1);
 }
 

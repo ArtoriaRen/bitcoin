@@ -111,4 +111,9 @@ public:
     }
 };
 
+typedef struct{
+    std::vector<uint32_t> vInputIdx;
+    CTxUndo coins;
+} TxUndoInfo;
+
 #endif // BITCOIN_UNDO_H

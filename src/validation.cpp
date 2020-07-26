@@ -1312,7 +1312,7 @@ void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txund
     AddCoins(inputs, tx, nHeight, myShardId );
 }
 
-void UpdateLockCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo, int nHeight)
+void UpdateLockCoins(const CTransaction& tx, const std::vector<uint32_t>& vInputUtxoIdxToLock, CCoinsViewCache& inputs, TxUndoInfo& undoInfo, int nHeight)
 {
     assert(!tx.IsCoinBase()); // coinbase tx has no valid input UTXO, so it should never be in a LockReq.
 
@@ -1324,22 +1324,13 @@ void UpdateLockCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &t
     if (txPlacer.smartPlaceUTXO(tx.vin[0].prevout, *pcoinsTip) == myShardId)
 	g_pbft->txToBeCommitted.insert(tx.GetHash());
 
-    std::vector<CTxIn> vinInMyShard;
-    for (CTxIn input: tx.vin) {
-	/* for random placement */
-//	if (txPlacer.randomPlaceUTXO(input.prevout.hash) != myShardId)
-//	    continue;
-	/* for smart placement */
-	if (txPlacer.smartPlaceUTXO(input.prevout, inputs) != myShardId)
-		continue;
-	vinInMyShard.push_back(input);
-    }
-
     /* mark inputs in our shard spent */
-    txundo.vprevout.reserve(vinInMyShard.size());
-    for (const CTxIn &txin : vinInMyShard) {
+    undoInfo.vInputIdx = vInputUtxoIdxToLock;
+    CTxUndo& txundo = undoInfo.coins; 
+    txundo.vprevout.reserve(vInputUtxoIdxToLock.size());
+    for (unsigned int i = 0; i < vInputUtxoIdxToLock.size(); i++) {
 	txundo.vprevout.emplace_back();
-	bool is_spent = inputs.SpendCoin(txin.prevout, &txundo.vprevout.back());
+	bool is_spent = inputs.SpendCoin(tx.vin[vInputUtxoIdxToLock[i]].prevout, &txundo.vprevout.back());
 //	    std::cout << __func__ << " txundo.prevout shardAffinity = " << txundo.vprevout.back().shardAffinity  << ", height = " << txundo.vprevout.back().nHeight << std::endl;
 	assert(is_spent);
     }
@@ -1370,28 +1361,13 @@ void UpdateUnlockCommitCoins(const CTransaction& tx, CCoinsViewCache& inputs, in
 }
 
 int ApplyTxInUndo(Coin&& undo, CCoinsViewCache& view, const COutPoint& out);
-void UpdateUnlockAbortCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo)
+void UpdateUnlockAbortCoins(const CTransaction& tx, CCoinsViewCache& inputs, TxUndoInfo& undoInfo)
 {
     assert(!tx.IsCoinBase()); // coinbase tx has no valid input UTXO, so it should never be in a LockReq.
 
-    int32_t myShardId = pbftID/CPbft::groupSize;
-    /*----pick out input UTXOs in our shard----*/
-    TxPlacer txPlacer;
-    std::vector<CTxIn> vinInMyShard;
-    for (CTxIn input: tx.vin) {
-	/* for random placement */
-//	if (txPlacer.randomPlaceUTXO(input.prevout.hash) != myShardId)
-//	    continue;
-	/* for smart placement */
-	if (txPlacer.smartPlaceUTXO(input.prevout, inputs) != myShardId)
-		continue;
-	vinInMyShard.push_back(input);
-    }
-
-    assert(txundo.vprevout.size() == vinInMyShard.size());
-
-    for (unsigned int j = vinInMyShard.size(); j-- > 0;) {
-	const COutPoint &out = vinInMyShard[j].prevout;
+    CTxUndo& txundo = undoInfo.coins;
+    for (unsigned int j = undoInfo.vInputIdx.size(); j-- > 0;) {
+	const COutPoint &out = tx.vin[undoInfo.vInputIdx[j]].prevout;
 //		std::cout << __func__ << " txundo.prevout shardAffinity = " << txundo.vprevout[j].shardAffinity << std::endl;
 	int res = ApplyTxInUndo(std::move(txundo.vprevout[j]), inputs, out);
 	assert (res != DISCONNECT_FAILED && res != DISCONNECT_UNCLEAN);
@@ -1527,7 +1503,7 @@ bool CheckInputs(const CTransaction& tx, CValidationState &state, const CCoinsVi
     return true;
 }
 
-bool CheckLockInputs(const CTransaction& tx, CValidationState &state, const CCoinsViewCache &inputs, bool fScriptChecks, unsigned int flags, bool cacheSigStore, bool cacheFullScriptStore, PrecomputedTransactionData& txdata, std::vector<CScriptCheck> *pvChecks)
+bool CheckLockInputs(const CTransaction& tx, const std::vector<uint32_t>& vInputUtxoIdxToLock, CValidationState &state, const CCoinsViewCache &inputs, bool fScriptChecks, unsigned int flags, bool cacheSigStore, bool cacheFullScriptStore, PrecomputedTransactionData& txdata, std::vector<CScriptCheck> *pvChecks)
 {
     if (!tx.IsCoinBase())
     {
@@ -1561,16 +1537,8 @@ bool CheckLockInputs(const CTransaction& tx, CValidationState &state, const CCoi
 
 	    int32_t myShardId = pbftID/CPbft::groupSize;
 	    TxPlacer txPlacer;
-            for (unsigned int i = 0; i < tx.vin.size(); i++) {
-		/* check shardAffinity */
-		/* for random placement */
-//		if (txPlacer.randomPlaceUTXO(tx.vin[i].prevout.hash) != myShardId)
-//		    continue;
-		/* for smart placement */
-		if (txPlacer.smartPlaceUTXO(tx.vin[i].prevout, inputs) != myShardId)
-			continue;
-		
-                const COutPoint &prevout = tx.vin[i].prevout;
+            for (unsigned int i = 0; i < vInputUtxoIdxToLock.size(); i++) {
+                const COutPoint &prevout = tx.vin[vInputUtxoIdxToLock[i]].prevout;
                 const Coin& coin = inputs.AccessCoin(prevout);
                 assert(!coin.IsSpent());
 
@@ -1581,7 +1549,7 @@ bool CheckLockInputs(const CTransaction& tx, CValidationState &state, const CCoi
                 // spent being checked as a part of CScriptCheck.
 
                 // Verify signature
-                CScriptCheck check(coin.out, tx, i, flags, cacheSigStore, &txdata);
+                CScriptCheck check(coin.out, tx, vInputUtxoIdxToLock[i], flags, cacheSigStore, &txdata);
                 if (pvChecks) {
                     pvChecks->push_back(CScriptCheck());
                     check.swap(pvChecks->back());
@@ -1593,7 +1561,7 @@ bool CheckLockInputs(const CTransaction& tx, CValidationState &state, const CCoi
                         // arguments; if so, don't trigger DoS protection to
                         // avoid splitting the network between upgraded and
                         // non-upgraded nodes.
-                        CScriptCheck check2(coin.out, tx, i,
+                        CScriptCheck check2(coin.out, tx, vInputUtxoIdxToLock[i],
                                 flags & ~STANDARD_NOT_MANDATORY_VERIFY_FLAGS, cacheSigStore, &txdata);
                         if (check2())
                             return state.Invalid(false, REJECT_NONSTANDARD, strprintf("non-mandatory-script-verify-flag (%s)", ScriptErrorString(check.GetScriptError())));
