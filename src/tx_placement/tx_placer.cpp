@@ -328,20 +328,10 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
     }
     std::cout << __func__ << "sending " << block.vtx.size() << " tx in block " << block_height << std::endl;
     uint32_t cnt = 0;
-    TxPlacer txPlacer;
-    CCoinsViewCache view(pcoinsTip.get());
     for (uint j = 0; j < block.vtx.size(); j++) {
-	CTransactionRef tx = block.vtx[j];
+	CTransactionRef tx = block.vtx[j]; 
 	const uint256& hashTx = tx->GetHash();
-	/* get the input shards and output shards id*/
-	std::vector<std::vector<uint32_t> > vShardUtxoIdxToLock;
-	std::vector<int32_t> shards = txPlacer.smartPlace(*tx, view, vShardUtxoIdxToLock, block_height);
-	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-	assert((tx->IsCoinBase() && shards.size() == 1) || (!tx->IsCoinBase() && shards.size() >= 2)); // there must be at least one output shard and one input shard for non-coinbase tx.
-	std::cout << j << "-th" << " tx "  <<  hashTx.GetHex().substr(0, 10) << " : ";
-	for (int shard : shards)
-	    std::cout << shard << ", ";
-	std::cout << std::endl;
+	sendTx(block.vtx[j], j, block_height);
 
 	/*-----calculate how long we should sleep------*/
 //	struct timeval current;
@@ -370,6 +360,27 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
 
 	/* send tx and collect time info to calculate latency. 
 	 * We also remove all reply msg for this req to ease testing with sending a req multi times. */
+	g_pbft->mapTxid.insert(std::make_pair(hashTx, tx));
+	cnt++;
+	const struct timespec sleep_length = {0, txSendPeriod * 1000};
+	nanosleep(&sleep_length, NULL);
+    }
+    return cnt;
+}
+
+void sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height) {
+	TxPlacer txPlacer;
+	CCoinsViewCache view(pcoinsTip.get());
+	const uint256& hashTx = tx->GetHash();
+	/* get the input shards and output shards id*/
+	std::vector<std::vector<uint32_t> > vShardUtxoIdxToLock;
+	std::vector<int32_t> shards = txPlacer.smartPlace(*tx, view, vShardUtxoIdxToLock, block_height);
+	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+	assert((tx->IsCoinBase() && shards.size() == 1) || (!tx->IsCoinBase() && shards.size() >= 2)); // there must be at least one output shard and one input shard for non-coinbase tx.
+	std::cout << idx << "-th" << " tx "  <<  hashTx.GetHex().substr(0, 10) << " : ";
+	for (int shard : shards)
+	    std::cout << shard << ", ";
+	std::cout << std::endl;
 	g_pbft->replyMap[hashTx].clear();
 	g_pbft->mapTxStartTime.erase(hashTx);
 	struct TxStat stat;
@@ -389,15 +400,9 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
 		g_pbft->inputShardReplyMap[hashTx].decision = '\0';
 
 		LockReq lockReq(*tx, vShardUtxoIdxToLock[i - 1]);
-		g_connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_LOCK, *tx));
+		g_connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_LOCK, lockReq));
 	    }
 	}
-	g_pbft->mapTxid.insert(std::make_pair(hashTx, tx));
-	cnt++;
-	const struct timespec sleep_length = {0, txSendPeriod * 1000};
-	nanosleep(&sleep_length, NULL);
-    }
-    return cnt;
 }
 
 //void smartPlaceTxInBlock(const std::shared_ptr<const CBlock> pblock){

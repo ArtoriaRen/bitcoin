@@ -55,6 +55,7 @@ public:
 
 //uint32_t sendTxInBlock(uint32_t block_height, struct timeval& expected_last_send_time, int txSendPeriod);
 uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod);
+void sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height);
 
 /* place tx in the blockStart specified in conf file. This only work for 
  * existing blocks already on the chain.

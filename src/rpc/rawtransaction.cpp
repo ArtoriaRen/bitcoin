@@ -1025,33 +1025,7 @@ UniValue sendrawtransaction(const JSONRPCRequest& request)
     //});
 
     /* get the input shards and output shards id*/
-    TxPlacer txPlacer;
-    std::vector<int32_t> shards = txPlacer.randomPlace(*tx);
-    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-    assert((tx->IsCoinBase() && shards.size() == 1) || (!tx->IsCoinBase() && shards.size() >= 2)); // there must be at least one output shard and one input shard for non-coinbase tx.
-    std::cout << "tx "  <<  hashTx.GetHex().substr(0, 10) << " : ";
-    for (int shard : shards)
-	std::cout << shard << ", ";
-    std::cout << std::endl;
-    g_pbft->replyMap[hashTx].clear();
-    g_pbft->mapTxStartTime.erase(hashTx);
-    struct TxStat stat;
-    if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
-	/* this is a single shard tx */
-	stat.type = TxType::SINGLE_SHARD;
-	gettimeofday(&stat.startTime, NULL);
-	g_pbft->mapTxStartTime.insert(std::make_pair(hashTx, stat));
-	g_connman->PushMessage(g_pbft->leaders[shards[0]], msgMaker.Make(NetMsgType::PBFT_TX, *tx));
-    } else {
-	/* this is a cross-shard tx */
-	stat.type = TxType::CROSS_SHARD;
-	gettimeofday(&stat.startTime, NULL);
-	g_pbft->mapTxStartTime.insert(std::make_pair(hashTx, stat));
-	for (uint i = 1; i < shards.size(); i++) {
-	    g_pbft->inputShardReplyMap[hashTx].lockReply.insert(std::make_pair(shards[i], std::vector<CInputShardReply>()));
-	    g_connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_LOCK, *tx));
-	}
-    }
+    sendTx(tx, 0, 601000);
     g_pbft->mapTxid.insert(std::make_pair(hashTx, tx));
 
     return hashTx.GetHex();
