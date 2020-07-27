@@ -23,6 +23,7 @@ extern uint32_t num_committees;
 extern int lastAssignedAffinity;
 //extern uint32_t txStartBlock;
 //extern uint32_t txEndBlock;
+extern bool buildWaitGraph;
 
 class TxPlacer{
 public:
@@ -53,9 +54,17 @@ public:
     // TODO: smartPlaceSorted
 };
 
+typedef struct {
+    uint32_t idx;
+    std::unordered_set<uint256, BlockHasher> prereqTxSet;
+} WaitInfo;
+	
+
 //uint32_t sendTxInBlock(uint32_t block_height, struct timeval& expected_last_send_time, int txSendPeriod);
 uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod);
 void sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height);
+
+void buildDependencyGraph(uint32_t block_height);
 
 /* place tx in the blockStart specified in conf file. This only work for 
  * existing blocks already on the chain.

@@ -815,6 +815,9 @@ void InitParameterInteraction()
     if (gArgs.IsArgSet("-thruinterval")) {
         thruInterval = gArgs.GetArg("-thruinterval", 100);
     }
+    if (gArgs.IsArgSet("-buildwaitgraph")) {
+        buildWaitGraph = gArgs.GetBoolArg("-buildwaitgraph", 0);
+    }
 }
 
 static std::string ResolveErrMsg(const char * const optname, const std::string& strBind)
@@ -1780,6 +1783,8 @@ bool AppInitMain()
     //     std::vector<int32_t> shards = txPlacer.smartPlace(*tx, view, block_height);
     // }
 
+    if (buildWaitGraph)
+        buildDependencyGraph(601000);
 
     return true;
 }

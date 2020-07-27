@@ -24,6 +24,7 @@ uint32_t num_committees;
 int lastAssignedAffinity = -1;
 //uint32_t txStartBlock;
 //uint32_t txEndBlock;
+bool buildWaitGraph = false;
 
 TxPlacer::TxPlacer():totalTxNum(0){}
 
@@ -326,7 +327,7 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
     if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
         std::cerr << "Block not found on disk" << std::endl;
     }
-    std::cout << __func__ << "sending " << block.vtx.size() << " tx in block " << block_height << std::endl;
+    std::cout << __func__ << ": sending " << block.vtx.size() << " tx in block " << block_height << std::endl;
     uint32_t cnt = 0;
     for (uint j = 0; j < block.vtx.size(); j++) {
 	CTransactionRef tx = block.vtx[j]; 
@@ -403,6 +404,43 @@ void sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 		g_connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_LOCK, lockReq));
 	    }
 	}
+}
+
+void buildDependencyGraph(uint32_t block_height) {
+    CBlock block;
+    CBlockIndex* pblockindex = chainActive[block_height];
+    if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
+        std::cerr << "Block not found on disk" << std::endl;
+    }
+    std::cout << __func__ << ": resolve dependency for block " << block_height << std::endl;
+    std::unordered_set<uint256, BlockHasher> txid_set;
+    std::unordered_map<uint256, WaitInfo, BlockHasher> waitForGraph; // <txid, prerequiste tx list>
+    for (uint j = 0; j < block.vtx.size(); j++) {
+	CTransactionRef tx = block.vtx[j]; 
+	const uint256& hashTx = tx->GetHash();
+	for (const CTxIn& utxoIn:  tx->vin) {
+	    const uint256& prereqTxid = utxoIn.prevout.hash;
+	    std::unordered_set<uint256, BlockHasher>::const_iterator got = txid_set.find(prereqTxid);
+	    if (got != txid_set.end()) {
+		waitForGraph[hashTx].prereqTxSet.insert(prereqTxid);
+	    }
+
+	}
+	if (waitForGraph.find(hashTx) != waitForGraph.end()){
+	    waitForGraph[hashTx].idx = j;
+	}
+	txid_set.insert(hashTx);
+    }
+
+    // print waitForGraph
+    for (const auto& entry: waitForGraph) {
+	std::cout << entry.first.GetHex() << ": ";
+	std::cout << entry.second.idx << ", ";
+	for (const auto& prereqTxid: entry.second.prereqTxSet) {
+	    std::cout << prereqTxid.GetHex() << ", ";
+	}
+	std::cout << std::endl;
+    }
 }
 
 //void smartPlaceTxInBlock(const std::shared_ptr<const CBlock> pblock){
