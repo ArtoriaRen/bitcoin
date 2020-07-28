@@ -329,22 +329,21 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
     }
     std::cout << __func__ << ": sending " << block.vtx.size() << " tx in block " << block_height << std::endl;
     /* */
+    const struct timespec sleep_length = {0, txSendPeriod * 1000};
     uint32_t cnt = 0;
     for (uint32_t j = 0; j < block.vtx.size(); j++) {
 	CTransactionRef tx = block.vtx[j]; 
 	const uint256& hashTx = tx->GetHash();
 	if (g_waitForGraph->find(j) == g_waitForGraph->end()) {
-	    std::cout << "no. " << j << "tx is not a dependent tx" << std::endl;
+//	    std::cout << "no. " << j << "tx is not a dependent tx" << std::endl;
 	    sendTx(block.vtx[j], j, block_height);
 	    cnt++;
-	    const struct timespec sleep_length = {0, txSendPeriod * 1000};
 	    nanosleep(&sleep_length, NULL);
 	} else {
-	    std::cout << "no. " << j << "tx is waiting for " << (*g_waitForGraph)[j].begin()->GetHex() <<std::endl;
+//	    std::cout << "no. " << j << "tx is waiting for " << (*g_waitForGraph)[j].begin()->GetHex() <<std::endl;
 	    for (auto clearedDependentTx: g_prereqClearTxPQ->pop_upto(j)) {
 		sendTx(block.vtx[clearedDependentTx], clearedDependentTx, block_height);
 		cnt++;
-		const struct timespec sleep_length = {0, txSendPeriod * 1000};
 		nanosleep(&sleep_length, NULL);
 	    }
 	}
@@ -375,6 +374,20 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
 
 
     }
+
+    /* We have sent all tx but those waiting for prerequisite tx. Poll the priority 
+     * queue to see if some dependent tx are ready until we sent all tx. */
+    std::cout << "sending tail tx ... " << std::endl;
+    uint32_t alreadySentCnt = cnt;
+    while (cnt < block.vtx.size()) {
+	for (auto clearedDependentTx: g_prereqClearTxPQ->pop_upto(block.vtx.size() - 1)) {
+	    sendTx(block.vtx[clearedDependentTx], clearedDependentTx, block_height);
+	    cnt++;
+	    nanosleep(&sleep_length, NULL);
+	}
+	usleep(1000); // sleep for 1ms before the next pq check
+    }
+    std::cout << cnt - alreadySentCnt << "tail tx are sent. " << std::endl;
     return cnt;
 }
 
