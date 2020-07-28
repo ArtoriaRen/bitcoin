@@ -1495,7 +1495,7 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, const std::ve
     return true;
 }
 
-bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman* connman, const std::atomic<bool>& interruptMsgProc)
+bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman* connman, const std::atomic<bool>& interruptMsgProc, std::unordered_map<uint256, std::vector<uint32_t>, BlockHasher>& adjancyList, std::unordered_map<uint32_t, uint32_t>& unCmtPrereqCnt)
 {
     std::cout << __func__ << ": " << strCommand << std::endl;
     LogPrint(BCLog::NET, "received: %s (%u bytes) peer=%d\n", SanitizeString(strCommand), vRecv.size(), pfrom->GetId());
@@ -1863,6 +1863,12 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		std::cout << "tx " << reply.digest.GetHex().substr(0,10);
 		if (reply.reply == 'y') {
 			std::cout << ", SUCCEED, ";
+			for (uint32_t dependentTx: adjancyList[reply.digest]) {
+			    std::cout << "dependent no. " << dependentTx << ", current cnt is " << unCmtPrereqCnt[dependentTx] << std::endl;
+			    if (--unCmtPrereqCnt[dependentTx] == 0) {
+				g_prereqClearTxPQ->push(dependentTx);
+			    }
+			}
 		} else if (reply.reply == 'n') {
 			std::cout << ", FAIL, ";
 		} 
@@ -1876,6 +1882,12 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		if (reply.reply == 'y' && inputShardRplMap[txid].decision == 'c') {
 			/* only the output shard send committed reply, so no risk of printing info more than once for a tx. */
 			std::cout << ", COMMITTED, ";
+			for (uint32_t dependentTx: adjancyList[txid]) {
+			    std::cout << "dependent no. " << dependentTx << ", current cnt is " << unCmtPrereqCnt[dependentTx] << std::endl;
+			    if (--unCmtPrereqCnt[dependentTx] == 0) {
+				g_prereqClearTxPQ->push(dependentTx);
+			    }
+			}
 		} else if (reply.reply == 'y' && inputShardRplMap[txid].decision == 'a') {
 		  
 		        /* This info is printed only once for an aborted tx b/c  it is only printed when the number of replies equals (2f+1). Strictly speaking, this is not correct, we should wait for reply for every input shard that have locked some UTXOs. */
@@ -2630,7 +2642,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         } // cs_main
 
         if (fProcessBLOCKTXN)
-            return ProcessMessage(pfrom, NetMsgType::BLOCKTXN, blockTxnMsg, nTimeReceived, chainparams, connman, interruptMsgProc);
+            return ProcessMessage(pfrom, NetMsgType::BLOCKTXN, blockTxnMsg, nTimeReceived, chainparams, connman, interruptMsgProc, adjancyList, unCmtPrereqCnt);
 
         if (fRevertToHeaderProcessing) {
             // Headers received from HB compact block peers are permitted to be
@@ -3122,7 +3134,7 @@ bool PeerLogicValidation::ProcessMessages(CNode* pfrom, std::atomic<bool>& inter
     bool fRet = false;
     try
     {
-        fRet = ProcessMessage(pfrom, strCommand, vRecv, msg.nTime, chainparams, connman, interruptMsgProc);
+        fRet = ProcessMessage(pfrom, strCommand, vRecv, msg.nTime, chainparams, connman, interruptMsgProc, adjancyList, unCmtPrereqCnt);
         if (interruptMsgProc)
             return false;
         if (!pfrom->vRecvGetData.empty())
@@ -3843,6 +3855,15 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
 //        }
     }
     return true;
+}
+
+void PeerLogicValidation::SetDependency(const std::map<uint32_t, std::unordered_set<uint256, BlockHasher>>& waitForGraph) {
+	for (const auto& entry: waitForGraph) {
+	    unCmtPrereqCnt[entry.first] = entry.second.size();
+	    for (const auto& prereqTxid: entry.second) {
+		adjancyList[prereqTxid].push_back(entry.first);
+	    }
+	}
 }
 
 class CNetProcessingCleanup

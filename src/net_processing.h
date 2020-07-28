@@ -9,6 +9,9 @@
 #include <net.h>
 #include <validationinterface.h>
 #include <consensus/params.h>
+#include <validation.h>
+#include <map>
+#include <queue>
 
 /** Default for -maxorphantx, maximum number of orphan transactions kept in memory */
 static const unsigned int DEFAULT_MAX_ORPHAN_TRANSACTIONS = 100;
@@ -38,6 +41,8 @@ static constexpr int64_t MINIMUM_CONNECT_TIME = 30;
 class PeerLogicValidation : public CValidationInterface, public NetEventsInterface {
 private:
     CConnman* const connman;
+    std::unordered_map<uint256, std::vector<uint32_t>, BlockHasher> adjancyList; // <depended txid, index of txns depends on this tx>
+    std::unordered_map<uint32_t, uint32_t> unCmtPrereqCnt; // <indpendent tx index in block body, count of un-committed prerequisite tx>
 
 public:
     explicit PeerLogicValidation(CConnman* connman, CScheduler &scheduler);
@@ -64,6 +69,8 @@ public:
     void ConsiderEviction(CNode *pto, int64_t time_in_seconds);
     void CheckForStaleTipAndEvictPeers(const Consensus::Params &consensusParams);
     void EvictExtraOutboundPeers(int64_t time_in_seconds);
+
+    void SetDependency(const std::map<uint32_t, std::unordered_set<uint256, BlockHasher>>& waitForGraph);
 
 private:
     int64_t m_stale_tip_check_time; //! Next time to check for stale tip
