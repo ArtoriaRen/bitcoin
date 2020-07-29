@@ -388,9 +388,11 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
 	    cnt++;
 	    nanosleep(&sleep_length, NULL);
 	}
+	if (ShutdownRequested())
+		break;
 	usleep(1000); // sleep for 1ms before the next pq check
     }
-    std::cout << cnt - alreadySentCnt << "tail tx are sent. " << std::endl;
+    std::cout << cnt - alreadySentCnt << " tail tx are sent. " << std::endl;
     return cnt;
 }
 
