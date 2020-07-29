@@ -17,6 +17,7 @@
 #include <chrono>
 #include <time.h>
 #include "txdb.h"
+#include "init.h"
 
 static const uint32_t SEC = 1000000; // 1 sec = 10^6 microsecond
 
@@ -341,10 +342,10 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
 	}
 	nanosleep(&sleep_length, NULL);
 
-	if (cnt & 0x1F == 0) {
-	    while (pcoinsTip->HaveInputs(*(g_pbft->txDelaySendQueue.front().tx))) {
+	if ((cnt & 0x1F) == 0) {
+	    while (!g_pbft->txDelaySendQueue.empty() && pcoinsTip->HaveInputs(*(g_pbft->txDelaySendQueue.front().tx))) {
 		TxBlockInfo& txInfo = g_pbft->txDelaySendQueue.front();
-		assert(sendTx(txInfo.tx, txInfo.blockHeight, txInfo.n));
+		assert(sendTx(txInfo.tx, txInfo.n, txInfo.blockHeight));
 		cnt++;
 		g_pbft->txDelaySendQueue.pop();
 		nanosleep(&sleep_length, NULL);
@@ -378,14 +379,16 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
 
     }
 
-    /* We have sent all tx but those waiting for prerequisite tx. Poll the priority 
+    /* We have sent all tx but those waiting for prerequisite tx. Poll the 
      * queue to see if some dependent tx are ready until we sent all tx. */
     std::cout << "sending tail tx ... " << std::endl;
     uint32_t alreadySentCnt = cnt;
     while (cnt < block.vtx.size()) {
-	for (auto clearedDependentTx: g_prereqClearTxPQ->pop_upto(block.vtx.size() - 1)) {
-	    sendTx(block.vtx[clearedDependentTx], clearedDependentTx, block_height);
+	while (!g_pbft->txDelaySendQueue.empty() && pcoinsTip->HaveInputs(*(g_pbft->txDelaySendQueue.front().tx))) {
+	    TxBlockInfo& txInfo = g_pbft->txDelaySendQueue.front();
+	    assert(sendTx(txInfo.tx, txInfo.n, txInfo.blockHeight));
 	    cnt++;
+	    g_pbft->txDelaySendQueue.pop();
 	    nanosleep(&sleep_length, NULL);
 	}
 	if (ShutdownRequested())
