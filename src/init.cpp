@@ -1783,16 +1783,6 @@ bool AppInitMain()
     //     std::vector<int32_t> shards = txPlacer.smartPlace(*tx, view, block_height);
     // }
 
-    
-    assert(!g_waitForGraph);
-    g_waitForGraph.reset(new std::map<uint32_t, std::unordered_set<uint256, BlockHasher>>());
-    buildDependencyGraph(601000, *g_waitForGraph);
- 
-    assert(!g_prereqClearTxPQ);
-    g_prereqClearTxPQ.reset(new ThreadSafeIntPQ());
-
-    peerLogic->SetDependency(*g_waitForGraph);
-
     //if (buildWaitGraph)
     //   buildDependencyGraph(601000);
 

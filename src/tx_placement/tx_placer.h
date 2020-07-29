@@ -44,7 +44,7 @@ public:
     /* return a vector of shard ids. 
      * The first element is the output shard id, and other elements are input shard ids.
      * The output shard id might equal one input shard id. */
-    std::vector<int32_t> smartPlace(const CTransaction& tx, CCoinsViewCache& cache, std::vector<std::vector<uint32_t> >& vShardUtxoIdxToLock, const uint32_t block_height);
+    std::vector<int32_t> smartPlace(const CTransaction& tx, CCoinsViewCache& cache, std::vector<std::vector<uint32_t> >& vShardUtxoIdxToLock);
 
     /* return the shard hosting the UTXO whose producing tx is txid. 
      * Note: this should be called only by servers, so the func does not 
@@ -68,7 +68,9 @@ public:
 
 //uint32_t sendTxInBlock(uint32_t block_height, struct timeval& expected_last_send_time, int txSendPeriod);
 uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod);
-void sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height);
+
+/* return true if the tx is sent, false if the tx is queued. */
+bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height);
 
 void buildDependencyGraph(uint32_t block_height, std::map<uint32_t, std::unordered_set<uint256, BlockHasher>>& waitForGraph);
 
