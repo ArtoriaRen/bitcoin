@@ -331,10 +331,10 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
         std::cerr << "Block not found on disk" << std::endl;
     }
     std::cout << __func__ << ": sending " << block.vtx.size() << " tx in block " << block_height << std::endl;
-    /* */
+
     const struct timespec sleep_length = {0, txSendPeriod * 1000};
     uint32_t cnt = 0;
-    for (uint32_t j = 0; j < block.vtx.size(); j++) {
+    for (uint j = 0; j < block.vtx.size(); j++) {
 	CTransactionRef tx = block.vtx[j]; 
 	const uint256& hashTx = tx->GetHash();
 	if (sendTx(block.vtx[j], j, block_height)){
@@ -377,6 +377,12 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
 //	}
 
 
+	/* send tx and collect time info to calculate latency. 
+	 * We also remove all reply msg for this req to ease testing with sending a req multi times. */
+	g_pbft->mapTxid.insert(std::make_pair(hashTx, tx));
+	cnt++;
+	const struct timespec sleep_length = {0, txSendPeriod * 1000};
+	nanosleep(&sleep_length, NULL);
     }
 
     /* We have sent all tx but those waiting for prerequisite tx. Poll the 
@@ -444,7 +450,7 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 	return true;
 }
 
-void buildDependencyGraph(uint32_t block_height, std::map<uint32_t, std::unordered_set<uint256, BlockHasher>>& waitForGraph) {
+void buildDependencyGraph(uint32_t block_height) {
     CBlock block;
     CBlockIndex* pblockindex = chainActive[block_height];
     if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
@@ -452,49 +458,34 @@ void buildDependencyGraph(uint32_t block_height, std::map<uint32_t, std::unorder
     }
     std::cout << __func__ << ": resolve dependency for block " << block_height << std::endl;
     std::unordered_set<uint256, BlockHasher> txid_set;
-    for (uint32_t j = 0; j < block.vtx.size(); j++) {
+    std::unordered_map<uint256, WaitInfo, BlockHasher> waitForGraph; // <txid, prerequiste tx list>
+    for (uint j = 0; j < block.vtx.size(); j++) {
 	CTransactionRef tx = block.vtx[j]; 
+	const uint256& hashTx = tx->GetHash();
 	for (const CTxIn& utxoIn:  tx->vin) {
 	    const uint256& prereqTxid = utxoIn.prevout.hash;
 	    std::unordered_set<uint256, BlockHasher>::const_iterator got = txid_set.find(prereqTxid);
 	    if (got != txid_set.end()) {
-		waitForGraph[j].insert(prereqTxid);
+		waitForGraph[hashTx].prereqTxSet.insert(prereqTxid);
 	    }
+
 	}
-	const uint256& hashTx = tx->GetHash();
+	if (waitForGraph.find(hashTx) != waitForGraph.end()){
+	    waitForGraph[hashTx].idx = j;
+	}
 	txid_set.insert(hashTx);
     }
 
     // print waitForGraph
     for (const auto& entry: waitForGraph) {
-	std::cout << entry.first << ": ";
-	for (const auto& prereqTxid: entry.second) {
+	std::cout << entry.first.GetHex() << ": ";
+	std::cout << entry.second.idx << ", ";
+	for (const auto& prereqTxid: entry.second.prereqTxSet) {
 	    std::cout << prereqTxid.GetHex() << ", ";
 	}
 	std::cout << std::endl;
     }
 }
-
-ThreadSafeIntPQ::ThreadSafeIntPQ(){ };
-
-void ThreadSafeIntPQ::push(const uint32_t val){
-    std::lock_guard<std::mutex> lock(mtx_);
-    pq_.push(val);
-}
-
-std::vector<uint32_t> ThreadSafeIntPQ::pop_upto(const uint32_t upto){
-    std::vector<uint32_t> ret;
-    std::unique_lock<std::mutex> lock(mtx_);
-    while (!pq_.empty() && pq_.top() <= upto) {
-	ret.push_back(pq_.top());
-	pq_.pop();
-    }
-    lock.unlock();
-    return ret;
-}
-
-std::unique_ptr<ThreadSafeIntPQ> g_prereqClearTxPQ; // a priority queue for prerequiste-tx-clear dependent tx
-std::unique_ptr<std::map<uint32_t, std::unordered_set<uint256, BlockHasher>>> g_waitForGraph;
 
 //void smartPlaceTxInBlock(const std::shared_ptr<const CBlock> pblock){
 //    std::cout << "SMART place block " << chainActive.Height() + 1 << std::endl;

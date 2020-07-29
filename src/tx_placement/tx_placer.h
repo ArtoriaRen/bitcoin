@@ -18,7 +18,6 @@
 #include <primitives/block.h>
 #include <coins.h>
 #include "validation.h"
-#include <queue>
 
 extern uint32_t num_committees;
 extern int lastAssignedAffinity;
@@ -55,16 +54,11 @@ public:
     // TODO: smartPlaceSorted
 };
 
-class ThreadSafeIntPQ{
-public:
-    std::mutex mtx_;
-    std::condition_variable cv_;
-    std::priority_queue<uint32_t, std::vector<uint32_t>, std::greater<uint32_t>> pq_;
-
-    ThreadSafeIntPQ();
-    void push(const uint32_t val);
-    std::vector<uint32_t> pop_upto(const uint32_t upto);
-};
+typedef struct {
+    uint32_t idx;
+    std::unordered_set<uint256, BlockHasher> prereqTxSet;
+} WaitInfo;
+	
 
 //uint32_t sendTxInBlock(uint32_t block_height, struct timeval& expected_last_send_time, int txSendPeriod);
 uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod);
@@ -72,7 +66,7 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod);
 /* return true if the tx is sent, false if the tx is queued. */
 bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height);
 
-void buildDependencyGraph(uint32_t block_height, std::map<uint32_t, std::unordered_set<uint256, BlockHasher>>& waitForGraph);
+void buildDependencyGraph(uint32_t block_height);
 
 /* place tx in the blockStart specified in conf file. This only work for 
  * existing blocks already on the chain.
@@ -96,8 +90,7 @@ void extractRawTxInBlock();
  */
 void smartPlaceTxInBlock(const std::shared_ptr<const CBlock> pblock);
 
-extern std::unique_ptr<ThreadSafeIntPQ> g_prereqClearTxPQ; // a priority queue for prerequiste-tx-clear dependent tx
-extern std::unique_ptr<std::map<uint32_t, std::unordered_set<uint256, BlockHasher>>> g_waitForGraph;
+extern TxPlacer g_txplacer;
 
 #endif /* TX_PLACER_H */
 
