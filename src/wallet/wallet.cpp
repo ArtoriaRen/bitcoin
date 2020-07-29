@@ -1763,28 +1763,11 @@ bool CWalletTx::RelayWalletTransaction(CConnman* connman)
         if (InMempool() || AcceptToMemoryPool(maxTxFee, state)) {
             LogPrintf("Relaying wtx %s\n", GetHash().ToString());
             if (connman) {
-		/* get the input shards and output shards id*/
-		TxPlacer txPlacer;
-		std::vector<int32_t> shards = txPlacer.randomPlace(*tx);
-		const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-		assert(shards.size() >= 2); // there must be at least one output shard and one input shard. 
-		struct TxStat stat;
-		if (shards.size() == 2 && shards[0] == shards[1]) {
-		    /* this is a single shard tx */
-		    stat.type = TxType::SINGLE_SHARD;
-		    gettimeofday(&stat.startTime, NULL);
-		    g_pbft->mapTxStartTime.insert(std::make_pair(tx->GetHash(), stat));
-		    connman->PushMessage(g_pbft->leaders[shards[0]], msgMaker.Make(NetMsgType::PBFT_TX, *tx));
-		} else {
-		    /* this is a cross-shard tx */
-		    stat.type = TxType::CROSS_SHARD;
-		    gettimeofday(&stat.startTime, NULL);
-		    g_pbft->mapTxStartTime.insert(std::make_pair(tx->GetHash(), stat));
-		    for (uint i = 1; i < shards.size(); i++) {
-		        connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_LOCK, *tx));
-		    }
-		}
-		g_pbft->mapTxid.insert(std::make_pair(tx->GetHash(), tx));
+		CInv inv(MSG_TX, GetHash());
+                connman->ForEachNode([&inv](CNode* pnode)
+                {
+                    pnode->PushInventory(inv);
+                });
                 return true;
             }
         }

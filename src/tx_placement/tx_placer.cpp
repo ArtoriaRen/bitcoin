@@ -28,12 +28,16 @@ TxPlacer::TxPlacer():totalTxNum(0){}
 
 
 /* all output UTXOs of a tx is stored in one shard. */
-std::vector<int32_t> TxPlacer::randomPlace(const CTransaction& tx){
-	    std::set<int> inputShardIds;
+std::vector<int32_t> TxPlacer::randomPlace(const CTransaction& tx, const CCoinsViewCache& cache){
+    std::vector<int32_t> ret;
 
+    std::set<int> inputShardIds;
     /* add the input shard ids to the set */
     if (!tx.IsCoinBase()) { // do not calculate shard for dummy coinbase input.
 	for(uint32_t i = 0; i < tx.vin.size(); i++) {
+	    if(!cache.HaveCoin(tx.vin[i].prevout)) {
+		return ret;
+	    }
 	    arith_uint256 txid = UintToArith256(tx.vin[i].prevout.hash);
 	    arith_uint256 quotient = txid / num_committees;
 	    arith_uint256 inShardId = txid - quotient * num_committees;
@@ -59,7 +63,7 @@ std::vector<int32_t> TxPlacer::randomPlace(const CTransaction& tx){
 	shardCntMap[tx.vin.size()][inputShardIds.size() + 1]++;
     }
 
-    std::vector<int32_t> ret(inputShardIds.size() + 1);
+    ret.resize(inputShardIds.size() + 1);
     ret[0] = (int32_t)(outShardId.GetLow64());// put the outShardIt as the first element
     std::copy(inputShardIds.begin(), inputShardIds.end(), ret.begin() + 1);
     return ret;
@@ -72,9 +76,6 @@ int32_t TxPlacer::randomPlaceUTXO(const uint256& txid) {
 	return (int32_t)(inShardId.GetLow64());
 }
 
-int32_t TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCache& cache){
-	return -1;
-}
 
 void TxPlacer::printPlaceResult(){
     std::cout << "total tx num = " << totalTxNum << std::endl;
@@ -95,24 +96,57 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
         std::cerr << "Block not found on disk" << std::endl;
     }
     std::cout << __func__ << "sending " << block.vtx.size() << " tx in block " << block_height << std::endl;
+
+    const struct timespec sleep_length = {0, txSendPeriod * 1000};
     uint32_t cnt = 0;
     for (uint j = 0; j < block.vtx.size(); j++) {
 	CTransactionRef tx = block.vtx[j];
 	const uint256& hashTx = tx->GetHash();
-	sendTx(block.vtx[j], j, block_height);
-	g_pbft->mapTxid.insert(std::make_pair(hashTx, tx));
-	cnt++;
-	const struct timespec sleep_length = {0, txSendPeriod * 1000};
+	if (sendTx(block.vtx[j], j, block_height)){
+	    cnt++;
+	}
 	nanosleep(&sleep_length, NULL);
+
+	if (cnt & 0x1F == 0) {
+	    while (pcoinsTip->HaveInputs(*(g_pbft->txDelaySendQueue.front().tx))) {
+		TxBlockInfo& txInfo = g_pbft->txDelaySendQueue.front();
+		assert(sendTx(txInfo.tx, txInfo.blockHeight, txInfo.n));
+		cnt++;
+		g_pbft->txDelaySendQueue.pop();
+		nanosleep(&sleep_length, NULL);
+	    }
+	}
     }
+
+    /* We have sent all tx but those waiting for prerequisite tx. Poll the priority 
+     * queue to see if some dependent tx are ready until we sent all tx. */
+    std::cout << "sending tail tx ... " << std::endl;
+    uint32_t alreadySentCnt = cnt;
+    while (cnt < block.vtx.size()) {
+	for (auto clearedDependentTx: g_prereqClearTxPQ->pop_upto(block.vtx.size() - 1)) {
+	    sendTx(block.vtx[clearedDependentTx], clearedDependentTx, block_height);
+	    cnt++;
+	    nanosleep(&sleep_length, NULL);
+	}
+	usleep(1000); // sleep for 1ms before the next pq check
+    }
+    std::cout << cnt - alreadySentCnt << "tail tx are sent. " << std::endl;
     return cnt;
 }
 
-void sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height) {
+bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height) {
 	/* get the input shards and output shards id*/
 	TxPlacer txPlacer;
-	std::vector<int32_t> shards = txPlacer.randomPlace(*tx);
+	CCoinsViewCache view(pcoinsTip.get());
+	std::vector<int32_t> shards = txPlacer.randomPlace(*tx, view);
 	const uint256& hashTx = tx->GetHash();
+	if (shards.empty()) {
+	    /* some inputs are missing. Put this tx in a queue for later sending. */
+	    std::cout << idx << "-th" << " tx "  <<  hashTx.GetHex().substr(0, 10) << " is queued. " << std::endl;
+	    g_pbft->txDelaySendQueue.emplace(tx, block_height, idx);
+	    return false;
+	}
+
 	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	assert((tx->IsCoinBase() && shards.size() == 1) || (!tx->IsCoinBase() && shards.size() >= 2)); // there must be at least one output shard and one input shard for non-coinbase tx.
 	std::cout << idx << "-th" << " tx "  <<  hashTx.GetHex().substr(0, 10) << " : ";
@@ -123,6 +157,7 @@ void sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 	/* send tx and collect time info to calculate latency. 
 	 * We also remove all reply msg for this req to ease testing with sending a req multi times. */
 	g_pbft->replyMap[hashTx].clear();
+	g_pbft->txInFly.insert(std::make_pair(hashTx, std::move(TxBlockInfo(tx, block_height, idx))));
 	g_pbft->mapTxStartTime.erase(hashTx);
 	struct TxStat stat;
 	if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
@@ -142,4 +177,5 @@ void sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 		g_connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_LOCK, *tx));
 	    }
 	}
+	return true;
 }

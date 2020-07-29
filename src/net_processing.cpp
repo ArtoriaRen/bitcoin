@@ -1863,6 +1863,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		std::cout << "tx " << reply.digest.GetHex().substr(0,10);
 		if (reply.reply == 'y') {
 			std::cout << ", SUCCEED, ";
+			TxBlockInfo& txinfo= g_pbft->txInFly[reply.digest];
+			AddCoins(*pcoinsTip, *(txinfo.tx), txinfo.blockHeight);
+			g_pbft->txInFly.erase(reply.digest);
 		} else if (reply.reply == 'n') {
 			std::cout << ", FAIL, ";
 		} 
@@ -1876,6 +1879,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		if (reply.reply == 'y' && inputShardRplMap[txid].decision == 'c') {
 			/* only the output shard send committed reply, so no risk of printing info more than once for a tx. */
 			std::cout << ", COMMITTED, ";
+			TxBlockInfo& txinfo = g_pbft->txInFly[txid];
+			AddCoins(*pcoinsTip, *(txinfo.tx), txinfo.blockHeight);
+			g_pbft->txInFly.erase(txid);
 		} else if (reply.reply == 'y' && inputShardRplMap[txid].decision == 'a') {
 		  
 		        /* This info is printed only once for an aborted tx b/c  it is only printed when the number of replies equals (2f+1). Strictly speaking, this is not correct, we should wait for reply for every input shard that have locked some UTXOs. */
@@ -1936,8 +1942,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	if (shardReplies.size() == reply_threshold && reply.reply == 'n') {
 	    std::cout << ", LOCK_NOT_OK, ";
 	    /* assemble a unlock_to_abort req including (2f + 1) replies from this shard */
-	    assert(g_pbft->mapTxid.find(reply.digest) != g_pbft->mapTxid.end());
-	    UnlockToAbortReq abortReq(std::move(CMutableTransaction(*g_pbft->mapTxid[reply.digest])), shardReplies);
+	    assert(g_pbft->txInFly.find(reply.digest) != g_pbft->txInFly.end());
+	    UnlockToAbortReq abortReq(std::move(CMutableTransaction(*g_pbft->txInFly[reply.digest].tx)), shardReplies);
 
 	    /* mark the tx is final and no further unlock_to_abort or unlock_to_commit should be sent. 'a' stands for abort. */
 	    g_pbft->inputShardReplyMap[reply.digest].decision = 'a';
@@ -1945,8 +1951,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
 	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	    TxPlacer txPlacer;
-	    CTransactionRef tx = g_pbft->mapTxid[reply.digest];
-	    std::vector<int32_t> shards = txPlacer.randomPlace(*tx);
+	    CTransactionRef tx = g_pbft->txInFly[reply.digest].tx;
+	    std::vector<int32_t> shards = txPlacer.randomPlace(*tx, *pcoinsTip);
 	    std::cout << "sending unlock_to_abort with req_hash = " << abortReq.GetDigest().GetHex().substr(0, 10) << " to shards: " << std::endl;
 	    for (uint i = 1; i < shards.size(); i++) {
 		std::cout << shards[i] << ", ";
@@ -1964,8 +1970,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		vReply.insert(vReply.end(), p.second.begin(), p.second.begin() + 3);
 	    }
             
-	    assert(g_pbft->mapTxid.find(reply.digest) != g_pbft->mapTxid.end());
-	    UnlockToCommitReq commitReq(std::move(CMutableTransaction(*g_pbft->mapTxid[reply.digest])), vReply.size(), std::move(vReply));
+	    assert(g_pbft->txInFly.find(reply.digest) != g_pbft->txInFly.end());
+	    UnlockToCommitReq commitReq(std::move(CMutableTransaction(*g_pbft->txInFly[reply.digest].tx)), vReply.size(), std::move(vReply));
 
 	    /* mark the tx is final so that we do not need to process future replies for this req. 'c' stands for commit. */
 	    g_pbft->inputShardReplyMap[reply.digest].decision = 'c';
@@ -1973,7 +1979,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
 	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	    TxPlacer txPlacer;
-	    int32_t outputShard = txPlacer.randomPlaceUTXO(g_pbft->mapTxid[reply.digest]->GetHash());
+	    int32_t outputShard = txPlacer.randomPlaceUTXO(reply.digest);
 	    std::cout << "sending unlock_to_commit with req_hash = " << commitReq.GetDigest().GetHex().substr(0, 10) << " to shard " << outputShard << std::endl;
 	    connman->PushMessage(g_pbft->leaders[outputShard], msgMaker.Make(NetMsgType::OMNI_UNLOCK_COMMIT, commitReq));
 	} 

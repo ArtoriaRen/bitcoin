@@ -33,18 +33,19 @@ public:
 
     /* return a vector of shard ids. 
      * The first element is the output shard id, and other elements are input shard ids. */
-    std::vector<int32_t> randomPlace(const CTransaction& tx);
+    std::vector<int32_t> randomPlace(const CTransaction& tx, const CCoinsViewCache& cache);
 
     /* return the shard hosting the UTXO whose producing tx is txid */
     int32_t randomPlaceUTXO(const uint256& txid);
-    /* return the output shard of tx. */
-    int32_t smartPlace(const CTransaction& tx, CCoinsViewCache& cache);
+
     void printPlaceResult();
-    // TODO: smartPlaceSorted
 };
 
 //uint32_t sendTxInBlock(uint32_t block_height, struct timeval& expected_last_send_time, int txSendPeriod);
 uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod);
-void sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height);
+
+/* return true if the tx is sent, false if the tx is queued. */
+bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height);
+
 #endif /* TX_PLACER_H */
 

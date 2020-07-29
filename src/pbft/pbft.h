@@ -21,6 +21,7 @@
 #include "pbft_msg.h"
 #include "pubkey.h"
 #include "key.h"
+#include <queue>  
 
 extern int32_t pbftID;
 extern uint32_t thruInterval;
@@ -37,6 +38,14 @@ struct TxStat{
     struct timeval startTime;
 };
 
+class TxBlockInfo{
+public:
+    CTransactionRef tx;
+    uint32_t blockHeight;
+    uint32_t n;  // n-th tx in the block body
+    TxBlockInfo();
+    TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn);
+};
 
 class CPbft{
 public:
@@ -57,7 +66,8 @@ public:
     /* <txid, shard_ptr(tx)>
      * Every time we send a cross-shard tx to its input shards, we add an element to this map. 
      * This map is used when the input shards reply and we need to assemble a commit req. This map enables us to figure out the tx given a txid. */
-    std::unordered_map<uint256, CTransactionRef, BlockHasher> mapTxid;
+    std::unordered_map<uint256, TxBlockInfo, BlockHasher> txInFly;
+    std::queue<TxBlockInfo> txDelaySendQueue;
 
     std::unordered_map<uint256, TxStat, BlockHasher> mapTxStartTime;
     uint32_t nCompletedTx;

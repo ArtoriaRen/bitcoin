@@ -9,6 +9,9 @@
 int32_t pbftID;
 uint32_t thruInterval;
 
+TxBlockInfo::TxBlockInfo(): blockHeight(0), n(0) { }
+TxBlockInfo::TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn): tx(txIn), blockHeight(blockHeightIn), n(nIn) { }
+
 CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), nCompletedTx(0), privateKey(CKey()) {
     thruStartTime = {0, 0};
     privateKey.MakeNewKey(false);
