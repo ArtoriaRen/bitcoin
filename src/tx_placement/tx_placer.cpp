@@ -343,6 +343,8 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
 	nanosleep(&sleep_length, NULL);
 
 	if ((cnt & 0x1F) == 0) {
+	    if (ShutdownRequested())
+	    	return cnt;
 	    while (!g_pbft->txDelaySendQueue.empty() && pcoinsTip->HaveInputs(*(g_pbft->txDelaySendQueue.front().tx))) {
 		TxBlockInfo& txInfo = g_pbft->txDelaySendQueue.front();
 		assert(sendTx(txInfo.tx, txInfo.n, txInfo.blockHeight));
@@ -375,14 +377,6 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
 //	} else {
 //	    std::cout << __func__ << ": do not sleep" << std::endl;
 //	}
-
-
-	/* send tx and collect time info to calculate latency. 
-	 * We also remove all reply msg for this req to ease testing with sending a req multi times. */
-	g_pbft->mapTxid.insert(std::make_pair(hashTx, tx));
-	cnt++;
-	const struct timespec sleep_length = {0, txSendPeriod * 1000};
-	nanosleep(&sleep_length, NULL);
     }
 
     /* We have sent all tx but those waiting for prerequisite tx. Poll the 
