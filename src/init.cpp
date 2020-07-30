@@ -1773,7 +1773,7 @@ bool AppInitMain()
 	clientConnOptions.nMaxOutbound = std::min(MAX_OUTBOUND_CONNECTIONS, clientConnOptions.nMaxConnections);
 	clientConnOptions.nMaxAddnode = MAX_ADDNODE_CONNECTIONS;
 	clientConnOptions.nMaxFeeler = 1;
-    //    clientConnOptions.nBestHeight = chain_active_height;
+        clientConnOptions.nBestHeight = chain_active_height;
     //    clientConnOptions.uiInterface = &uiInterface;
 	clientConnOptions.m_msgproc = clientLogic.get();
 	clientConnOptions.nSendBufferMaxSize = 1000*gArgs.GetArg("-maxsendbuffer", DEFAULT_MAXSENDBUFFER);
