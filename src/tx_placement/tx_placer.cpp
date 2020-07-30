@@ -110,6 +110,8 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
 	nanosleep(&sleep_length, NULL);
 
 	if ((cnt & 0x1F) == 0) {
+	    if (ShutdownRequested())
+	    	return cnt;
 	    while (!g_pbft->txDelaySendQueue.empty() && pcoinsTip->HaveInputs(*(g_pbft->txDelaySendQueue.front().tx))) {
 		TxBlockInfo& txInfo = g_pbft->txDelaySendQueue.front();
 		assert(sendTx(txInfo.tx, txInfo.n, txInfo.blockHeight));

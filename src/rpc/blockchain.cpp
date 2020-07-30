@@ -1471,7 +1471,7 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
 	txCnt += sendTxInBlock(i, txSendPeriod);
     }
     gettimeofday(&endTime, NULL);
-    int sendDuration = (endTime.tv_sec - startTime.tv_sec) * 1000000 
+    long sendDuration = (endTime.tv_sec - startTime.tv_sec) * 1000000 
 	    + (endTime.tv_usec - startTime.tv_usec);
     std::cout << __func__ << ": send " << txCnt << " tx in " << sendDuration
 	    << " us, actual sending rate = " << (double)txCnt * 1000000 / sendDuration  
