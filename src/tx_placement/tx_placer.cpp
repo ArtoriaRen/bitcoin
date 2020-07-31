@@ -97,7 +97,7 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
     if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
         std::cerr << "Block not found on disk" << std::endl;
     }
-    std::cout << __func__ << "sending " << block.vtx.size() << " tx in block " << block_height << std::endl;
+    std::cout << __func__ << ": sending " << block.vtx.size() << " tx in block " << block_height << std::endl;
 
     const struct timespec sleep_length = {0, txSendPeriod * 1000};
     uint32_t cnt = 0;
@@ -109,7 +109,8 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
 	}
 	nanosleep(&sleep_length, NULL);
 
-	if ((cnt & 0x1F) == 0) {
+	/* check if the tx at the queue front can be sent. If so, continue to check the following tx in the queue. */
+	if ((j & 0x1F) == 0) {
 	    if (ShutdownRequested())
 	    	return cnt;
 	    while (!g_pbft->txDelaySendQueue.empty() && pcoinsTip->HaveInputs(*(g_pbft->txDelaySendQueue.front().tx))) {
@@ -122,21 +123,29 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
 	}
     }
 
+    return cnt;
+}
+
+uint32_t sendAllTailTx(int txSendPeriod) {
     /* We have sent all tx but those waiting for prerequisite tx. Poll the 
      * queue to see if some dependent tx are ready until we sent all tx. */
     std::cout << "sending tail tx ... " << std::endl;
-    uint32_t alreadySentCnt = cnt;
-    while (cnt < block.vtx.size()) {
-	while (!g_pbft->txDelaySendQueue.empty() && pcoinsTip->HaveInputs(*(g_pbft->txDelaySendQueue.front().tx))) {
+    const struct timespec sleep_length = {0, txSendPeriod * 1000};
+    uint32_t cnt = 0;
+    while (!g_pbft->txDelaySendQueue.empty()) {
+	if (pcoinsTip->HaveInputs(*(g_pbft->txDelaySendQueue.front().tx))) {
 	    TxBlockInfo& txInfo = g_pbft->txDelaySendQueue.front();
 	    assert(sendTx(txInfo.tx, txInfo.n, txInfo.blockHeight));
 	    cnt++;
 	    g_pbft->txDelaySendQueue.pop();
 	    nanosleep(&sleep_length, NULL);
+	} else {
+	    usleep(1000); // sleep for 1ms before the next check
 	}
-	usleep(1000); // sleep for 1ms before the next pq check
+	if (ShutdownRequested())
+		break;
     }
-    std::cout << cnt - alreadySentCnt << "tail tx are sent. " << std::endl;
+    std::cout << cnt << " tail tx are sent. " << std::endl;
     return cnt;
 }
 
