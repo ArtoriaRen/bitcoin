@@ -342,7 +342,8 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
 	}
 	nanosleep(&sleep_length, NULL);
 
-	if ((cnt & 0x1F) == 0) {
+	/* check if the tx at the queue front can be sent. If so, continue to check the following tx in the queue. */
+	if ((j & 0x1F) == 0) {
 	    if (ShutdownRequested())
 	    	return cnt;
 	    while (!g_pbft->txDelaySendQueue.empty() && pcoinsTip->HaveInputs(*(g_pbft->txDelaySendQueue.front().tx))) {
@@ -353,49 +354,30 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
 		nanosleep(&sleep_length, NULL);
 	    }
 	}
-
-	/*-----calculate how long we should sleep------*/
-//	struct timeval current;
-//	struct timespec sleep_length = {0, 0};
-//	if (expected_last_send_time.tv_usec + txSendPeriod > SEC){
-//	    /* we assume that (expected_last_send_time.tv_usec + txSendPeriod) < 2 SEC */
-//	    expected_last_send_time.tv_sec++;
-//	    expected_last_send_time.tv_usec = expected_last_send_time.tv_usec + txSendPeriod - SEC;
-//	} else {
-//	    expected_last_send_time.tv_usec += txSendPeriod;
-//	}
-//	/* now expected_last_send_time becomes the time at which we should send this tx. */
-//	gettimeofday(&current, NULL);
-//	if (current.tv_sec < expected_last_send_time.tv_sec || (current.tv_sec == expected_last_send_time.tv_sec && current.tv_usec < expected_last_send_time.tv_usec)) {
-//	    /* we are not reach the expected sending time yet, so sleep for a while.
-//	     * we assume that this thread should never sleep more than 1 second. */
-//	    sleep_length.tv_nsec = (expected_last_send_time.tv_sec - current.tv_sec) * SEC * 1000
-//		    + (expected_last_send_time.tv_usec - current.tv_usec) * 1000;
-//	    nanosleep((const timespec*)&sleep_length, NULL);
-//	    std::cout << __func__ << ": slept " << sleep_length.tv_sec << "s " 
-//		    << sleep_length.tv_nsec << "ns" << std::endl;
-//	} else {
-//	    std::cout << __func__ << ": do not sleep" << std::endl;
-//	}
     }
+    return cnt;
+}
 
+uint32_t sendAllTailTx(int txSendPeriod) {
     /* We have sent all tx but those waiting for prerequisite tx. Poll the 
      * queue to see if some dependent tx are ready until we sent all tx. */
     std::cout << "sending tail tx ... " << std::endl;
-    uint32_t alreadySentCnt = cnt;
-    while (cnt < block.vtx.size()) {
-	while (!g_pbft->txDelaySendQueue.empty() && pcoinsTip->HaveInputs(*(g_pbft->txDelaySendQueue.front().tx))) {
+    const struct timespec sleep_length = {0, txSendPeriod * 1000};
+    uint32_t cnt = 0;
+    while (!g_pbft->txDelaySendQueue.empty()) {
+	if (pcoinsTip->HaveInputs(*(g_pbft->txDelaySendQueue.front().tx))) {
 	    TxBlockInfo& txInfo = g_pbft->txDelaySendQueue.front();
 	    assert(sendTx(txInfo.tx, txInfo.n, txInfo.blockHeight));
 	    cnt++;
 	    g_pbft->txDelaySendQueue.pop();
 	    nanosleep(&sleep_length, NULL);
+	} else {
+	    usleep(1000); // sleep for 1ms before the next check
 	}
 	if (ShutdownRequested())
 		break;
-	usleep(1000); // sleep for 1ms before the next pq check
     }
-    std::cout << cnt - alreadySentCnt << " tail tx are sent. " << std::endl;
+    std::cout << cnt << " tail tx are sent. " << std::endl;
     return cnt;
 }
 

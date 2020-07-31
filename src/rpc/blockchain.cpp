@@ -1523,7 +1523,11 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
     for (int i = txStartBlock; i < txEndBlock; i++) {
 //	txCnt += sendTxInBlock(i, expectedLastSendTime, txSendPeriod);
 	txCnt += sendTxInBlock(i, txSendPeriod);
+	std::cout << txCnt << " tx upto block " << i << " are sent. " << std::endl;
     }
+    txCnt += sendAllTailTx(txSendPeriod);
+    std::cout << txCnt << " tx in total (including tail tx) are sent. " << std::endl;
+
     gettimeofday(&endTime, NULL);
     long sendDuration = (endTime.tv_sec - startTime.tv_sec) * 1000000 
 	    + (endTime.tv_usec - startTime.tv_usec);
