@@ -2995,7 +2995,8 @@ bool PeerLogicValidation::SendPPMessages(){
 
     if (pbft->isLeader() && pbft->reqQueue.size() > 0) {
 	pbft->printQueueSize(); // only log queue size here cuz it will not change anywhere else
-	while (!pbft->reqQueue.empty() && pbft->nReqInFly < nMaxReqInFly) {
+//	while (!pbft->reqQueue.empty() && pbft->nReqInFly < nMaxReqInFly) {
+	while (!pbft->reqQueue.empty()) {
 	    CTransactionRef req = pbft->reqQueue.front();
 	    pbft->reqQueue.pop_front();
 	    /* send ppMsg for this reqs.*/
