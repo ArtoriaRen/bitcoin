@@ -1902,7 +1902,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		    thruput = thruInterval * 1000000 / ((endTime.tv_sec - thruStartTime.tv_sec) * 1000000 + (endTime.tv_usec - thruStartTime.tv_usec));
 		}
 		thruStartTime = endTime;
-		std::cout << "To tx " <<  nCompletedTx << ": throughput = " << thruput << std::endl;
+		std::cout << "At time " << endTime.tv_sec << "." << endTime.tv_usec << ", completed " <<  nCompletedTx << "tx" << ": throughput = " << thruput << std::endl;
 	    }
 	}
     }
