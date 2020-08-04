@@ -37,9 +37,6 @@ std::vector<int32_t> TxPlacer::randomPlace(const CTransaction& tx, const CCoinsV
     /* add the input shard ids to the set */
     if (!tx.IsCoinBase()) { // do not calculate shard for dummy coinbase input.
 	for(uint32_t i = 0; i < tx.vin.size(); i++) {
-	    if(!cache.HaveCoin(tx.vin[i].prevout)) {
-		return ret;
-	    }
 	    arith_uint256 txid = UintToArith256(tx.vin[i].prevout.hash);
 	    arith_uint256 quotient = txid / num_committees;
 	    arith_uint256 inShardId = txid - quotient * num_committees;
@@ -104,21 +101,20 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
     for (uint j = 0; j < block.vtx.size(); j++) {
 	CTransactionRef tx = block.vtx[j];
 	const uint256& hashTx = tx->GetHash();
-	if (sendTx(block.vtx[j], j, block_height)){
-	    cnt++;
-	}
-	nanosleep(&sleep_length, NULL);
+	sendTx(block.vtx[j], j, block_height);
+	cnt++;
+	//nanosleep(&sleep_length, NULL);
 
-	/* check if the tx at the queue front can be sent. If so, continue to check the following tx in the queue. */
-	if ((j & 0x1F) == 0) {
+	/* send one aborted tx every four tx */
+	if ((j & 0x04) == 0) {
 	    if (ShutdownRequested())
 	    	return cnt;
-	    while (!g_pbft->txDelaySendQueue.empty() && pcoinsTip->HaveInputs(*(g_pbft->txDelaySendQueue.front().tx))) {
-		TxBlockInfo& txInfo = g_pbft->txDelaySendQueue.front();
-		assert(sendTx(txInfo.tx, txInfo.n, txInfo.blockHeight));
-		cnt++;
-		g_pbft->txDelaySendQueue.pop();
-		nanosleep(&sleep_length, NULL);
+	    while (!g_pbft->txResendQueue.empty()) {
+		TxBlockInfo& txInfo = g_pbft->txResendQueue.front();
+		sendTx(txInfo.tx, txInfo.n, txInfo.blockHeight);
+		g_pbft->txResendQueue.pop_front();
+	        cnt++;
+		//nanosleep(&sleep_length, NULL);
 	    }
 	}
     }
@@ -129,23 +125,19 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
 uint32_t sendAllTailTx(int txSendPeriod) {
     /* We have sent all tx but those waiting for prerequisite tx. Poll the 
      * queue to see if some dependent tx are ready until we sent all tx. */
-    std::cout << "sending tail tx ... " << std::endl;
+    std::cout << "sending " << g_pbft->txResendQueue.size() << " tail tx ... " << std::endl;
     const struct timespec sleep_length = {0, txSendPeriod * 1000};
     uint32_t cnt = 0;
-    while (!g_pbft->txDelaySendQueue.empty()) {
-	if (pcoinsTip->HaveInputs(*(g_pbft->txDelaySendQueue.front().tx))) {
-	    TxBlockInfo& txInfo = g_pbft->txDelaySendQueue.front();
-	    assert(sendTx(txInfo.tx, txInfo.n, txInfo.blockHeight));
-	    cnt++;
-	    g_pbft->txDelaySendQueue.pop();
-	    nanosleep(&sleep_length, NULL);
-	} else {
-	    usleep(1000); // sleep for 1ms before the next check
-	}
+    while (!g_pbft->txResendQueue.empty()) {
+	TxBlockInfo& txInfo = g_pbft->txResendQueue.front();
+	sendTx(txInfo.tx, txInfo.n, txInfo.blockHeight);
+	g_pbft->txResendQueue.pop_front();
+	cnt++;
+	/* still sleep for a while to give depended tx enough time to finish. */
+	nanosleep(&sleep_length, NULL);
 	if (ShutdownRequested())
 		break;
     }
-    std::cout << cnt << " tail tx are sent. " << std::endl;
     return cnt;
 }
 
@@ -155,12 +147,6 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 	CCoinsViewCache view(pcoinsTip.get());
 	std::vector<int32_t> shards = txPlacer.randomPlace(*tx, view);
 	const uint256& hashTx = tx->GetHash();
-	if (shards.empty()) {
-	    /* some inputs are missing. Put this tx in a queue for later sending. */
-	    std::cout << idx << "-th" << " tx "  <<  hashTx.GetHex().substr(0, 10) << " is queued. " << std::endl;
-	    g_pbft->txDelaySendQueue.emplace(tx, block_height, idx);
-	    return false;
-	}
 
 	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	assert((tx->IsCoinBase() && shards.size() == 1) || (!tx->IsCoinBase() && shards.size() >= 2)); // there must be at least one output shard and one input shard for non-coinbase tx.
@@ -170,7 +156,7 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 	std::cout << std::endl;
 
 	/* send tx and collect time info to calculate latency. 
-	 * We also remove all reply msg for this req to ease testing with sending a req multi times. */
+	 * We also remove all reply msg for this req for resending aborted tx. */
 	g_pbft->replyMap[hashTx].clear();
 	g_pbft->txInFly.insert(std::make_pair(hashTx, std::move(TxBlockInfo(tx, block_height, idx))));
 	g_pbft->mapTxStartTime.erase(hashTx);
