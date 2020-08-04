@@ -1866,8 +1866,13 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 			TxBlockInfo& txinfo= g_pbft->txInFly[reply.digest];
 			AddCoins(*pcoinsTip, *(txinfo.tx), txinfo.blockHeight, reply.peerID/CPbft::groupSize);
 			g_pbft->txInFly.erase(reply.digest);
+			g_pbft->nCompletedTx++;
+			if (g_pbft->nCompletedTx % thruInterval == 0) {
+			    g_pbft->logThruput(endTime);
+			}
 		} else if (reply.reply == 'n') {
 			std::cout << ", FAIL, ";
+			g_pbft->txResendQueue.push_back(g_pbft->txInFly[reply.digest]);
 		} 
 		std::cout << "single-shard, latency = " << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << " ms" << std::endl;
 	    } else {
@@ -1882,27 +1887,20 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 			TxBlockInfo& txinfo = g_pbft->txInFly[txid];
 			AddCoins(*pcoinsTip, *(txinfo.tx), txinfo.blockHeight, reply.peerID/CPbft::groupSize);
 			g_pbft->txInFly.erase(txid);
+			g_pbft->nCompletedTx++;
+			if (g_pbft->nCompletedTx % thruInterval == 0) {
+			    g_pbft->logThruput(endTime);
+			}
+
 		} else if (reply.reply == 'y' && inputShardRplMap[txid].decision == 'a') {
 		  
 		        /* This info is printed only once for an aborted tx b/c  it is only printed when the number of replies equals (2f+1). Strictly speaking, this is not correct, we should wait for reply for every input shard that have locked some UTXOs. */
 			std::cout << ", ABORTED, ";
+			g_pbft->txResendQueue.push_back(g_pbft->txInFly[reply.digest]);
 		} else if (reply.reply == 'n') {
 			std::cout << " fail to commit or abort, ";
 		} 
 		std::cout << "cross-shard, latency = " << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << " ms" << std::endl;
-	    }
-
-	    /* ---- calculate throughput using the last completed thruInteval tx ---- */
-	    uint32_t& nCompletedTx = g_pbft->nCompletedTx;
-	    struct timeval& thruStartTime = g_pbft->thruStartTime;
-	    uint32_t thruput = 0;
-	    nCompletedTx++;
-	    if (nCompletedTx % thruInterval == 0) {
-		if (thruStartTime.tv_sec != 0) {
-		    thruput = thruInterval * 1000000 / ((endTime.tv_sec - thruStartTime.tv_sec) * 1000000 + (endTime.tv_usec - thruStartTime.tv_usec));
-		}
-		thruStartTime = endTime;
-		std::cout << "At time " << endTime.tv_sec << "." << endTime.tv_usec << ", completed " <<  nCompletedTx << "tx" << ": throughput = " << thruput << std::endl;
 	    }
 	}
     }

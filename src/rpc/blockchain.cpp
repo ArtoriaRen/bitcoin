@@ -1516,8 +1516,8 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
     int txEndBlock = request.params[1].get_int();
     int txSendRate = request.params[2].get_int();
     int txSendPeriod = 1000000 / txSendRate; // in us
-    struct timeval startTime, endTime;//, expectedLastSendTime;
-    uint32_t txCnt = 0;
+    struct timeval startTime, tailStartTime, tailEndTime;//, expectedLastSendTime;
+    uint32_t txCnt = 0, nonTailCnt = 0;
     gettimeofday(&startTime, NULL); 
 //    expectedLastSendTime = startTime;
     for (int i = txStartBlock; i < txEndBlock; i++) {
@@ -1525,15 +1525,24 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
 	txCnt += sendTxInBlock(i, txSendPeriod);
 	std::cout << txCnt << " tx upto block " << i << " are sent. " << std::endl;
     }
+    nonTailCnt = txCnt;
+    gettimeofday(&tailStartTime, NULL);
     txCnt += sendAllTailTx(txSendPeriod);
-    std::cout << txCnt << " tx in total (including tail tx) are sent. " << std::endl;
+    std::cout << txCnt << " tail tx are sent. " << std::endl;
 
-    gettimeofday(&endTime, NULL);
-    long sendDuration = (endTime.tv_sec - startTime.tv_sec) * 1000000 
-	    + (endTime.tv_usec - startTime.tv_usec);
-    std::cout << __func__ << ": send " << txCnt << " tx in " << sendDuration
-	    << " us, actual sending rate = " << (double)txCnt * 1000000 / sendDuration  
+    gettimeofday(&tailEndTime, NULL);
+    long sendDuration = (tailStartTime.tv_sec - startTime.tv_sec) * 1000000 
+	    + (tailStartTime.tv_usec - startTime.tv_usec);
+    long tailDuration = (tailEndTime.tv_sec - tailStartTime.tv_sec) * 1000000 
+	    + (tailEndTime.tv_usec - tailStartTime.tv_usec);
+    std::cout << __func__ << ": send " << nonTailCnt << " non-tail tx in " << sendDuration
+	    << " us, actual sending rate = " << (double)nonTailCnt * 1000000 / sendDuration  
 	    << " tx/sec" << std::endl;
+    uint32_t tailCnt = txCnt - nonTailCnt;
+    std::cout << __func__ << ": send " << tailCnt << " tail tx in " << tailDuration
+	    << " us, actual sending rate = " << (double)tailCnt * 1000000 / tailDuration  
+	    << " tx/sec" << std::endl;
+
     return NullUniValue;
 }
 

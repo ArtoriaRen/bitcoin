@@ -47,6 +47,26 @@ public:
     TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn);
 };
 
+class ThreadSafeQueue {
+public:
+    ThreadSafeQueue();
+    ~ThreadSafeQueue();
+
+    TxBlockInfo& front();
+    void pop_front();
+
+    void push_back(const TxBlockInfo& item);
+    void push_back(TxBlockInfo&& item);
+
+    int size();
+    bool empty();
+
+private:
+    std::deque<TxBlockInfo> queue_;
+    std::mutex mutex_;
+    std::condition_variable cond_;
+};
+
 class CPbft{
 public:
     static const uint32_t nFaulty = 1;
@@ -67,7 +87,7 @@ public:
      * Every time we send a cross-shard tx to its input shards, we add an element to this map. 
      * This map is used when the input shards reply and we need to assemble a commit req. This map enables us to figure out the tx given a txid. */
     std::unordered_map<uint256, TxBlockInfo, BlockHasher> txInFly;
-    std::queue<TxBlockInfo> txDelaySendQueue;
+    ThreadSafeQueue txResendQueue;
 
     std::unordered_map<uint256, TxStat, BlockHasher> mapTxStartTime;
     uint32_t nCompletedTx;
@@ -75,6 +95,8 @@ public:
 
     CPbft();
     bool checkReplySig(const CReply* pReply) const;
+    void logThruput(struct timeval& endTime);
+
 private:
     // private ECDSA key used to sign messages
     CKey privateKey;
