@@ -2966,9 +2966,9 @@ bool PeerLogicValidation::SendPPMessages(){
     if (pbft->isLeader() && pbft->reqQueue.size() > 0) {
 	pbft->printQueueSize(); // only log queue size here cuz it will not change anywhere else
 	//while (!pbft->reqQueue.empty() && pbft->nReqInFly < nMaxReqInFly) {
-	while (!pbft->reqQueue.empty()) {
-	    TypedReq req = pbft->reqQueue.front();
-	    pbft->reqQueue.pop_front();
+	std::deque<TypedReq> reqQ(pbft->reqQueue.get_all());
+	for (uint i = 0; i < reqQ.size(); i++) {
+	    TypedReq req = reqQ[i];
 	    /* send ppMsg for this reqs.*/
 	    CPre_prepare ppMsg = pbft->assemblePPMsg(req.pReq, req.type);
 	    pbft->log[ppMsg.seq].ppMsg = ppMsg;
@@ -2982,7 +2982,7 @@ bool PeerLogicValidation::SendPPMessages(){
 	    for (uint32_t i = start_peerID; i < end_peerID; i++) {
 		connman->PushMessage(pbft->peers[i], msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
 	    }
-	    pbft->nReqInFly++;
+//	    pbft->nReqInFly++;
 	}
     }
     return true;

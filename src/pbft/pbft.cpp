@@ -40,6 +40,13 @@ TypedReq& ThreadSafeQueue::front() {
     return queue_.front();
 }
 
+std::deque<TypedReq> ThreadSafeQueue::get_all() {
+    std::unique_lock<std::mutex> mlock(mutex_);
+    std::deque<TypedReq> ret(queue_);
+    queue_.clear();
+    return ret;
+}
+
 void ThreadSafeQueue::pop_front() {
     std::unique_lock<std::mutex> mlock(mutex_);
     while (queue_.empty()) {
@@ -53,7 +60,6 @@ void ThreadSafeQueue::push_back(const TypedReq& item) {
     queue_.push_back(item);
     mlock.unlock(); // unlock before notificiation to minimize mutex con
     cond_.notify_one(); // notify one waiting thread
-
 }
 
 void ThreadSafeQueue::push_back(TypedReq&& item) {
@@ -61,7 +67,6 @@ void ThreadSafeQueue::push_back(TypedReq&& item) {
     queue_.push_back(std::move(item));
     mlock.unlock(); // unlock before notificiation to minimize mutex con
     cond_.notify_one(); // notify one waiting thread
-
 }
 
 int ThreadSafeQueue::size() {
@@ -205,7 +210,7 @@ bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
         // enter reply phase
         std::cout << "enter reply phase" << std::endl;
         log[cMsg.seq].phase = PbftPhase::reply;
-	nReqInFly--; 
+//	nReqInFly--; 
 	/* if some seq ahead of the cMsg.seq is not in the reply phase yet, 
 	 * cMsg.seq will not be executed.
 	 */

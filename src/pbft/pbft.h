@@ -40,6 +40,7 @@ public:
     ~ThreadSafeQueue();
 
     TypedReq& front();
+    std::deque<TypedReq> get_all();
     void pop_front();
 
     void push_back(const TypedReq& item);
