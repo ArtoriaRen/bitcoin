@@ -35,6 +35,7 @@ public:
     ~ThreadSafeQueue();
 
     CTransactionRef& front();
+    std::deque<CTransactionRef> get_all();
     void pop_front();
 
     void push_back(const CTransactionRef& item);
