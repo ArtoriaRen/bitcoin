@@ -15,6 +15,8 @@
 #include "coins.h"
 #include "script/interpreter.h"
 #include "undo.h"
+#include "netmessagemaker.h"
+#include "consensus/merkle.h"
 
 void UpdateLockCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo, int nHeight);
 
@@ -40,7 +42,7 @@ void CPbftMessage::getHash(uint256& result){
 	    .Finalize((unsigned char*)&result);
 }
 
-CPre_prepare::CPre_prepare(const CPre_prepare& msg): CPbftMessage(msg), req(msg.req) { }
+CPre_prepare::CPre_prepare(const CPre_prepare& msg): CPbftMessage(msg), pbft_block(msg.pbft_block) { }
 
 CPre_prepare::CPre_prepare(const CPbftMessage& msg): CPbftMessage(msg) { }
 
@@ -58,7 +60,7 @@ void CReply::getHash(uint256& result) const {
 	    .Finalize((unsigned char*)&result);
 }
 
-char TxReq::Execute(const int seq) const {
+char TxReq::Execute(const int seq, bool checkOnly) const {
     /* -------------logic from Bitcoin code for tx processing--------- */
     CTransaction tx(tx_mutable);
     
@@ -98,6 +100,9 @@ char TxReq::Execute(const int seq) const {
 	}
     }
 
+    if (checkOnly) 
+	return 'y';
+
     UpdateCoins(tx, view, seq);
     bool flushed = view.Flush(); // flush to pcoinsTip
     assert(flushed);
@@ -113,7 +118,7 @@ uint256 TxReq::GetDigest() const {
 }
 
 
-char LockReq::Execute(const int seq) const {
+char LockReq::Execute(const int seq, bool checkOnly) const {
     /* we did not check if there is any input coins belonging our shard because
      * we believe the client is honest and will not send an LOCK req to a 
      * irrelavant shard. In OmniLedger, we already beleive in the client to be 
@@ -160,6 +165,9 @@ char LockReq::Execute(const int seq) const {
 	return 'n';
     }
 
+    if (checkOnly) 
+	return 'y';
+
     /* Step 4: spent the input coins in our shard and store them in the global map 
      * for possibly future UnlockToAbort processing. */
     CTxUndo txUndo;
@@ -189,8 +197,8 @@ void CInputShardReply::getHash(uint256& result) const {
 	    .Finalize((unsigned char*)&result);
 }
 
-UnlockToCommitReq::UnlockToCommitReq(): tx_mutable(CMutableTransaction()) {}
-UnlockToCommitReq::UnlockToCommitReq(const CTransaction& txIn, const uint sigCountIn, std::vector<CInputShardReply>&& vReply) : tx_mutable(txIn), nInputShardReplies(sigCountIn), vInputShardReply(vReply){}
+UnlockToCommitReq::UnlockToCommitReq(): CClientReq(CMutableTransaction()) {}
+UnlockToCommitReq::UnlockToCommitReq(const CTransaction& txIn, const uint sigCountIn, std::vector<CInputShardReply>&& vReply) : CClientReq(txIn), nInputShardReplies(sigCountIn), vInputShardReply(vReply){}
 
 uint256 UnlockToCommitReq::GetDigest() const {
     uint256 tx_hash(tx_mutable.GetHash());
@@ -209,7 +217,7 @@ uint256 UnlockToCommitReq::GetDigest() const {
 
 bool checkInputShardReplySigs(const std::vector<CInputShardReply>& vReplies);
 
-char UnlockToCommitReq::Execute(const int seq) const {
+char UnlockToCommitReq::Execute(const int seq, bool checkOnly) const {
     if (!checkInputShardReplySigs(vInputShardReply)) {
         std::cout << __func__ << ": verify sigs fail!" << std::endl;
 	return 'n';
@@ -250,6 +258,8 @@ char UnlockToCommitReq::Execute(const int seq) const {
 	return 'n';
     }
 
+    if (checkOnly) 
+	return 'y';
     /* Step 3: check sigScript for input UTXOs in our shard. Done by input shard. */
 
     /* Step 4: 
@@ -284,11 +294,11 @@ bool checkInputShardReplySigs(const std::vector<CInputShardReply>& vReplies) {
     return true;
 }
 
-UnlockToAbortReq::UnlockToAbortReq(): tx_mutable(CMutableTransaction()) {
+UnlockToAbortReq::UnlockToAbortReq(): CClientReq(CMutableTransaction()) {
     vNegativeReply.resize(2 * CPbft::nFaulty + 1);
 }
 
-UnlockToAbortReq::UnlockToAbortReq(const CTransaction& txIn, const std::vector<CInputShardReply>& lockFailReplies) : tx_mutable(txIn), vNegativeReply(lockFailReplies){
+UnlockToAbortReq::UnlockToAbortReq(const CTransaction& txIn, const std::vector<CInputShardReply>& lockFailReplies) : CClientReq(txIn), vNegativeReply(lockFailReplies){
     assert(vNegativeReply.size() == 2 * CPbft::nFaulty + 1);
 }
 
@@ -307,7 +317,7 @@ uint256 UnlockToAbortReq::GetDigest() const {
     return result;
 }
 
-char UnlockToAbortReq::Execute(const int seq) const {
+char UnlockToAbortReq::Execute(const int seq, bool checkOnly) const {
     if (!checkInputShardReplySigs(vNegativeReply)) {
         std::cout << __func__ << ": verify sigs fail!" << std::endl;
 	return 'n';
@@ -332,6 +342,9 @@ char UnlockToAbortReq::Execute(const int seq) const {
      * it must have failed to lock UTXOs). The input shard should only restore
      * UTXOs if it has locked them.
      */
+    if (checkOnly) 
+	return 'y';
+
     if (mapTxUndo.find(tx.GetHash()) != mapTxUndo.end()) {
 	std::cout << __func__ << ":  abort tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << ", restoring locked UTXOs."<< std::endl;
 	UpdateUnlockAbortCoins(tx, view, mapTxUndo[tx.GetHash()]);
@@ -343,4 +356,43 @@ char UnlockToAbortReq::Execute(const int seq) const {
     /* ------------- end logic from Bitcoin code for tx processing--------- */
 
     return 'y';
+}
+
+CPbftBlock::CPbftBlock(){
+    hashMerkleRoot.SetNull();
+    vReq.clear();
+}
+
+void CPbftBlock::UpdateMerkleRoot(){
+    hashMerkleRoot = PbftBlockMerkleRoot(*this); 
+}
+
+char CPbftBlock::Execute(const int seq, CConnman* connman) const {
+    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+    for (uint i = 0; i < vReq.size(); i++) {
+	std::cout << __func__ << ": req type = " << vReq[i].type << std::endl;
+	assert(vReq[i].pReq->Execute(seq) == 'y');
+	if (vReq[i].type == ClientReqType::LOCK) {
+	    CInputShardReply reply = g_pbft->assembleInputShardReply(seq, i);
+	    connman->PushMessage(g_pbft->client, msgMaker.Make(NetMsgType::OMNI_LOCK_REPLY, reply));
+	} 
+    }
+    CReply reply = g_pbft->assembleReply(seq);
+    connman->PushMessage(g_pbft->client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
+}
+
+uint256 TypedReq::GetHash() const {
+    uint256 req_hash(pReq->GetDigest());
+    uint256 result;
+    CHash256().Write((const unsigned char*)req_hash.begin(), req_hash.size()).Write((const unsigned char*)type, sizeof(type)).Finalize((unsigned char*)&result);
+    return result;
+}
+
+uint256 PbftBlockMerkleRoot(const CPbftBlock& block) {
+    std::vector<uint256> leaves;
+    leaves.resize(block.vReq.size());
+    for (size_t s = 0; s < block.vReq.size(); s++) {
+        leaves[s] = block.vReq[s].GetHash();
+    }
+    return ComputeMerkleRoot(leaves);
 }

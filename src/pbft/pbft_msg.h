@@ -17,6 +17,7 @@
 #include "util.h"
 #include "uint256.h"
 #include "primitives/transaction.h"
+#include "net.h"
 //global view number
 
 enum PbftPhase {pre_prepare, prepare, commit, reply, end};
@@ -28,6 +29,7 @@ enum ClientReqType {TX, LOCK, UNLOCK_TO_COMMIT, UNLOCK_TO_ABORT};
 class CPbft;
 
 class CPre_prepare;
+
 
 class CPbftMessage {
 public:
@@ -128,20 +130,38 @@ public:
 
 class CClientReq{
 public:
+    CMutableTransaction tx_mutable;
+    CClientReq(const CTransaction& tx): tx_mutable(tx) {}
     /* we did not put serialization methods here because c++ does not allow
      * virtual template method.
      */
-    virtual char Execute(const int seq) const = 0; // seq is passed in because we use it as block height.
+    virtual char Execute(const int seq, bool checkOnly = false) const = 0; // seq is passed in because we use it as block height.
     virtual uint256 GetDigest() const = 0;
 //    virtual ~CClientReq(){};
 };
 
+class TypedReq{
+public:
+    ClientReqType type;
+    std::shared_ptr<CClientReq> pReq;
+
+    uint256 GetHash() const;
+};
+
+class CPbftBlock{
+public:
+    uint256 hashMerkleRoot; 
+    std::vector<TypedReq> vReq;
+
+    CPbftBlock();
+    void UpdateMerkleRoot();
+    char Execute(const int seq, CConnman* connman) const;
+};
+
 class TxReq: public CClientReq {
 public:
-    CMutableTransaction tx_mutable;
-    
-    TxReq(): tx_mutable(CMutableTransaction()) {}
-    TxReq(const CTransaction& txIn) : tx_mutable(txIn){}
+    TxReq(): CClientReq(CMutableTransaction()) {}
+    TxReq(const CTransaction& txIn) : CClientReq(txIn){}
 
     template<typename Stream>
     void Serialize(Stream& s) const{
@@ -151,7 +171,7 @@ public:
     void Unserialize(Stream& s) {
 	tx_mutable.Unserialize(s);
     }
-    char Execute(const int seq) const override;
+    char Execute(const int seq, bool checkOnly = false) const override;
     uint256 GetDigest() const override;
 };
 
@@ -161,12 +181,11 @@ public:
  */
 class LockReq: public CClientReq {
 public:
-    CMutableTransaction tx_mutable;
     /* total input amount in our shard. Only in-memory. No need to serialize it. */
     mutable CAmount totalValueInOfShard;
     
-    LockReq(): tx_mutable(CMutableTransaction()) {}
-    LockReq(const CTransaction& txIn) : tx_mutable(txIn){}
+    LockReq() : CClientReq(CMutableTransaction()) { }
+    LockReq(const CTransaction& txIn) : CClientReq(txIn){}
 
     template<typename Stream>
     void Serialize(Stream& s) const{
@@ -176,13 +195,12 @@ public:
     void Unserialize(Stream& s) {
 	tx_mutable.Unserialize(s);
     }
-    char Execute(const int seq) const override;
+    char Execute(const int seq, bool checkOnly = false) const override;
     uint256 GetDigest() const override;
 };
 
 class UnlockToCommitReq: public CClientReq {
 public:
-    CMutableTransaction tx_mutable;
     /* number of signatures from input shards. The output shard deems the first
      * three sigs are for the UTXOs appear first in the input list, ... 
      * TODO: figure out which publickey to use when verify the sigs.
@@ -216,13 +234,12 @@ public:
 	    vInputShardReply[i].Unserialize(s);
 	}
     }
-    char Execute(const int seq) const override;
+    char Execute(const int seq, bool checkOnly = false) const override;
     uint256 GetDigest() const override;
 };
 
 class UnlockToAbortReq: public CClientReq {
 public:
-    CMutableTransaction tx_mutable;
     /* We need only lock-fail replies from only one input shard to abort the tx,
      * i.e. 2f + 1 negative replies from the same shard. 
      */
@@ -245,7 +262,7 @@ public:
 	     vNegativeReply[i].Unserialize(s);
 	}
     }
-    char Execute(const int seq) const override;
+    char Execute(const int seq, bool checkOnly = false) const override;
     uint256 GetDigest() const override;
 };
 
@@ -278,18 +295,13 @@ public:
 
 class CPre_prepare : public CPbftMessage{
 public:
-    /* The client request type (currently only for OmniLedger):
-     * The type is used to decide how the client request should be serialized,
-     * and deserialized when a peer receives a ppMsg.
-     */
-    ClientReqType type;
     /* If we use P2P network to disseminate client req before the primary send Pre_prepare msg,
      * the req does not have to be in the Pre-prepare message.*/
-    std::shared_ptr<CClientReq> req;
+    CPbftBlock pbft_block;
 
    
-    CPre_prepare():CPbftMessage(), req(nullptr){ }
-    CPre_prepare(const CPbftMessage& pbftMsg, const std::shared_ptr<CClientReq>& reqIn):CPbftMessage(pbftMsg), req(reqIn){ }
+    CPre_prepare():CPbftMessage(), pbft_block(){ }
+    CPre_prepare(const CPbftMessage& pbftMsg, const CPbftBlock& blockIn):CPbftMessage(pbftMsg), pbft_block(blockIn){ }
     
     //add explicit?
     CPre_prepare(const CPre_prepare& msg);
@@ -298,43 +310,57 @@ public:
     template<typename Stream>
     void Serialize(Stream& s) const{
 	CPbftMessage::Serialize(s);
-	s.write((char*)&type, sizeof(type));
-	if(type == ClientReqType::TX) {
-	    assert(req != nullptr);
-	    static_cast<TxReq*>(req.get())->Serialize(s);
-	} else if (type == ClientReqType::LOCK) {
-	    assert(req != nullptr);
-	    static_cast<LockReq*>(req.get())->Serialize(s);
-	} else if (type == ClientReqType::UNLOCK_TO_COMMIT) {
-	    assert(req != nullptr);
-	    static_cast<UnlockToCommitReq*>(req.get())->Serialize(s);
-	} else if (type == ClientReqType::UNLOCK_TO_ABORT) {
-	    assert(req != nullptr);
-	    static_cast<UnlockToAbortReq*>(req.get())->Serialize(s);
-	}  
+	uint block_size = pbft_block.vReq.size();
+	s.write((char*)&block_size, sizeof(block_size));
+	for (uint i = 0; i < pbft_block.vReq.size(); i++) {
+	    const ClientReqType& type = pbft_block.vReq[i].type;
+	    const std::shared_ptr<CClientReq>& pReq = pbft_block.vReq[i].pReq;
+	    s.write((char*)&type, sizeof(type));
+	    if(type == ClientReqType::TX) {
+		assert(pReq != nullptr);
+		static_cast<TxReq*>(pReq.get())->Serialize(s);
+	    } else if (type == ClientReqType::LOCK) {
+		assert(pReq != nullptr);
+		static_cast<LockReq*>(pReq.get())->Serialize(s);
+	    } else if (type == ClientReqType::UNLOCK_TO_COMMIT) {
+		assert(pReq != nullptr);
+		static_cast<UnlockToCommitReq*>(pReq.get())->Serialize(s);
+	    } else if (type == ClientReqType::UNLOCK_TO_ABORT) {
+		assert(pReq != nullptr);
+		static_cast<UnlockToAbortReq*>(pReq.get())->Serialize(s);
+	    }  
+	}
     }
     
     template<typename Stream>
     void Unserialize(Stream& s) {
 	CPbftMessage::Unserialize(s);
-	s.read((char*)&type, sizeof(type));
-	if(type == ClientReqType::TX) {
-	    req.reset(new TxReq());
-	    static_cast<TxReq*>(req.get())->Unserialize(s);
-	} else if(type == ClientReqType::LOCK) {
-	    req.reset(new LockReq());
-	    static_cast<LockReq*>(req.get())->Unserialize(s);
-	} else if(type == ClientReqType::UNLOCK_TO_COMMIT) {
-	    req.reset(new UnlockToCommitReq());
-	    static_cast<UnlockToCommitReq*>(req.get())->Unserialize(s);
-	} else if(type == ClientReqType::UNLOCK_TO_ABORT) {
-	    req.reset(new UnlockToAbortReq());
-	    static_cast<UnlockToAbortReq*>(req.get())->Unserialize(s);
+	uint block_size;
+	s.read((char*)&block_size, sizeof(block_size));
+	pbft_block.vReq.resize(block_size);
+	for (uint i = 0; i < pbft_block.vReq.size(); i++) {
+	    ClientReqType& type = pbft_block.vReq[i].type;
+	    std::shared_ptr<CClientReq>& pReq = pbft_block.vReq[i].pReq;
+	    s.read((char*)&type, sizeof(type));
+	    if(type == ClientReqType::TX) {
+		pReq.reset(new TxReq());
+		static_cast<TxReq*>(pReq.get())->Unserialize(s);
+	    } else if(type == ClientReqType::LOCK) {
+		pReq.reset(new LockReq());
+		static_cast<LockReq*>(pReq.get())->Unserialize(s);
+	    } else if(type == ClientReqType::UNLOCK_TO_COMMIT) {
+		pReq.reset(new UnlockToCommitReq());
+		static_cast<UnlockToCommitReq*>(pReq.get())->Unserialize(s);
+	    } else if(type == ClientReqType::UNLOCK_TO_ABORT) {
+		pReq.reset(new UnlockToAbortReq());
+		static_cast<UnlockToAbortReq*>(pReq.get())->Unserialize(s);
+	    }
 	}
     }
 };
 
 
+uint256 PbftBlockMerkleRoot(const CPbftBlock& block);
 
 
 

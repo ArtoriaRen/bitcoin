@@ -2957,33 +2957,48 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 }
 
 bool PeerLogicValidation::SendPPMessages(){
-    /* TODO : take client req from the reqQueue when need to process new req. 
-     * Probably we should do this when there are, e.g., 10 reqs in fly. Should 
-     * tune this number to get best thoroughput.
+    /*
      * reqQueue is threadsafe, so we do not acquire lock before querying its size.
      */ 
 
     if (pbft->isLeader() && pbft->reqQueue.size() > 0) {
 	pbft->printQueueSize(); // only log queue size here cuz it will not change anywhere else
-	//while (!pbft->reqQueue.empty() && pbft->nReqInFly < nMaxReqInFly) {
+	// TODO: pop at most 2000 tx
 	std::deque<TypedReq> reqQ(pbft->reqQueue.get_all());
+	std::cout << __func__ << ": poped " << reqQ.size() << "client reqs" << std::endl;
+	CPbftBlock pbftblock;
+	std::deque<TypedReq> invalidReqQ;
+
+	/* Check if a tx can be sucessfully executed. If so, add it to the block */
 	for (uint i = 0; i < reqQ.size(); i++) {
-	    TypedReq req = reqQ[i];
-	    /* send ppMsg for this reqs.*/
-	    CPre_prepare ppMsg = pbft->assemblePPMsg(req.pReq, req.type);
-	    pbft->log[ppMsg.seq].ppMsg = ppMsg;
-	    pbft->log[ppMsg.seq].phase = PbftPhase::prepare;
-	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-	    std::cout << __func__ << ": log slot "<< ppMsg.seq << " for req = "
-		    << pbft->log[ppMsg.seq].ppMsg.req->GetDigest().GetHex().substr(0, 10)
-		    << ", peers.size = " << pbft->peers.size()<< std::endl;
-	    uint32_t start_peerID = pbftID + 1; // skip the leader id b/c it is myself
-	    uint32_t end_peerID = start_peerID + CPbft::groupSize - 1;
-	    for (uint32_t i = start_peerID; i < end_peerID; i++) {
-		connman->PushMessage(pbft->peers[i], msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
+	    if (pbft->checkExecute(reqQ[i])) {
+		pbftblock.vReq.push_back(reqQ[i]);
+	    } else {
+		invalidReqQ.push_back(reqQ[i]);
 	    }
-//	    pbft->nReqInFly++;
 	}
+	pbftblock.UpdateMerkleRoot();
+
+	std::cout << __func__ << ":  block size will be " << pbftblock.vReq.size() << " reqs" << std::endl;
+	// TODO: need to check if pbftblock is empty after add tx screening.
+	if (pbftblock.vReq.empty())
+	    return false; 
+
+	/* send ppMsg for this reqs.*/
+	CPre_prepare ppMsg = pbft->assemblePPMsg(pbftblock);
+	pbft->log[ppMsg.seq].ppMsg = ppMsg;
+	pbft->log[ppMsg.seq].phase = PbftPhase::prepare;
+	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+	std::cout << __func__ << ": log slot "<< ppMsg.seq << " for pbftblock = "
+		<< pbft->log[ppMsg.seq].ppMsg.pbft_block.hashMerkleRoot.GetHex().substr(0, 10)
+		<< ", block size = " << pbft->log[ppMsg.seq].ppMsg.pbft_block.vReq.size()
+		<< ", peers.size = " << pbft->peers.size()<< std::endl;
+	uint32_t start_peerID = pbftID + 1; // skip the leader id b/c it is myself
+	uint32_t end_peerID = start_peerID + CPbft::groupSize - 1;
+	for (uint32_t i = start_peerID; i < end_peerID; i++) {
+	    connman->PushMessage(pbft->peers[i], msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
+	}
+//	    pbft->nReqInFly++;
     }
     return true;
 }

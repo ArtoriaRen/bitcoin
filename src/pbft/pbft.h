@@ -29,11 +29,6 @@ extern int32_t pbftID;
 extern int32_t nMaxReqInFly; 
 extern int32_t QSizePrintPeriod;
 
-typedef struct TypedReq{
-    ClientReqType type;
-    std::shared_ptr<CClientReq> pReq;
-} TypedReq;
-
 class ThreadSafeQueue {
 public:
     ThreadSafeQueue();
@@ -99,13 +94,14 @@ public:
     // Check Commit message signature, add to corresponding log, check if we have accumulated 2f+1 Commit message. If so, execute transactions and reply. 
     bool ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck = true);
 
-    CPre_prepare assemblePPMsg(const std::shared_ptr<CClientReq>& pclientReq, ClientReqType type);
+    CPre_prepare assemblePPMsg(const CPbftBlock& pbft_block);
     CPbftMessage assembleMsg(const uint32_t seq); 
     CReply assembleReply(const uint32_t seq);
-    CInputShardReply assembleInputShardReply(const uint32_t seq);
+    CInputShardReply assembleInputShardReply(const uint32_t seq, const uint32_t idx);
     bool checkMsg(CPbftMessage* msg);
     /*return the last executed seq */
-    int executeTransaction(const int seq);
+    int executeBlock(const int seq, CConnman* connman);
+    bool checkExecute(const TypedReq typedReq);
 
     inline void printQueueSize(){
 	    /* log queue size if we have reached the period. */
