@@ -2965,7 +2965,7 @@ bool PeerLogicValidation::SendPPMessages(){
 	pbft->printQueueSize(); // only log queue size here cuz it will not change anywhere else
 	// TODO: pop at most 2000 tx
 	std::deque<TypedReq> reqQ(pbft->reqQueue.get_all());
-	std::cout << __func__ << ": poped " << reqQ.size() << "client reqs" << std::endl;
+	std::cout << __func__ << ": poped " << reqQ.size() << " client reqs" << std::endl;
 	CPbftBlock pbftblock;
 	std::deque<TypedReq> invalidReqQ;
 
@@ -2976,13 +2976,16 @@ bool PeerLogicValidation::SendPPMessages(){
 	    } else {
 		invalidReqQ.push_back(reqQ[i]);
 	    }
+	    if (ShutdownRequested()) {
+		return false;
+	    }
 	}
-	pbftblock.UpdateMerkleRoot();
-
 	std::cout << __func__ << ":  block size will be " << pbftblock.vReq.size() << " reqs" << std::endl;
-	// TODO: need to check if pbftblock is empty after add tx screening.
 	if (pbftblock.vReq.empty())
 	    return false; 
+
+	pbftblock.UpdateMerkleRoot();
+
 
 	/* send ppMsg for this reqs.*/
 	CPre_prepare ppMsg = pbft->assemblePPMsg(pbftblock);
@@ -3481,10 +3484,10 @@ bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CD
         CTransactionRef ptx;
         vRecv >> ptx;
 	std::shared_ptr<CClientReq> req = std::make_shared<TxReq>(*ptx);
-	TypedReq typedReq = {ClientReqType::TX, req};
+	TypedReq typedReq(ClientReqType::TX, req);
 	pbft->reqQueue.push_back(typedReq);
         g_connman->WakeMessageHandler();
-	//std::cout << __func__ << ": push to req queue tx = " << ptx->GetHash().GetHex().substr(0, 10) << std::endl;
+	std::cout << __func__ << ": push to req queue tx = " << ptx->GetHash().GetHex().substr(0, 10) << std::endl;
     }
 
     /* received a lock req, put it in queue . */
@@ -3495,7 +3498,7 @@ bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CD
 	TypedReq typedReq = {ClientReqType::LOCK, req};
 	pbft->reqQueue.push_back(typedReq);
         g_connman->WakeMessageHandler();
-//	std::cout << __func__ << ": push to req queue lockreq. tx = " << ptx->GetHash().GetHex().substr(0, 10) << std::endl;
+	std::cout << __func__ << ": push to req queue lockreq. tx = " << ptx->GetHash().GetHex().substr(0, 10) << std::endl;
     }
 
     /* received an unlock_to_commit req, put it in queue . */

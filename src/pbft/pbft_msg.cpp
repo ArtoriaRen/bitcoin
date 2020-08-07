@@ -381,10 +381,18 @@ char CPbftBlock::Execute(const int seq, CConnman* connman) const {
     connman->PushMessage(g_pbft->client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
 }
 
+TypedReq::TypedReq(){ }
+
+TypedReq::TypedReq(ClientReqType typeIn, std::shared_ptr<CClientReq> pReqIn): type(typeIn), pReq(pReqIn) {
+}
+
 uint256 TypedReq::GetHash() const {
     uint256 req_hash(pReq->GetDigest());
     uint256 result;
-    CHash256().Write((const unsigned char*)req_hash.begin(), req_hash.size()).Write((const unsigned char*)type, sizeof(type)).Finalize((unsigned char*)&result);
+    CHash256 hasher;
+    hasher.Write((const unsigned char*)&type, sizeof(type));
+    hasher.Write((const unsigned char*)req_hash.begin(), req_hash.size());
+    hasher.Finalize((unsigned char*)&result);
     return result;
 }
 

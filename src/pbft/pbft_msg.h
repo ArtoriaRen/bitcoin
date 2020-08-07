@@ -145,6 +145,8 @@ public:
     ClientReqType type;
     std::shared_ptr<CClientReq> pReq;
 
+    TypedReq();
+    TypedReq(ClientReqType typeIn, std::shared_ptr<CClientReq> pReqIn);
     uint256 GetHash() const;
 };
 
