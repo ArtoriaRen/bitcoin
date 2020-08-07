@@ -40,6 +40,7 @@ public:
 
     void push_back(const TypedReq& item);
     void push_back(TypedReq&& item);
+    void append(std::deque<TypedReq>& itemlist);
 
     int size();
     bool empty();

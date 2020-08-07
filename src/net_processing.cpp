@@ -2980,9 +2980,12 @@ bool PeerLogicValidation::SendPPMessages(){
 		return false;
 	    }
 	}
-	std::cout << __func__ << ":  block size will be " << pbftblock.vReq.size() << " reqs" << std::endl;
+	
+	/* Put invalid req back to the req queue */
+	pbft->reqQueue.append(invalidReqQ);
+
 	if (pbftblock.vReq.empty())
-	    return false; 
+	    return !pbft->reqQueue.empty(); 
 
 	pbftblock.UpdateMerkleRoot();
 
@@ -3486,8 +3489,8 @@ bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CD
 	std::shared_ptr<CClientReq> req = std::make_shared<TxReq>(*ptx);
 	TypedReq typedReq(ClientReqType::TX, req);
 	pbft->reqQueue.push_back(typedReq);
-        g_connman->WakeMessageHandler();
-	std::cout << __func__ << ": push to req queue tx = " << ptx->GetHash().GetHex().substr(0, 10) << std::endl;
+//        g_connman->WakeMessageHandler();
+//	std::cout << __func__ << ": push to req queue tx = " << ptx->GetHash().GetHex().substr(0, 10) << std::endl;
     }
 
     /* received a lock req, put it in queue . */
@@ -3497,8 +3500,8 @@ bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CD
 	std::shared_ptr<CClientReq> req = std::make_shared<LockReq>(*ptx);
 	TypedReq typedReq = {ClientReqType::LOCK, req};
 	pbft->reqQueue.push_back(typedReq);
-        g_connman->WakeMessageHandler();
-	std::cout << __func__ << ": push to req queue lockreq. tx = " << ptx->GetHash().GetHex().substr(0, 10) << std::endl;
+//        g_connman->WakeMessageHandler();
+//	std::cout << __func__ << ": push to req queue lockreq. tx = " << ptx->GetHash().GetHex().substr(0, 10) << std::endl;
     }
 
     /* received an unlock_to_commit req, put it in queue . */

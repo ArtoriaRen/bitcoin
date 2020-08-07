@@ -69,6 +69,11 @@ void ThreadSafeQueue::push_back(TypedReq&& item) {
     cond_.notify_one(); // notify one waiting thread
 }
 
+void ThreadSafeQueue::append(std::deque<TypedReq>& itemlist) {
+    std::unique_lock<std::mutex> mlock(mutex_);
+    queue_.insert(queue_.end(), itemlist.begin(), itemlist.end());
+}
+
 int ThreadSafeQueue::size() {
     std::unique_lock<std::mutex> mlock(mutex_);
     int size = queue_.size();
@@ -172,9 +177,9 @@ bool CPbft::ProcessP(CConnman* connman, CPbftMessage& pMsg, bool fCheck) {
 	CPbftMessage cMsg = assembleMsg(pMsg.seq);
 	/* send the cMsg to other peers */
 	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-	uint32_t start_peerID = pbftID - pbftID % groupSize;
-	uint32_t end_peerID = start_peerID + groupSize;
-	for (uint32_t i = start_peerID; i < end_peerID; i++) {
+	int32_t start_peerID = pbftID - pbftID % groupSize;
+	int32_t end_peerID = start_peerID + groupSize;
+	for (int32_t i = start_peerID; i < end_peerID; i++) {
 	    /* do not send a msg to myself. */
 	    if (i == pbftID)
 		continue; 
@@ -215,8 +220,7 @@ bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
 	/* if some seq ahead of the cMsg.seq is not in the reply phase yet, 
 	 * cMsg.seq will not be executed.
 	 */
-	int startReplySeq = lastExecutedSeq + 1; 
-	executeBlock(cMsg.seq, connman); // this updates the lastExecutedIndex  
+	executeBlock(cMsg.seq, connman); 
 
 	/* wake up the client-listening thread to send results to clients. The 
 	 * client-listening thread is probably already up if the client sends 
@@ -286,10 +290,10 @@ CPbftMessage CPbft::assembleMsg(const uint32_t seq) {
 }
 
 CReply CPbft::assembleReply(const uint32_t seq) {
-    /* 'y' --- execute sucessfully
-     * 'n' --- execute fail
+    /* 1 --- execute sucessfully
+     * 0 --- execute fail
      */
-    CReply toSent('y', log[seq].ppMsg.digest);
+    CReply toSent(log[seq].txCnt, log[seq].ppMsg.digest);
     uint256 hash;
     toSent.getHash(hash);
     privateKey.Sign(hash, toSent.vchSig);
@@ -315,7 +319,7 @@ int CPbft::executeBlock(const int seq, CConnman* connman) {
      * log slots after it to be executed. */
     for (; i < logSize; i++) {
         if (log[i].phase == PbftPhase::reply) {
-	    log[i].result = log[i].ppMsg.pbft_block.Execute(i, connman);
+	    log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, connman);
         } else {
             break;
         }
@@ -329,7 +333,7 @@ int CPbft::executeBlock(const int seq, CConnman* connman) {
 }
 
 bool CPbft::checkExecute(const TypedReq typedReq) {
-    return typedReq.pReq->Execute(0, true) == 'y';
+    return typedReq.pReq->Execute(0, true) == 1;
 }
 
 std::unique_ptr<CPbft> g_pbft;

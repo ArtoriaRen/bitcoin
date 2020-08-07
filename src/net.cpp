@@ -2037,7 +2037,8 @@ void CConnman::ThreadMessageHandler(bool isForClientConnection)
         }
 
 	if (!isForClientConnection) {
-	    m_msgproc->SendPPMessages();
+	    /* if the req queue is not empty, we have more work to do. */
+	    fMoreWork |= m_msgproc->SendPPMessages();
 	}
 
         {
