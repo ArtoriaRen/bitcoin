@@ -383,12 +383,10 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman) const {
 	    CInputShardReply reply = g_pbft->assembleInputShardReply(seq, i);
 	    connman->PushMessage(g_pbft->client, msgMaker.Make(NetMsgType::OMNI_LOCK_REPLY, reply));
 	} else {
+	    /* only count TX and UNLOCK requests */
 	    txCnt++;
 	}
     }
-    CReply reply = g_pbft->assembleReply(seq);
-    connman->PushMessage(g_pbft->client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
-    std::cout << "Execute block at log slot = " << seq << ", contains " << txCnt << "tx." << std::endl;
     return txCnt;
 }
 

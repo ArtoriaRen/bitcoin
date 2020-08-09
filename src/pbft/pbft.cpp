@@ -87,7 +87,7 @@ bool ThreadSafeQueue::empty() {
 }
 
 
-CPbft::CPbft() : localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize * num_committees)), nReqInFly(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), privateKey(CKey()) {
+CPbft::CPbft() : localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize * num_committees)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
@@ -225,7 +225,6 @@ bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
 	/* wake up the client-listening thread to send results to clients. The 
 	 * client-listening thread is probably already up if the client sends 
 	 * request too frequently. 
-	 * The following code cause linking errors still not fixed.
 	 */
 	if (isLeader()) {
 	    clientConnMan->WakeMessageHandler();
@@ -302,7 +301,8 @@ CReply CPbft::assembleReply(const uint32_t seq) {
 }
 
 CInputShardReply CPbft::assembleInputShardReply(const uint32_t seq, const uint32_t idx) {
-    CInputShardReply toSent('y', log[seq].ppMsg.pbft_block.vReq[idx].pReq->GetDigest(), ((LockReq*)log[seq].ppMsg.pbft_block.vReq[idx].pReq.get())->totalValueInOfShard);
+    /* Hard code to reply with execute success b/c the server select only valid tx to form blocks. */
+    CInputShardReply toSent(1, log[seq].ppMsg.pbft_block.vReq[idx].pReq->GetDigest(), ((LockReq*)log[seq].ppMsg.pbft_block.vReq[idx].pReq.get())->totalValueInOfShard);
     uint256 hash;
     toSent.getHash(hash);
     privateKey.Sign(hash, toSent.vchSig);
@@ -311,6 +311,7 @@ CInputShardReply CPbft::assembleInputShardReply(const uint32_t seq, const uint32
 }
 
 int CPbft::executeBlock(const int seq, CConnman* connman) {
+    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
     // execute all lower-seq tx until this one if possible.
     int i = lastExecutedSeq + 1;
     /* We should go on to execute all log slots that are in reply phase even
@@ -320,6 +321,10 @@ int CPbft::executeBlock(const int seq, CConnman* connman) {
     for (; i < logSize; i++) {
         if (log[i].phase == PbftPhase::reply) {
 	    log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, connman);
+	    CReply reply = g_pbft->assembleReply(seq);
+	    connman->PushMessage(g_pbft->client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
+	    nCompletedTx  += log[i].txCnt;
+	    std::cout << "Execute block " << log[i].ppMsg.digest.GetHex() << " at log slot = " << seq << ", contains " << log[i].txCnt << " tx. Current total completed tx = " << nCompletedTx  << std::endl;
         } else {
             break;
         }
@@ -332,7 +337,7 @@ int CPbft::executeBlock(const int seq, CConnman* connman) {
     return lastExecutedSeq;
 }
 
-bool CPbft::checkExecute(const TypedReq typedReq) {
+bool CPbft::checkExecute(const TypedReq& typedReq) {
     return typedReq.pReq->Execute(0, true) == 1;
 }
 

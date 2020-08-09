@@ -2970,11 +2970,16 @@ bool PeerLogicValidation::SendPPMessages(){
 	std::deque<TypedReq> invalidReqQ;
 
 	/* Check if a tx can be sucessfully executed. If so, add it to the block */
+	uint32_t txCnt = 0;
 	for (uint i = 0; i < reqQ.size(); i++) {
 	    if (pbft->checkExecute(reqQ[i])) {
 		pbftblock.vReq.push_back(reqQ[i]);
+		if (reqQ[i].type != ClientReqType::LOCK) {
+		    txCnt++;
+		}
 	    } else {
 		invalidReqQ.push_back(reqQ[i]);
+		std::cout << __func__ << ": tx " <<  reqQ[i].pReq->tx_mutable.GetHash().GetHex() << " req type = " << reqQ[i].type << " checkExecution fail" << std::endl;
 	    }
 	    if (ShutdownRequested()) {
 		return false;
@@ -2985,7 +2990,7 @@ bool PeerLogicValidation::SendPPMessages(){
 	pbft->reqQueue.append(invalidReqQ);
 
 	if (pbftblock.vReq.empty())
-	    return !pbft->reqQueue.empty(); 
+	    return false; 
 
 	pbftblock.UpdateMerkleRoot();
 
@@ -2998,7 +3003,8 @@ bool PeerLogicValidation::SendPPMessages(){
 	std::cout << __func__ << ": log slot "<< ppMsg.seq << " for pbftblock = "
 		<< pbft->log[ppMsg.seq].ppMsg.pbft_block.hashMerkleRoot.GetHex().substr(0, 10)
 		<< ", block size = " << pbft->log[ppMsg.seq].ppMsg.pbft_block.vReq.size()
-		<< ", peers.size = " << pbft->peers.size()<< std::endl;
+		<< ", including " << txCnt << " non-LOCK req."
+		<< std::endl;
 	uint32_t start_peerID = pbftID + 1; // skip the leader id b/c it is myself
 	uint32_t end_peerID = start_peerID + CPbft::groupSize - 1;
 	for (uint32_t i = start_peerID; i < end_peerID; i++) {

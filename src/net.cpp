@@ -2003,6 +2003,7 @@ void CConnman::OpenNetworkConnection(const CAddress& addrConnect, bool fCountFai
 
 void CConnman::ThreadMessageHandler(bool isForClientConnection)
 {
+    uint32_t emptyQueueWaitCnt = 0;
     while (!flagInterruptMsgProc)
     {
         std::vector<CNode*> vNodesCopy;
@@ -2036,9 +2037,16 @@ void CConnman::ThreadMessageHandler(bool isForClientConnection)
                 return;
         }
 
-	if (!isForClientConnection) {
+	if (!isForClientConnection && (emptyQueueWaitCnt == 0)) {
 	    /* if the req queue is not empty, we have more work to do. */
-	    fMoreWork |= m_msgproc->SendPPMessages();
+	    bool QNotEmpty = m_msgproc->SendPPMessages();
+	    //fMoreWork |= QNotEmpty;
+	    if (!QNotEmpty) {
+		emptyQueueWaitCnt = 5; // skip 5 times of the loop
+	    }
+	}
+	if (emptyQueueWaitCnt > 0) {
+	    emptyQueueWaitCnt--;
 	}
 
         {
