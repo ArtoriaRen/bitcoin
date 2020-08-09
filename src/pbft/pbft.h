@@ -24,6 +24,7 @@
 #include <condition_variable>
 #include <memory>
 #include <chrono>
+#include <validation.h>
 
 extern int32_t pbftID;
 extern int32_t nMaxReqInFly; 
@@ -86,6 +87,8 @@ public:
 
     std::chrono::milliseconds lastQSizePrintTime;
 
+    std::unordered_map<uint256, std::deque<TypedReq>, BlockHasher> waitForMap;
+
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
     bool ProcessPP(CConnman* connman, CPre_prepare& ppMsg);
@@ -103,7 +106,7 @@ public:
     bool checkMsg(CPbftMessage* msg);
     /*return the last executed seq */
     int executeBlock(const int seq, CConnman* connman);
-    bool checkExecute(const TypedReq& typedReq);
+    bool checkExecute(const TypedReq& typedReq, uint256* dependedTx);
 
     inline void printQueueSize(){
 	    /* log queue size if we have reached the period. */

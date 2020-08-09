@@ -60,7 +60,7 @@ void CReply::getHash(uint256& result) const {
 	    .Finalize((unsigned char*)&result);
 }
 
-uint32_t TxReq::Execute(const int seq, bool checkOnly) const {
+uint32_t TxReq::Execute(const int seq, bool checkOnly, uint256* dependedTx) const {
     /* -------------logic from Bitcoin code for tx processing--------- */
     CTransaction tx(tx_mutable);
     CValidationState state;
@@ -73,7 +73,7 @@ uint32_t TxReq::Execute(const int seq, bool checkOnly) const {
 	    CAmount txfee = 0;
 	    /* We use  INT_MAX as block height, so that we never fail coinbase 
 	     * maturity check. */
-	    if (!Consensus::CheckTxInputs(tx, state, view, INT_MAX, txfee)) {
+	    if (!Consensus::CheckTxInputs(tx, state, view, INT_MAX, txfee, dependedTx)) {
 		std::cerr << __func__ << ": Consensus::CheckTxInputs: " << tx.GetHash().ToString() << ", " << FormatStateMessage(state) << std::endl;
 		return 0;
 	    }
@@ -120,7 +120,7 @@ uint256 TxReq::GetDigest() const {
 }
 
 
-uint32_t LockReq::Execute(const int seq, bool checkOnly) const {
+uint32_t LockReq::Execute(const int seq, bool checkOnly, uint256* dependedTx) const {
     /* we did not check if there is any input coins belonging our shard because
      * we believe the client is honest and will not send an LOCK req to a 
      * irrelavant shard. In OmniLedger, we already beleive in the client to be 
@@ -139,7 +139,7 @@ uint32_t LockReq::Execute(const int seq, bool checkOnly) const {
 
 	/* Step 1: find all input UTXOs whose chainAffinity is our shard. Check if they are unspent.
 	 * We use INT_MAX as block height, so that we never fail coinbase maturity check. */
-	if (!Consensus::CheckLockReqInputs(tx, state, view, INT_MAX, totalValueInOfShard)) {
+	if (!Consensus::CheckLockReqInputs(tx, state, view, INT_MAX, totalValueInOfShard, dependedTx)) {
 	    std::cerr << __func__ << ": Consensus::CheckTxInputs: " << tx.GetHash().ToString() << ", " << FormatStateMessage(state) << std::endl;
 	    return 0;
 	}
@@ -220,7 +220,7 @@ uint256 UnlockToCommitReq::GetDigest() const {
 
 bool checkInputShardReplySigs(const std::vector<CInputShardReply>& vReplies);
 
-uint32_t UnlockToCommitReq::Execute(const int seq, bool checkOnly) const {
+uint32_t UnlockToCommitReq::Execute(const int seq, bool checkOnly, uint256* dependedTx) const {
     /* -------------logic from Bitcoin code for tx processing--------- */
     CTransaction tx(tx_mutable);
     
@@ -322,7 +322,7 @@ uint256 UnlockToAbortReq::GetDigest() const {
     return result;
 }
 
-uint32_t UnlockToAbortReq::Execute(const int seq, bool checkOnly) const {
+uint32_t UnlockToAbortReq::Execute(const int seq, bool checkOnly, uint256* dependedTx) const {
 
     /* -------------logic from Bitcoin code for tx processing--------- */
     CTransaction tx(tx_mutable);
@@ -377,6 +377,7 @@ void CPbftBlock::UpdateMerkleRoot(){
 uint32_t CPbftBlock::Execute(const int seq, CConnman* connman) const {
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
     uint32_t txCnt = 0;
+    std::deque<TypedReq> clearedTxQ; // a queue of tx that does not wait for any prerequisite tx.
     for (uint i = 0; i < vReq.size(); i++) {
 	assert(vReq[i].pReq->Execute(seq) == 1); // 1 --- execution succeed, 0 --- execution fail
 	if (vReq[i].type == ClientReqType::LOCK) {
@@ -386,6 +387,15 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman) const {
 	    /* only count TX and UNLOCK requests */
 	    txCnt++;
 	}
+	uint256&& txid = vReq[i].pReq->tx_mutable.GetHash();
+	if(g_pbft->waitForMap.find(txid) != g_pbft->waitForMap.end()) {
+	    std::deque<TypedReq>& dependingReq = g_pbft->waitForMap[txid];
+	    clearedTxQ.insert(clearedTxQ.end(), dependingReq.begin(), dependingReq.end());
+	}
+    }
+    /* Put invalid req back to the req queue */
+    if (!clearedTxQ.empty()) {
+	g_pbft->reqQueue.append(clearedTxQ);
     }
     return txCnt;
 }

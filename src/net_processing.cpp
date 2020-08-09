@@ -2967,18 +2967,19 @@ bool PeerLogicValidation::SendPPMessages(){
 	std::deque<TypedReq> reqQ(pbft->reqQueue.get_all());
 	std::cout << __func__ << ": poped " << reqQ.size() << " client reqs" << std::endl;
 	CPbftBlock pbftblock;
-	std::deque<TypedReq> invalidReqQ;
 
 	/* Check if a tx can be sucessfully executed. If so, add it to the block */
 	uint32_t txCnt = 0;
 	for (uint i = 0; i < reqQ.size(); i++) {
-	    if (pbft->checkExecute(reqQ[i])) {
+	    uint256 waitForTx;
+	    if (pbft->checkExecute(reqQ[i], &waitForTx)) {
 		pbftblock.vReq.push_back(reqQ[i]);
 		if (reqQ[i].type != ClientReqType::LOCK) {
 		    txCnt++;
 		}
 	    } else {
-		invalidReqQ.push_back(reqQ[i]);
+		assert(!waitForTx.IsNull());
+		pbft->waitForMap[waitForTx].push_back(reqQ[i]);
 		std::cout << __func__ << ": tx " <<  reqQ[i].pReq->tx_mutable.GetHash().GetHex() << " req type = " << reqQ[i].type << " checkExecution fail" << std::endl;
 	    }
 	    if (ShutdownRequested()) {
@@ -2986,8 +2987,6 @@ bool PeerLogicValidation::SendPPMessages(){
 	    }
 	}
 	
-	/* Put invalid req back to the req queue */
-	pbft->reqQueue.append(invalidReqQ);
 
 	if (pbftblock.vReq.empty())
 	    return false; 
