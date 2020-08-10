@@ -1825,6 +1825,8 @@ bool AppInitMain()
     //printShardAffinity();
     //randomPlaceTxInBlock();
     //extractRawTxInBlock();
+
+    g_pbft->txCheckCoinView.reset(new CCoinsViewCache(pcoinsTip.get()));
     while (true) {
 	if (!g_pbft->reqQueue.empty()){
 	    /* assemble block and send PP msg. */

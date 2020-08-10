@@ -89,6 +89,9 @@ public:
 
     std::unordered_map<uint256, std::deque<TypedReq>, BlockHasher> waitForMap;
 
+    /* use this coins view to check if a tx is valid so that */
+    std::unique_ptr<CCoinsViewCache> txCheckCoinView;
+
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
     bool ProcessPP(CConnman* connman, CPre_prepare& ppMsg);

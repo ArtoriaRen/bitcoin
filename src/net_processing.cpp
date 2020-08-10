@@ -2970,12 +2970,20 @@ bool PeerLogicValidation::SendPPMessages(){
 
 	/* Check if a tx can be sucessfully executed. If so, add it to the block */
 	uint32_t txCnt = 0;
+	std::deque<TypedReq> clearedTxQ; // a queue of tx that does not wait for any prerequisite tx.
 	for (uint i = 0; i < reqQ.size(); i++) {
 	    uint256 waitForTx;
 	    if (pbft->checkExecute(reqQ[i], &waitForTx)) {
 		pbftblock.vReq.push_back(reqQ[i]);
 		if (reqQ[i].type != ClientReqType::LOCK) {
 		    txCnt++;
+		    /* put tx depends on this tx to the clearedTx queue. */
+		    uint256&& txid = reqQ[i].pReq->tx_mutable.GetHash();
+		    if(g_pbft->waitForMap.find(txid) != g_pbft->waitForMap.end()) {
+			std::deque<TypedReq>& dependingReq = g_pbft->waitForMap[txid];
+			clearedTxQ.insert(clearedTxQ.end(), dependingReq.begin(), dependingReq.end());
+			g_pbft->waitForMap.erase(txid);
+		    }
 		}
 	    } else {
 		assert(!waitForTx.IsNull());
@@ -2987,6 +2995,10 @@ bool PeerLogicValidation::SendPPMessages(){
 	    }
 	}
 	
+	/* Put new prereq-clear tx back to the req queue */
+	if (!clearedTxQ.empty()) {
+	    g_pbft->reqQueue.append(clearedTxQ);
+	}
 
 	if (pbftblock.vReq.empty())
 	    return false; 

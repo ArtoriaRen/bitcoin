@@ -330,7 +330,7 @@ int CPbft::executeBlock(CConnman* connman) {
 }
 
 bool CPbft::checkExecute(const TypedReq& typedReq, uint256* dependedTx) {
-    return typedReq.pReq->Execute(0, true, dependedTx) == 1;
+    return typedReq.pReq->Execute(0, *txCheckCoinView, dependedTx) == 1;
 }
 
 std::unique_ptr<CPbft> g_pbft;
