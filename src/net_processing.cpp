@@ -2997,7 +2997,7 @@ bool PeerLogicValidation::SendPPMessages(){
 	/* send ppMsg for this reqs.*/
 	CPre_prepare ppMsg = pbft->assemblePPMsg(pbftblock);
 	pbft->log[ppMsg.seq].ppMsg = ppMsg;
-	pbft->log[ppMsg.seq].phase = PbftPhase::prepare;
+	pbft->log[ppMsg.seq].phase.store(PbftPhase::prepare, std::memory_order_relaxed);
 	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	std::cout << __func__ << ": log slot "<< ppMsg.seq << " for pbftblock = "
 		<< pbft->log[ppMsg.seq].ppMsg.pbft_block.hashMerkleRoot.GetHex().substr(0, 10)

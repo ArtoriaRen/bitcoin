@@ -1832,7 +1832,9 @@ bool AppInitMain()
 	    peerLogic->SendPPMessages();
 	}
 
-	if (g_pbft->lastExecutedSeq < g_pbft->log.size() - 1) {
+	/* Here we assume the log vector has been resized to a large size and lastExecutedSeq + 1 will not exceed the size. */
+	if (g_pbft->log[g_pbft->lastExecutedSeq + 1].phase.load(std::memory_order_relaxed) == PbftPhase::reply) {
+		std::cout << " have READY slot to execute " << std::endl;
 	    /* execute blocks. */
 	    g_pbft->executeBlock(g_client_connman.get());
 	    if (g_pbft->isLeader()) {
@@ -1843,8 +1845,12 @@ bool AppInitMain()
 		g_client_connman->WakeMessageHandler();
 	    }
 	}
+
+	if (ShutdownRequested()) {
+	    break;
+	}
 	
-	if ((g_pbft->lastExecutedSeq == g_pbft->log.size() - 1) && g_pbft->reqQueue.empty()) {
+	if ((g_pbft->log[g_pbft->lastExecutedSeq + 1].phase.load(std::memory_order_relaxed) != PbftPhase::reply) && g_pbft->reqQueue.empty()) {
 	    
 	    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}

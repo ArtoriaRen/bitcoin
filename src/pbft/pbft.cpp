@@ -116,7 +116,7 @@ bool CPbft::ProcessPP(CConnman* connman, CPre_prepare& ppMsg) {
     std::cout << "digest = " << ppMsg.digest.GetHex() << std::endl;
 
     /* Enter prepare phase. */
-    log[ppMsg.seq].phase = PbftPhase::prepare;
+    log[ppMsg.seq].phase.store(PbftPhase::prepare, std::memory_order_relaxed);
     /* make a pMsg */
     CPbftMessage pMsg = assembleMsg(ppMsg.seq);
     /* send the pMsg to other peers, including the leader. */
@@ -170,9 +170,9 @@ bool CPbft::ProcessP(CConnman* connman, CPbftMessage& pMsg, bool fCheck) {
      * We use >= instead of == to tolerate receiving more than enough pMsg 
      * before the ppMsg arrives.
      */
-    if (log[pMsg.seq].phase == PbftPhase::prepare && log[pMsg.seq].prepareCount >= (nFaulty << 1)) {
+    if (log[pMsg.seq].phase.load(std::memory_order_relaxed) == PbftPhase::prepare && log[pMsg.seq].prepareCount >= (nFaulty << 1)) {
 	/* Enter commit phase. */
-        log[pMsg.seq].phase = PbftPhase::commit;
+        log[pMsg.seq].phase.store(PbftPhase::commit, std::memory_order_relaxed);
 	/* make a cMsg */
 	CPbftMessage cMsg = assembleMsg(pMsg.seq);
 	/* send the cMsg to other peers */
@@ -212,10 +212,10 @@ bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
 
     // count the number of commit msg. enter execute if greater than 2f+1
     log[cMsg.seq].commitCount++;
-    if (log[cMsg.seq].phase == PbftPhase::commit && log[cMsg.seq].commitCount >= (nFaulty << 1) + 1) {
+    if (log[cMsg.seq].phase.load(std::memory_order_relaxed) == PbftPhase::commit && log[cMsg.seq].commitCount >= (nFaulty << 1) + 1) {
         // enter reply phase
         std::cout << "enter reply phase" << std::endl;
-        log[cMsg.seq].phase = PbftPhase::reply;
+        log[cMsg.seq].phase.store(PbftPhase::reply, std::memory_order_relaxed);
 	/* if some seq ahead of the cMsg.seq is not in the reply phase yet, 
 	 * cMsg.seq will not be executed.
 	 */
@@ -311,7 +311,7 @@ int CPbft::executeBlock(CConnman* connman) {
      * the seq passed in, a slot missing a pbftc msg might permanently block
      * log slots after it to be executed. */
     for (; i < logSize; i++) {
-        if (log[i].phase == PbftPhase::reply) {
+        if (log[i].phase.load(std::memory_order_relaxed) == PbftPhase::reply) {
 	    log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, connman);
 	    CReply reply = assembleReply(i);
 	    connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
