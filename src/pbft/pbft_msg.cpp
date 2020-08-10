@@ -179,7 +179,7 @@ uint32_t LockReq::Execute(const int seq, bool checkOnly, uint256* dependedTx) co
     bool flushed = view.Flush(); // flush to pcoinsTip
     assert(flushed);
     /* -------------logic from Bitcoin code for tx processing--------- */
-    std::cout << __func__ << ": locked input UTXOs for tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << std::endl;
+    std::cout << __func__ << ": locked input UTXOs for tx " << tx.GetHash().GetHex() << " at log slot " << seq << std::endl;
     return 1;
 }
 
@@ -391,6 +391,7 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman) const {
 	if(g_pbft->waitForMap.find(txid) != g_pbft->waitForMap.end()) {
 	    std::deque<TypedReq>& dependingReq = g_pbft->waitForMap[txid];
 	    clearedTxQ.insert(clearedTxQ.end(), dependingReq.begin(), dependingReq.end());
+	    g_pbft->waitForMap.erase(txid);
 	}
     }
     /* Put invalid req back to the req queue */

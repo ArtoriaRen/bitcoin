@@ -324,7 +324,7 @@ int CPbft::executeBlock(const int seq, CConnman* connman) {
 	    CReply reply = g_pbft->assembleReply(seq);
 	    connman->PushMessage(g_pbft->client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
 	    nCompletedTx  += log[i].txCnt;
-	    std::cout << "Execute block " << log[i].ppMsg.digest.GetHex() << " at log slot = " << seq << ", contains " << log[i].txCnt << " tx. Current total completed tx = " << nCompletedTx  << std::endl;
+	    std::cout << "Execute block " << log[i].ppMsg.digest.GetHex() << " at log slot = " << seq << ", contains " << log[i].txCnt << " tx. Current total completed tx = " << nCompletedTx << ", waitForMap has " << g_pbft->waitForMap.size() << " prereq tx" << std::endl;
         } else {
             break;
         }
