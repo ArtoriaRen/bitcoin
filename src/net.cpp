@@ -2036,10 +2036,10 @@ void CConnman::ThreadMessageHandler(bool isForClientConnection)
                 return;
         }
 
-	if (!isForClientConnection && !g_pbft->reqQueue.empty()) {
-	    /* if the req queue is not empty, we have more work to do. */
-	    m_msgproc->SendPPMessages();
-	}
+//	if (!isForClientConnection && !g_pbft->reqQueue.empty()) {
+//	    /* if the req queue is not empty, we have more work to do. */
+//	    m_msgproc->SendPPMessages();
+//	}
 
         {
             LOCK(cs_vNodes);

@@ -105,7 +105,7 @@ public:
     CInputShardReply assembleInputShardReply(const uint32_t seq, const uint32_t idx);
     bool checkMsg(CPbftMessage* msg);
     /*return the last executed seq */
-    int executeBlock(const int seq, CConnman* connman);
+    int executeBlock(CConnman* connman);
     bool checkExecute(const TypedReq& typedReq, uint256* dependedTx);
 
     inline void printQueueSize(){

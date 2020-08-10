@@ -1825,5 +1825,29 @@ bool AppInitMain()
     //printShardAffinity();
     //randomPlaceTxInBlock();
     //extractRawTxInBlock();
+    while (true) {
+	if (!g_pbft->reqQueue.empty()){
+	    /* assemble block and send PP msg. */
+	    // TODO: use a dedicated coin view.
+	    peerLogic->SendPPMessages();
+	}
+
+	if (g_pbft->lastExecutedSeq < g_pbft->log.size() - 1) {
+	    /* execute blocks. */
+	    g_pbft->executeBlock(g_client_connman.get());
+	    if (g_pbft->isLeader()) {
+		/* wake up the client-listening thread to send results to clients. The 
+		 * client-listening thread is probably already up if the client sends 
+		 * request too frequently. 
+		 */
+		g_client_connman->WakeMessageHandler();
+	    }
+	}
+	
+	if ((g_pbft->lastExecutedSeq == g_pbft->log.size() - 1) && g_pbft->reqQueue.empty()) {
+	    
+	    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+	}
+    }
     return true;
 }

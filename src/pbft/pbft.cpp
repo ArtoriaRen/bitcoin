@@ -216,19 +216,11 @@ bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
         // enter reply phase
         std::cout << "enter reply phase" << std::endl;
         log[cMsg.seq].phase = PbftPhase::reply;
-//	nReqInFly--; 
 	/* if some seq ahead of the cMsg.seq is not in the reply phase yet, 
 	 * cMsg.seq will not be executed.
 	 */
-	executeBlock(cMsg.seq, connman); 
+//	executeBlock(cMsg.seq, connman); 
 
-	/* wake up the client-listening thread to send results to clients. The 
-	 * client-listening thread is probably already up if the client sends 
-	 * request too frequently. 
-	 */
-	if (isLeader()) {
-	    clientConnMan->WakeMessageHandler();
-	}
     }
     return true;
 }
@@ -310,7 +302,7 @@ CInputShardReply CPbft::assembleInputShardReply(const uint32_t seq, const uint32
     return toSent;
 }
 
-int CPbft::executeBlock(const int seq, CConnman* connman) {
+int CPbft::executeBlock(CConnman* connman) {
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
     // execute all lower-seq tx until this one if possible.
     int i = lastExecutedSeq + 1;
@@ -321,10 +313,10 @@ int CPbft::executeBlock(const int seq, CConnman* connman) {
     for (; i < logSize; i++) {
         if (log[i].phase == PbftPhase::reply) {
 	    log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, connman);
-	    CReply reply = g_pbft->assembleReply(seq);
-	    connman->PushMessage(g_pbft->client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
+	    CReply reply = assembleReply(i);
+	    connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
 	    nCompletedTx  += log[i].txCnt;
-	    std::cout << "Execute block " << log[i].ppMsg.digest.GetHex() << " at log slot = " << seq << ", contains " << log[i].txCnt << " tx. Current total completed tx = " << nCompletedTx << ", waitForMap has " << g_pbft->waitForMap.size() << " prereq tx" << std::endl;
+	    std::cout << "Execute block " << log[i].ppMsg.digest.GetHex() << " at log slot = " << i << ", contains " << log[i].txCnt << " tx. Current total completed tx = " << nCompletedTx << ", waitForMap has " << g_pbft->waitForMap.size() << " prereq tx" << std::endl;
         } else {
             break;
         }

@@ -26,7 +26,8 @@ public:
     uint32_t prepareCount;
     uint32_t commitCount;
 
-    PbftPhase phase;
+    /* phase is written by the consensus thread and read by the executioin thread. */
+    std::atomic<PbftPhase> phase;
     // execution result for this log entry
     uint32_t txCnt;
 
