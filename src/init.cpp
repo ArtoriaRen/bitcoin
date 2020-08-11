@@ -1830,13 +1830,12 @@ bool AppInitMain()
     while (true) {
 	if (!g_pbft->reqQueue.empty()){
 	    /* assemble block and send PP msg. */
-	    // TODO: use a dedicated coin view.
 	    peerLogic->SendPPMessages();
 	}
 
 	/* Here we assume the log vector has been resized to a large size and lastExecutedSeq + 1 will not exceed the size. */
 	if (g_pbft->log[g_pbft->lastExecutedSeq + 1].phase.load(std::memory_order_relaxed) == PbftPhase::reply) {
-		std::cout << " have READY slot to execute " << std::endl;
+	    std::cout << " have READY slot to execute, starting at slot " << g_pbft->lastExecutedSeq + 1 << std::endl;
 	    /* execute blocks. */
 	    g_pbft->executeBlock(g_client_connman.get());
 	    if (g_pbft->isLeader()) {
@@ -1853,7 +1852,6 @@ bool AppInitMain()
 	}
 	
 	if ((g_pbft->log[g_pbft->lastExecutedSeq + 1].phase.load(std::memory_order_relaxed) != PbftPhase::reply) && g_pbft->reqQueue.empty()) {
-	    
 	    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}
     }

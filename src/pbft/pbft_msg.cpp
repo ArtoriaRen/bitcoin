@@ -65,7 +65,7 @@ uint32_t TxReq::Execute(const int seq, CCoinsViewCache& view, uint256* dependedT
     CTransaction tx(tx_mutable);
     CValidationState state;
 
-    if(!tx.IsCoinBase()) {
+    if(!tx.IsCoinBase() && !(g_pbft->isLeader() && dependedTx == nullptr)) {
 	bool fScriptChecks = true;
 	unsigned int flags = SCRIPT_VERIFY_NONE; // only verify pay to public key hash
 	CAmount txfee = 0;
@@ -100,12 +100,13 @@ uint32_t TxReq::Execute(const int seq, CCoinsViewCache& view, uint256* dependedT
     }
 
     UpdateCoins(tx, view, seq);
-    bool flushed = view.Flush(); // flush to pcoinsTip
-    assert(flushed);
-    /* -------------logic from Bitcoin code for tx processing--------- */
-
-    std::cout << __func__ << ": excuted tx " << tx.GetHash().ToString()
-	    << " at log slot " << seq << std::endl;
+    if (dependedTx == nullptr) {
+	/* This is real execution, not check tx validity when assembling a block. */
+	bool flushed = view.Flush(); // flush to pcoinsTip
+	assert(flushed);
+	std::cout << __func__ << ": excuted tx " << tx.GetHash().ToString()
+		<< " at log slot " << seq << std::endl;
+    }
     return 1;
 }
 
@@ -124,40 +125,42 @@ uint32_t LockReq::Execute(const int seq, CCoinsViewCache& view, uint256* depende
     /* -------------logic from Bitcoin code for tx processing--------- */
     CTransaction tx(tx_mutable);
     
-    CValidationState state;
-    bool fScriptChecks = true;
-//	    CBlockUndo blockundo;
-    unsigned int flags = SCRIPT_VERIFY_NONE; // only verify pay to public key hash
+    if (!(g_pbft->isLeader() && dependedTx == nullptr)) {
+	CValidationState state;
+	bool fScriptChecks = true;
+    //	    CBlockUndo blockundo;
+	unsigned int flags = SCRIPT_VERIFY_NONE; // only verify pay to public key hash
 
-    /* Step 1: find all input UTXOs whose chainAffinity is our shard. Check if they are unspent.
-     * We use INT_MAX as block height, so that we never fail coinbase maturity check. */
-    if (!Consensus::CheckLockReqInputs(tx, state, view, INT_MAX, totalValueInOfShard, dependedTx)) {
-	std::cerr << __func__ << ": Consensus::CheckTxInputs: " << tx.GetHash().ToString() << ", " << FormatStateMessage(state) << std::endl;
-	return 0;
-    }
+	/* Step 1: find all input UTXOs whose chainAffinity is our shard. Check if they are unspent.
+	 * We use INT_MAX as block height, so that we never fail coinbase maturity check. */
+	if (!Consensus::CheckLockReqInputs(tx, state, view, INT_MAX, totalValueInOfShard, dependedTx)) {
+	    std::cerr << __func__ << ": Consensus::CheckTxInputs: " << tx.GetHash().ToString() << ", " << FormatStateMessage(state) << std::endl;
+	    return 0;
+	}
 
-    /* Step 2: count sig ops. Do this in the output shard. */
-    // GetTransactionSigOpCost counts 3 types of sigops:
-    // * legacy (always)
-    // * p2sh (when P2SH enabled in flags and excludes coinbase)
-    // * witness (when witness enabled in flags and excludes coinbase)
-//    int64_t nSigOpsCost = 0;
-//    nSigOpsCost += GetTransactionSigOpCost(tx, view, flags);
-//    if (nSigOpsCost > MAX_BLOCK_SIGOPS_COST) { 
-//	std::cerr << __func__ << ": ConnectBlock(): too many sigops" << std::endl;
-//	return;
-//    }
+	/* Step 2: count sig ops. Do this in the output shard. */
+	// GetTransactionSigOpCost counts 3 types of sigops:
+	// * legacy (always)
+	// * p2sh (when P2SH enabled in flags and excludes coinbase)
+	// * witness (when witness enabled in flags and excludes coinbase)
+    //    int64_t nSigOpsCost = 0;
+    //    nSigOpsCost += GetTransactionSigOpCost(tx, view, flags);
+    //    if (nSigOpsCost > MAX_BLOCK_SIGOPS_COST) { 
+    //	std::cerr << __func__ << ": ConnectBlock(): too many sigops" << std::endl;
+    //	return;
+    //    }
 
-    /* Step 3: check sigScript for input UTXOs in our shard.*/
-    PrecomputedTransactionData txdata(tx);
-    std::vector<CScriptCheck> vChecks;
-    bool fCacheResults = false; /* Don't cache results if we're actually connecting blocks (still consult the cache, though) */
-    if (!CheckLockInputs(tx, state, view, fScriptChecks, flags, fCacheResults, fCacheResults, txdata, nullptr)) {  // do not use multithreads to check scripts
-	std::cerr << __func__ << ": ConnectBlock(): CheckInputs on " 
-		<< tx.GetHash().ToString() 
-		<< " failed with " << FormatStateMessage(state)
-		<< std::endl;
-	return 0;
+	/* Step 3: check sigScript for input UTXOs in our shard.*/
+	PrecomputedTransactionData txdata(tx);
+	std::vector<CScriptCheck> vChecks;
+	bool fCacheResults = false; /* Don't cache results if we're actually connecting blocks (still consult the cache, though) */
+	if (!CheckLockInputs(tx, state, view, fScriptChecks, flags, fCacheResults, fCacheResults, txdata, nullptr)) {  // do not use multithreads to check scripts
+	    std::cerr << __func__ << ": ConnectBlock(): CheckInputs on " 
+		    << tx.GetHash().ToString() 
+		    << " failed with " << FormatStateMessage(state)
+		    << std::endl;
+	    return 0;
+	}
     }
 
     /* Step 4: spent the input coins in our shard and store them in the global map 
@@ -165,10 +168,12 @@ uint32_t LockReq::Execute(const int seq, CCoinsViewCache& view, uint256* depende
     CTxUndo txUndo;
     UpdateLockCoins(tx, view, txUndo, seq);
     mapTxUndo.insert(std::make_pair(tx.GetHash(), txUndo));
-    bool flushed = view.Flush(); // flush to pcoinsTip
-    assert(flushed);
-    /* -------------logic from Bitcoin code for tx processing--------- */
-    std::cout << __func__ << ": locked input UTXOs for tx " << tx.GetHash().GetHex() << " at log slot " << seq << std::endl;
+    if (dependedTx == nullptr) {
+	/* This is real execution, not check tx validity when assembling a block. */
+	bool flushed = view.Flush(); // flush to pcoinsTip
+	assert(flushed);
+	std::cout << __func__ << ": locked input UTXOs for tx " << tx.GetHash().GetHex() << " at log slot " << seq << std::endl;
+    }
     return 1;
 }
 
@@ -213,40 +218,42 @@ uint32_t UnlockToCommitReq::Execute(const int seq, CCoinsViewCache& view, uint25
     /* -------------logic from Bitcoin code for tx processing--------- */
     CTransaction tx(tx_mutable);
     
-    CValidationState state;
+    if (!(g_pbft->isLeader() && dependedTx == nullptr)) {
+	CValidationState state;
 
-    if (!checkInputShardReplySigs(vInputShardReply)) {
-	std::cout << __func__ << ": verify sigs fail!" << std::endl;
-	return 0;
-    }
-    unsigned int flags = SCRIPT_VERIFY_NONE; // only verify pay to public key hash
+	if (!checkInputShardReplySigs(vInputShardReply)) {
+	    std::cout << __func__ << ": verify sigs fail!" << std::endl;
+	    return 0;
+	}
+	unsigned int flags = SCRIPT_VERIFY_NONE; // only verify pay to public key hash
 
-    /* Step 1: check the total input UTXO value is greater than the total output value.
-     * We must use the locked UTXO value in InputShardReplies b/c we do not know the
-     * value of UTXOs not in our shard. 
-     * We use INT_MAX as block height, so that we never fail coinbase maturity check.
-     */
-    uint sigsPerInputShard = 2 * CPbft::nFaulty + 1;
-    CAmount totalInputValue = 0;
-    for (uint i = 0; i < vInputShardReply.size(); i += sigsPerInputShard) {
-	totalInputValue += vInputShardReply[i].totalValueInOfShard;
-    }
+	/* Step 1: check the total input UTXO value is greater than the total output value.
+	 * We must use the locked UTXO value in InputShardReplies b/c we do not know the
+	 * value of UTXOs not in our shard. 
+	 * We use INT_MAX as block height, so that we never fail coinbase maturity check.
+	 */
+	uint sigsPerInputShard = 2 * CPbft::nFaulty + 1;
+	CAmount totalInputValue = 0;
+	for (uint i = 0; i < vInputShardReply.size(); i += sigsPerInputShard) {
+	    totalInputValue += vInputShardReply[i].totalValueInOfShard;
+	}
 
-    if (!Consensus::CheckInputsCommitReq(tx, state, view, INT_MAX, totalInputValue)) {
-	std::cerr << __func__ << ": Consensus::CheckTxInputs: " << tx.GetHash().ToString() << ", " << FormatStateMessage(state) << std::endl;
-	return 0;
-    }
+	if (!Consensus::CheckInputsCommitReq(tx, state, view, INT_MAX, totalInputValue)) {
+	    std::cerr << __func__ << ": Consensus::CheckTxInputs: " << tx.GetHash().ToString() << ", " << FormatStateMessage(state) << std::endl;
+	    return 0;
+	}
 
-    /* Step 2: count sig ops. Do this in the output shard. */
-    // GetTransactionSigOpCost counts 3 types of sigops:
-    // * legacy (always)
-    // * p2sh (when P2SH enabled in flags and excludes coinbase)
-    // * witness (when witness enabled in flags and excludes coinbase)
-    int64_t nSigOpsCost = 0;
-    nSigOpsCost += GetTransactionSigOpCostInOutShard(tx, view, flags);
-    if (nSigOpsCost > MAX_BLOCK_SIGOPS_COST) { 
-	std::cerr << __func__ << ": ConnectBlock(): too many sigops" << std::endl;
-	return 0;
+	/* Step 2: count sig ops. Do this in the output shard. */
+	// GetTransactionSigOpCost counts 3 types of sigops:
+	// * legacy (always)
+	// * p2sh (when P2SH enabled in flags and excludes coinbase)
+	// * witness (when witness enabled in flags and excludes coinbase)
+	int64_t nSigOpsCost = 0;
+	nSigOpsCost += GetTransactionSigOpCostInOutShard(tx, view, flags);
+	if (nSigOpsCost > MAX_BLOCK_SIGOPS_COST) { 
+	    std::cerr << __func__ << ": ConnectBlock(): too many sigops" << std::endl;
+	    return 0;
+	}
     }
 
     /* Step 3: check sigScript for input UTXOs in our shard. Done by input shard. */
@@ -257,10 +264,12 @@ uint32_t UnlockToCommitReq::Execute(const int seq, CCoinsViewCache& view, uint25
      * 2) In output shard: add output coins to coinsview.
      */
     UpdateUnlockCommitCoins(tx, view, seq);
-    bool flushed = view.Flush(); // flush to pcoinsTip
-    assert(flushed);
-    /* -------------logic from Bitcoin code for tx processing--------- */
-    std::cout << __func__ << ":  commit tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << std::endl;
+    if (dependedTx == nullptr) {
+	/* This is real execution, not check tx validity when assembling a block. */
+	bool flushed = view.Flush(); // flush to pcoinsTip
+	assert(flushed);
+	std::cout << __func__ << ":  commit tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << std::endl;
+    }
     return 1;
 }
 
@@ -311,16 +320,17 @@ uint32_t UnlockToAbortReq::Execute(const int seq, CCoinsViewCache& view, uint256
     /* -------------logic from Bitcoin code for tx processing--------- */
     CTransaction tx(tx_mutable);
     
-    CValidationState state;
-    if (!checkInputShardReplySigs(vNegativeReply)) {
-	std::cout << __func__ << ": verify sigs fail!" << std::endl;
-	return 0;
-    }
-    unsigned int flags = SCRIPT_VERIFY_NONE; // only verify pay to public key hash
+    if (!(g_pbft->isLeader() && dependedTx == nullptr)) {
+	CValidationState state;
+	if (!checkInputShardReplySigs(vNegativeReply)) {
+	    std::cout << __func__ << ": verify sigs fail!" << std::endl;
+	    return 0;
+	}
 
-    /* Step 1: check all replies are negative. */
-    for (auto r: vNegativeReply) {
-	assert(r.txCnt == 0); // In CInputShardReply, txCnt indicates execution success or failure.
+	/* Step 1: check all replies are negative. */
+	for (auto r: vNegativeReply) {
+	    assert(r.txCnt == 0); // In CInputShardReply, txCnt indicates execution success or failure.
+	}
     }
 
     /* Step 2: 
@@ -332,10 +342,13 @@ uint32_t UnlockToAbortReq::Execute(const int seq, CCoinsViewCache& view, uint256
      */
 
     if (mapTxUndo.find(tx.GetHash()) != mapTxUndo.end()) {
-	std::cout << __func__ << ":  abort tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << ", restoring locked UTXOs."<< std::endl;
 	UpdateUnlockAbortCoins(tx, view, mapTxUndo[tx.GetHash()]);
-	bool flushed = view.Flush(); // flush to pcoinsTip
-	assert(flushed);
+	if (dependedTx == nullptr) {
+	    /* This is real execution, not check tx validity when assembling a block. */
+	    bool flushed = view.Flush(); // flush to pcoinsTip
+	    assert(flushed);
+	    std::cout << __func__ << ":  abort tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << ", restoring locked UTXOs."<< std::endl;
+	}
     } else {
 	std::cout << __func__ << ":  abort tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << ", no UTXO to restore."<< std::endl;
     }

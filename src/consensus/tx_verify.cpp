@@ -290,7 +290,9 @@ bool Consensus::CheckLockReqInputs(const CTransaction& tx, CValidationState& sta
 
     for (CTxIn input: vinInMyShard) {
 	if (!inputs.HaveCoin(input.prevout)) {
-	    *dependedTx = input.prevout.hash;
+	    if (dependedTx != nullptr) {
+		*dependedTx = input.prevout.hash;
+	    }
 	    return state.DoS(100, false, REJECT_INVALID, "bad-txns-inputs-missingorspent", false,
 			     strprintf("%s: inputs missing/spent", __func__));
 	}
