@@ -21,12 +21,12 @@
 #include <memory>
 #include "tx_placement/tx_placer.h"
 
-bool fIsClient; // if this node is a pbft client.
 std::string leaderAddrString;
 std::string clientAddrString;
 int32_t pbftID; 
 int32_t nMaxReqInFly; 
 int32_t QSizePrintPeriod;
+int32_t maxBlockSize; 
 
 ThreadSafeQueue::ThreadSafeQueue() { }
 
@@ -45,6 +45,20 @@ std::deque<TypedReq> ThreadSafeQueue::get_all() {
     std::deque<TypedReq> ret(queue_);
     queue_.clear();
     return ret;
+}
+
+std::deque<TypedReq> ThreadSafeQueue::get_upto(int32_t upto) {
+    std::unique_lock<std::mutex> mlock(mutex_);
+    if (queue_.size() < upto) {
+	std::deque<TypedReq> ret(queue_);
+	queue_.clear();
+	return ret;
+    } else {
+	std::deque<TypedReq> ret;
+	ret.insert(ret.end(), queue_.begin(), queue_.begin() + upto);
+	queue_.erase(queue_.begin(), queue_.begin() + upto);
+	return ret;
+    }
 }
 
 void ThreadSafeQueue::pop_front() {
@@ -310,18 +324,19 @@ int CPbft::executeBlock(CConnman* connman) {
      * their seqs are greater than the seq passed in. If we only execute up to
      * the seq passed in, a slot missing a pbftc msg might permanently block
      * log slots after it to be executed. */
-    for (; i < logSize; i++) {
-        if (log[i].phase.load(std::memory_order_relaxed) == PbftPhase::reply) {
+    //for (; i < logSize; i++) {
+//        if (log[i].phase.load(std::memory_order_relaxed) == PbftPhase::reply) {
 	    log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, connman);
 	    CReply reply = assembleReply(i);
 	    connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
 	    nCompletedTx  += log[i].txCnt;
 	    std::cout << "Execute block " << log[i].ppMsg.digest.GetHex() << " at log slot = " << i << ", contains " << log[i].txCnt << " tx. Current total completed tx = " << nCompletedTx << ", waitForMap has " << g_pbft->waitForMap.size() << " prereq tx" << std::endl;
-        } else {
-            break;
-        }
-    }
-    lastExecutedSeq = i - 1;
+//        } else {
+//            break;
+//        }
+    //}
+    //lastExecutedSeq = i - 1;
+    lastExecutedSeq++;
     /* if lastExecutedIndex is less than seq, we delay sending reply until 
      * the all requsts up to seq has been executed. This may be triggered 
      * by future requests.

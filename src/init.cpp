@@ -816,8 +816,8 @@ void InitParameterInteraction()
     if (gArgs.IsArgSet("-startblock")) {
         randomPlaceBlock = gArgs.GetArg("-startblock", 600000);
     }
-    if (gArgs.IsArgSet("-endblock")) {
-        blockEnd = gArgs.GetArg("-endblock", 600001);
+    if (gArgs.IsArgSet("-maxblocksize")) {
+        maxBlockSize= gArgs.GetArg("-maxblocksize", 100);
     }
     if (gArgs.IsArgSet("-numcommittees")) {
         num_committees = gArgs.GetArg("-numcommittees", 2);
@@ -1836,7 +1836,7 @@ bool AppInitMain()
 	/* Here we assume the log vector has been resized to a large size and lastExecutedSeq + 1 will not exceed the size. */
 	if (g_pbft->log[g_pbft->lastExecutedSeq + 1].phase.load(std::memory_order_relaxed) == PbftPhase::reply) {
 	    std::cout << " have READY slot to execute, starting at slot " << g_pbft->lastExecutedSeq + 1 << std::endl;
-	    /* execute blocks. */
+	    /* execute one block at a time so that we can check if we need to assemle new blocks more frequently. */
 	    g_pbft->executeBlock(g_client_connman.get());
 	    if (g_pbft->isLeader()) {
 		/* wake up the client-listening thread to send results to clients. The 

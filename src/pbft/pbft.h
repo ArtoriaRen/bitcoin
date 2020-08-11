@@ -29,6 +29,7 @@
 extern int32_t pbftID;
 extern int32_t nMaxReqInFly; 
 extern int32_t QSizePrintPeriod;
+extern int32_t maxBlockSize; 
 
 class ThreadSafeQueue {
 public:
@@ -37,6 +38,7 @@ public:
 
     TypedReq& front();
     std::deque<TypedReq> get_all();
+    std::deque<TypedReq> get_upto(int32_t upto);
     void pop_front();
 
     void push_back(const TypedReq& item);

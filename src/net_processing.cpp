@@ -2961,37 +2961,38 @@ bool PeerLogicValidation::SendPPMessages(){
      * reqQueue is threadsafe, so we do not acquire lock before querying its size.
      */ 
 
-    if (pbft->isLeader() && pbft->reqQueue.size() > 0) {
+    if (pbft->isLeader() && !pbft->reqQueue.empty()) {
 	pbft->printQueueSize(); // only log queue size here cuz it will not change anywhere else
-	// TODO: pop at most 2000 tx
-	std::deque<TypedReq> reqQ(pbft->reqQueue.get_all());
-	std::cout << __func__ << ": poped " << reqQ.size() << " client reqs" << std::endl;
 	CPbftBlock pbftblock;
-
-	/* Check if a tx can be sucessfully executed. If so, add it to the block */
-	uint32_t txCnt = 0;
 	std::deque<TypedReq> clearedTxQ; // a queue of tx that does not wait for any prerequisite tx.
-	for (uint i = 0; i < reqQ.size(); i++) {
-	    uint256 waitForTx;
-	    if (pbft->checkExecute(reqQ[i], &waitForTx)) {
-		pbftblock.vReq.push_back(reqQ[i]);
-		if (reqQ[i].type != ClientReqType::LOCK) {
-		    txCnt++;
-		    /* put tx depends on this tx to the clearedTx queue. */
-		    uint256&& txid = reqQ[i].pReq->tx_mutable.GetHash();
-		    if(g_pbft->waitForMap.find(txid) != g_pbft->waitForMap.end()) {
-			std::deque<TypedReq>& dependingReq = g_pbft->waitForMap[txid];
-			clearedTxQ.insert(clearedTxQ.end(), dependingReq.begin(), dependingReq.end());
-			g_pbft->waitForMap.erase(txid);
+	uint32_t txCnt = 0;
+	while (!pbft->reqQueue.empty() && pbftblock.vReq.size() < maxBlockSize) {
+	    std::deque<TypedReq> reqQ(pbft->reqQueue.get_upto(maxBlockSize - pbftblock.vReq.size()));
+	    std::cout << __func__ << ": poped " << reqQ.size() << " client reqs" << std::endl;
+	    /* Check if a tx can be sucessfully executed. If so, add it to the block */
+	    for (uint i = 0; i < reqQ.size(); i++) {
+		uint256 waitForTx;
+		std::cout << __func__ << ": checking tx " <<  reqQ[i].pReq->tx_mutable.GetHash().GetHex() << " req type = " << reqQ[i].type << std::endl;
+		if (pbft->checkExecute(reqQ[i], &waitForTx)) {
+		    pbftblock.vReq.push_back(reqQ[i]);
+		    if (reqQ[i].type != ClientReqType::LOCK) {
+			txCnt++;
+			/* put tx depends on this tx to the clearedTx queue. */
+			uint256&& txid = reqQ[i].pReq->tx_mutable.GetHash();
+			if(g_pbft->waitForMap.find(txid) != g_pbft->waitForMap.end()) {
+			    std::deque<TypedReq>& dependingReq = g_pbft->waitForMap[txid];
+			    clearedTxQ.insert(clearedTxQ.end(), dependingReq.begin(), dependingReq.end());
+			    g_pbft->waitForMap.erase(txid);
+			}
 		    }
+		} else {
+		    assert(!waitForTx.IsNull());
+		    pbft->waitForMap[waitForTx].push_back(reqQ[i]);
+		    std::cout << __func__ << ": tx " <<  reqQ[i].pReq->tx_mutable.GetHash().GetHex() << " req type = " << reqQ[i].type << " enqueue waitForGraph" << std::endl;
 		}
-	    } else {
-		assert(!waitForTx.IsNull());
-		pbft->waitForMap[waitForTx].push_back(reqQ[i]);
-		std::cout << __func__ << ": tx " <<  reqQ[i].pReq->tx_mutable.GetHash().GetHex() << " req type = " << reqQ[i].type << " checkExecution fail" << std::endl;
-	    }
-	    if (ShutdownRequested()) {
-		return false;
+		if (ShutdownRequested()) {
+		    return false;
+		}
 	    }
 	}
 	

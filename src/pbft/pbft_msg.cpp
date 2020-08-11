@@ -102,8 +102,6 @@ uint32_t TxReq::Execute(const int seq, CCoinsViewCache& view, uint256* dependedT
     UpdateCoins(tx, view, seq);
     if (dependedTx == nullptr) {
 	/* This is real execution, not check tx validity when assembling a block. */
-	bool flushed = view.Flush(); // flush to pcoinsTip
-	assert(flushed);
 	std::cout << __func__ << ": excuted tx " << tx.GetHash().ToString()
 		<< " at log slot " << seq << std::endl;
     }
@@ -170,8 +168,6 @@ uint32_t LockReq::Execute(const int seq, CCoinsViewCache& view, uint256* depende
     mapTxUndo.insert(std::make_pair(tx.GetHash(), txUndo));
     if (dependedTx == nullptr) {
 	/* This is real execution, not check tx validity when assembling a block. */
-	bool flushed = view.Flush(); // flush to pcoinsTip
-	assert(flushed);
 	std::cout << __func__ << ": locked input UTXOs for tx " << tx.GetHash().GetHex() << " at log slot " << seq << std::endl;
     }
     return 1;
@@ -266,8 +262,6 @@ uint32_t UnlockToCommitReq::Execute(const int seq, CCoinsViewCache& view, uint25
     UpdateUnlockCommitCoins(tx, view, seq);
     if (dependedTx == nullptr) {
 	/* This is real execution, not check tx validity when assembling a block. */
-	bool flushed = view.Flush(); // flush to pcoinsTip
-	assert(flushed);
 	std::cout << __func__ << ":  commit tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << std::endl;
     }
     return 1;
@@ -345,8 +339,6 @@ uint32_t UnlockToAbortReq::Execute(const int seq, CCoinsViewCache& view, uint256
 	UpdateUnlockAbortCoins(tx, view, mapTxUndo[tx.GetHash()]);
 	if (dependedTx == nullptr) {
 	    /* This is real execution, not check tx validity when assembling a block. */
-	    bool flushed = view.Flush(); // flush to pcoinsTip
-	    assert(flushed);
 	    std::cout << __func__ << ":  abort tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << ", restoring locked UTXOs."<< std::endl;
 	}
     } else {
@@ -379,6 +371,8 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman) const {
 	    txCnt++;
 	}
     }
+    bool flushed = pcoinsTip->Flush(); // flush to pcoinsTip
+    assert(flushed);
     return txCnt;
 }
 
