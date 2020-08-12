@@ -1848,58 +1848,74 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	} else {
 	    std::cout << strCommand << " sig ok" << std::endl;
 	}
-	std::cout << __func__ << ": received PBFT_REPLY for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
+	std::cout << __func__ << ": received PBFT_REPLY for block merkle root = " << reply.digest.ToString().substr(0,10) << ", txCnt = " << reply.txCnt << " from " << pfrom->GetAddrName() << std::endl;
 	g_pbft->replyMap[reply.digest].emplace(pfrom->GetAddrName());
 	if (g_pbft->replyMap[reply.digest].size() == 2 * CPbft::nFaulty + 1) {
+	    g_pbft->nCompletedTx += reply.txCnt;
+	    std::cout << __func__ << ": current total completed tx = " << g_pbft->nCompletedTx << std::endl;
 	    struct timeval endTime;
 	    gettimeofday(&endTime, NULL);
-	    /* ---- calculate latency ---- */
-	    if (g_pbft->txUnlockReqMap.find(reply.digest) == g_pbft->txUnlockReqMap.end()) {
-		/* single-shard tx */
-		assert(g_pbft->mapTxStartTime.find(reply.digest) != g_pbft->mapTxStartTime.end());
-		TxStat& stat = g_pbft->mapTxStartTime[reply.digest]; 
-		    
-		assert (stat.type == TxType::SINGLE_SHARD); 
-		std::cout << "tx " << reply.digest.GetHex().substr(0,10);
-		if (reply.reply == 'y') {
-			std::cout << ", SUCCEED, ";
-			TxBlockInfo& txinfo = g_pbft->txInFly[reply.digest];
-			g_pbft->txInFly.erase(reply.digest);
-			g_pbft->nCompletedTx++;
-			if (g_pbft->nCompletedTx % thruInterval == 0) {
-			    g_pbft->logThruput(endTime);
-			}
-		} else if (reply.reply == 'n') {
-			std::cout << ", FAIL, ";
-			g_pbft->txResendQueue.push_back(g_pbft->txInFly[reply.digest]);
-		} 
-		std::cout << "single-shard, latency = " << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << " ms" << std::endl;
-	    } else {
-		/* cross-shard tx */
-		auto& inputShardRplMap = g_pbft->inputShardReplyMap;
-		uint256& txid = g_pbft->txUnlockReqMap[reply.digest];
-		TxStat& stat = g_pbft->mapTxStartTime[txid]; 
-		std::cout << "tx " << txid.GetHex().substr(0,10);
-		if (reply.reply == 'y' && inputShardRplMap[txid].decision == 'c') {
-			/* only the output shard send committed reply, so no risk of printing info more than once for a tx. */
-			std::cout << ", COMMITTED, ";
-			TxBlockInfo& txinfo = g_pbft->txInFly[txid];
-			g_pbft->txInFly.erase(txid);
-			g_pbft->nCompletedTx++;
-			if (g_pbft->nCompletedTx % thruInterval == 0) {
+	//    /* ---- calculate latency ---- */
+	//    if (g_pbft->txUnlockReqMap.find(reply.digest) == g_pbft->txUnlockReqMap.end()) {
+	//	/* single-shard tx */
+	//	assert(g_pbft->mapTxStartTime.find(reply.digest) != g_pbft->mapTxStartTime.end());
+	//	TxStat& stat = g_pbft->mapTxStartTime[reply.digest]; 
+	//	    
+	//	assert (stat.type == TxType::SINGLE_SHARD); 
+	//	std::cout << "tx " << reply.digest.GetHex().substr(0,10);
+	//	if (reply.reply == 'y') {
+	//		std::cout << ", SUCCEED, ";
+	//		TxBlockInfo& txinfo = g_pbft->txInFly[reply.digest];
+	//		g_pbft->txInFly.erase(reply.digest);
+	//		g_pbft->nCompletedTx++;
+	//		if (!txinfo.aborted)
+	//		    g_pbft->nCommitNoResendTx++;
+	//		if (g_pbft->nCompletedTx % thruInterval == 0) {
+	//		    g_pbft->logThruput(endTime);
+	//		}
+	//	} else if (reply.reply == 'n') {
+	//		std::cout << ", FAIL, ";
+	//		TxBlockInfo& txinfo = g_pbft->txInFly[reply.digest];
+	//		if (!txinfo.aborted){
+	//		    txinfo.aborted = true;
+	//		    g_pbft->nAbortedTx++;
+	//		}
+	//		g_pbft->txResendQueue.push_back(txinfo);
+	//	} 
+	//	std::cout << "single-shard, latency = " << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << " ms" << std::endl;
+	//    } else {
+	//	/* cross-shard tx */
+	//	auto& inputShardRplMap = g_pbft->inputShardReplyMap;
+	//	uint256& txid = g_pbft->txUnlockReqMap[reply.digest];
+	//	TxStat& stat = g_pbft->mapTxStartTime[txid]; 
+	//	std::cout << "tx " << txid.GetHex().substr(0,10);
+	//	if (reply.reply == 'y' && inputShardRplMap[txid].decision == 'c') {
+	//		/* only the output shard send committed reply, so no risk of printing info more than once for a tx. */
+	//		std::cout << ", COMMITTED, ";
+	//		TxBlockInfo& txinfo = g_pbft->txInFly[txid];
+	//		g_pbft->txInFly.erase(txid);
+	//		g_pbft->nCompletedTx++;
+	//		if (!txinfo.aborted)
+	//		    g_pbft->nCommitNoResendTx++;
+			if (g_pbft->nCompletedTx - g_pbft->lastCompletedTx >= thruInterval) {
 			    g_pbft->logThruput(endTime);
 			}
 
-		} else if (reply.reply == 'y' && inputShardRplMap[txid].decision == 'a') {
-		  
-		        /* This info is printed only once for an aborted tx b/c  it is only printed when the number of replies equals (2f+1). Strictly speaking, this is not correct, we should wait for reply for every input shard that have locked some UTXOs. */
-			std::cout << ", ABORTED, ";
-			g_pbft->txResendQueue.push_back(g_pbft->txInFly[reply.digest]);
-		} else if (reply.reply == 'n') {
-			std::cout << "fail to commit or abort, ";
-		} 
-		std::cout << "cross-shard, latency = " << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << " ms" << std::endl;
-	    }
+	//	} else if (reply.reply == 'y' && inputShardRplMap[txid].decision == 'a') {
+	//	  
+	//	        /* This info is printed only once for an aborted tx b/c  it is only printed when the number of replies equals (2f+1). Strictly speaking, this is not correct, we should wait for reply for every input shard that have locked some UTXOs. */
+	//		std::cout << ", ABORTED, ";
+	//		TxBlockInfo& txinfo = g_pbft->txInFly[reply.digest];
+	//		if (!txinfo.aborted){
+	//		    txinfo.aborted = true;
+	//		    g_pbft->nAbortedTx++;
+	//		}
+	//		g_pbft->txResendQueue.push_back(txinfo);
+	//	} else if (reply.reply == 'n') {
+	//		std::cout << "fail to commit or abort, ";
+	//	} 
+	//	std::cout << "cross-shard, latency = " << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << " ms" << std::endl;
+	//    }
 	}
     }
 
@@ -1914,7 +1930,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	if (!g_pbft->checkReplySig(&reply)) {
 	    std::cout << strCommand << " from " << reply.peerID << " sig verification fail"  << std::endl;
 	} else {
-	    std::cout << strCommand << " sig ok" << std::endl;
+	    //std::cout << strCommand << " sig ok" << std::endl;
 	}
 
 	int shardID = reply.peerID/CPbft::groupSize;
@@ -1928,14 +1944,14 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    std::cout << "shardId = " << p.first << ": number of lock replies = " << p.second.size() << std::endl;
 	    if (p.second.size() < shardReplies.size()) {
 		isLeastReplyShard = false;
-		break;
+		//break;
 	    }
 	}
 
 	/* Check if we should send a unlock_to_abort req for the tx */
 	uint reply_threshold = 2 * CPbft::nFaulty + 1;
 	std::cout << "tx " << reply.digest.GetHex().substr(0,10);
-	if (shardReplies.size() == reply_threshold && reply.reply == 'n') {
+	if (shardReplies.size() == reply_threshold && reply.txCnt == 0) { // In CInputShardReply, txCnt indicates execution success or failure.
 	    std::cout << ", LOCK_NOT_OK, ";
 	    /* assemble a unlock_to_abort req including (2f + 1) replies from this shard */
 	    assert(g_pbft->txInFly.find(reply.digest) != g_pbft->txInFly.end());
@@ -1954,10 +1970,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		std::cout << shards[i] << ", ";
 		connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_UNLOCK_ABORT, abortReq));
 	    }
-	} else if (isLeastReplyShard && shardReplies.size() == reply_threshold && reply.reply == 'y') {
-	    if (reply.reply == 'y') {
-		    std::cout << ", LOCK_OK, ";
-	    }  
+	} else if (isLeastReplyShard && shardReplies.size() == reply_threshold && reply.txCnt == 1) {
+	    std::cout << ", LOCK_OK, ";
 	    /* assemble a vector including (2f + 1) replies for every shard */
 	    std::vector<CInputShardReply> vReply;
 	    vReply.reserve(reply_threshold * g_pbft->inputShardReplyMap[reply.digest].lockReply.size());

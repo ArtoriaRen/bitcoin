@@ -43,6 +43,7 @@ public:
     CTransactionRef tx;
     uint32_t blockHeight;
     uint32_t n;  // n-th tx in the block body
+    bool aborted;
     TxBlockInfo();
     TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn);
 };
@@ -90,7 +91,10 @@ public:
     ThreadSafeQueue txResendQueue;
 
     std::unordered_map<uint256, TxStat, BlockHasher> mapTxStartTime;
-    uint32_t nCompletedTx;
+    uint32_t lastCompletedTx;
+    uint32_t nCompletedTx; // tx that has been committed
+    //uint32_t nCommitNoResendTx; // tx that is commit for the first time they were sent. 
+    //uint32_t nAbortedTx; // tx that is aborted for the first time they were sent. 
     struct timeval thruStartTime;
 
     CPbft();

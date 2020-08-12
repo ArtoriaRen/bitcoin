@@ -9,7 +9,7 @@
 int32_t pbftID;
 uint32_t thruInterval; // calculate throughput once completing every "thruInterval" tx
 
-TxBlockInfo::TxBlockInfo(): blockHeight(0), n(0) { }
+TxBlockInfo::TxBlockInfo(): blockHeight(0), n(0), aborted(false) { }
 TxBlockInfo::TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn): tx(txIn), blockHeight(blockHeightIn), n(nIn) { }
 
 ThreadSafeQueue::ThreadSafeQueue() { }
@@ -60,7 +60,8 @@ bool ThreadSafeQueue::empty() {
     return queue_.empty();
 }
 
-CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), nCompletedTx(0), privateKey(CKey()) {
+//CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), nCompletedTx(0), nCommitNoResendTx(0), nAbortedTx(0), privateKey(CKey()) {
+CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), lastCompletedTx(0), nCompletedTx(0), privateKey(CKey()) {
     thruStartTime = {0, 0};
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
@@ -85,10 +86,12 @@ bool CPbft::checkReplySig(const CReply* pReply) const {
 void CPbft::logThruput(struct timeval& endTime) {
     uint32_t thruput = 0;
     if (thruStartTime.tv_sec != 0) {
-	thruput = thruInterval * 1000000 / ((endTime.tv_sec - thruStartTime.tv_sec) * 1000000 + (endTime.tv_usec - thruStartTime.tv_usec));
+	thruput = (nCompletedTx - lastCompletedTx) * 1000000 / ((endTime.tv_sec - thruStartTime.tv_sec) * 1000000 + (endTime.tv_usec - thruStartTime.tv_usec));
     }
+    lastCompletedTx = nCompletedTx; 
     thruStartTime = endTime;
     std::cout << "At time " << endTime.tv_sec << "." << endTime.tv_usec << ", completed " <<  nCompletedTx << "tx" << ": throughput = " << thruput << std::endl;
+    //std::cout << __func__ << ": " << g_pbft->nCommitNoResendTx << " tx committed with the first sending, " << g_pbft->nAbortedTx << " tx aborted with the first sending. " << std::endl;
 }
 
 

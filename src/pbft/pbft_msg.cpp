@@ -2,23 +2,23 @@
 #include "hash.h"
 #include "pbft.h"
 
-CReply::CReply(): reply(), digest(), sigSize(0), vchSig(){ 
+CReply::CReply(): txCnt(0), digest(), sigSize(0), vchSig(){ 
     vchSig.reserve(72); // the expected sig size is 72 bytes.
 }
 
-CReply::CReply(char replyIn, const uint256& digestIn): reply(replyIn), digest(digestIn), sigSize(0), vchSig(){ 
+CReply::CReply(const uint32_t txCntIn, const uint256& digestIn): txCnt(txCntIn), digest(digestIn), sigSize(0), vchSig(){ 
     vchSig.reserve(72); // the expected sig size is 72 bytes.
 }
 
 void CReply::getHash(uint256& result) const {
-    CHash256().Write((const unsigned char*)&reply, sizeof(reply))
+    CHash256().Write((const unsigned char*)&txCnt, sizeof(txCnt))
 	    .Write(digest.begin(), sizeof(digest))
 	    .Finalize((unsigned char*)&result);
 }
 
 CInputShardReply::CInputShardReply(): CReply() {};
 
-CInputShardReply::CInputShardReply(char replyIn, const uint256& digestIn, CAmount valueIn):
+CInputShardReply::CInputShardReply(const uint32_t replyIn, const uint256& digestIn, CAmount valueIn):
     CReply(replyIn, digestIn), totalValueInOfShard(valueIn) {};
 
 void CInputShardReply::getHash(uint256& result) const {

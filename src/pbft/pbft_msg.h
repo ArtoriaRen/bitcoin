@@ -20,18 +20,18 @@
 
 class CReply {
 public:
-    char reply; // execution result
+    uint32_t txCnt; // execution result
     uint256 digest; // use the tx header hash as digest.
     int32_t peerID;
     uint32_t sigSize;
     std::vector<unsigned char> vchSig; //serilized ecdsa signature.
 
     CReply();
-    CReply(char replyIn, const uint256& digestIn);
+    CReply(uint32_t txCntIn, const uint256& digestIn);
 
     template<typename Stream>
     void Serialize(Stream& s) const{
-	s.write(&reply, sizeof(reply));
+	s.write((char*)&txCnt, sizeof(txCnt));
 	s.write((char*)digest.begin(), digest.size());
 	s.write((char*)&peerID, sizeof(peerID));
 	s.write((char*)&sigSize, sizeof(sigSize));
@@ -40,7 +40,7 @@ public:
 
     template<typename Stream>
     void Unserialize(Stream& s) {
-	s.read(&reply, sizeof(reply));
+	s.read((char*)&txCnt, sizeof(txCnt));
 	s.read((char*)digest.begin(), digest.size());
 	s.read((char*)&peerID, sizeof(peerID));
 	s.read((char*)&sigSize, sizeof(sigSize));
@@ -58,7 +58,7 @@ public:
      * value is larger than total output value. */
     CAmount totalValueInOfShard;
     CInputShardReply();
-    CInputShardReply(char replyIn, const uint256& digestIn, const CAmount valueIn);
+    CInputShardReply(const uint32_t replyIn, const uint256& digestIn, const CAmount valueIn);
 
     template<typename Stream>
     void Serialize(Stream& s) const{
