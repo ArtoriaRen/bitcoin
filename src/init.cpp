@@ -1828,10 +1828,10 @@ bool AppInitMain()
 
     g_pbft->txCheckCoinView.reset(new CCoinsViewCache(pcoinsTip.get()));
     while (true) {
-	if (!g_pbft->reqQueue.empty()){
-	    /* assemble block and send PP msg. */
-	    peerLogic->SendPPMessages();
-	}
+//	if (!g_pbft->reqQueue.empty()){
+//	    /* assemble block and send PP msg. */
+//	    peerLogic->SendPPMessages();
+//	}
 
 	/* Here we assume the log vector has been resized to a large size and lastExecutedSeq + 1 will not exceed the size. */
 	if (g_pbft->log[g_pbft->lastExecutedSeq + 1].phase.load(std::memory_order_relaxed) == PbftPhase::reply) {

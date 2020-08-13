@@ -2963,49 +2963,21 @@ bool PeerLogicValidation::SendPPMessages(){
 
     if (pbft->isLeader() && !pbft->reqQueue.empty()) {
 	pbft->printQueueSize(); // only log queue size here cuz it will not change anywhere else
-	CPbftBlock pbftblock;
-	std::deque<TypedReq> clearedTxQ; // a queue of tx that does not wait for any prerequisite tx.
 	uint32_t txCnt = 0;
-	while (!pbft->reqQueue.empty() && pbftblock.vReq.size() < maxBlockSize) {
-	    std::deque<TypedReq> reqQ(pbft->reqQueue.get_upto(maxBlockSize - pbftblock.vReq.size()));
-	    std::cout << __func__ << ": poped " << reqQ.size() << " client reqs" << std::endl;
-	    /* Check if a tx can be sucessfully executed. If so, add it to the block */
-	    for (uint i = 0; i < reqQ.size(); i++) {
-		uint256 waitForTx;
-		std::cout << __func__ << ": checking tx " <<  reqQ[i].pReq->tx_mutable.GetHash().GetHex() << " req type = " << reqQ[i].type << std::endl;
-		if (pbft->checkExecute(reqQ[i], &waitForTx)) {
-		    pbftblock.vReq.push_back(reqQ[i]);
-		    if (reqQ[i].type != ClientReqType::LOCK) {
-			txCnt++;
-			/* put tx depends on this tx to the clearedTx queue. */
-			uint256&& txid = reqQ[i].pReq->tx_mutable.GetHash();
-			if(g_pbft->waitForMap.find(txid) != g_pbft->waitForMap.end()) {
-			    std::deque<TypedReq>& dependingReq = g_pbft->waitForMap[txid];
-			    clearedTxQ.insert(clearedTxQ.end(), dependingReq.begin(), dependingReq.end());
-			    g_pbft->waitForMap.erase(txid);
-			}
-		    }
-		} else {
-		    assert(!waitForTx.IsNull());
-		    pbft->waitForMap[waitForTx].push_back(reqQ[i]);
-		    std::cout << __func__ << ": tx " <<  reqQ[i].pReq->tx_mutable.GetHash().GetHex() << " req type = " << reqQ[i].type << " enqueue waitForGraph" << std::endl;
-		}
-		if (ShutdownRequested()) {
-		    return false;
-		}
+	CPbftBlock pbftblock(pbft->reqQueue.get_upto(maxBlockSize));
+	std::vector<TypedReq>& blockReqQ = pbftblock.vReq; 
+	std::cout << __func__ << ": block size = " << blockReqQ.size() << " client reqs" << std::endl;
+	/* count real tx */
+	for (uint i = 0; i < blockReqQ.size(); i++) {
+	    if (blockReqQ[i].type != ClientReqType::LOCK) {
+		txCnt++;
+	    }
+	    if (ShutdownRequested()) {
+		return false;
 	    }
 	}
 	
-	/* Put new prereq-clear tx back to the req queue */
-	if (!clearedTxQ.empty()) {
-	    g_pbft->reqQueue.append(clearedTxQ);
-	}
-
-	if (pbftblock.vReq.empty())
-	    return false; 
-
 	pbftblock.UpdateMerkleRoot();
-
 
 	/* send ppMsg for this reqs.*/
 	CPre_prepare ppMsg = pbft->assemblePPMsg(pbftblock);
@@ -3022,7 +2994,6 @@ bool PeerLogicValidation::SendPPMessages(){
 	for (uint32_t i = start_peerID; i < end_peerID; i++) {
 	    connman->PushMessage(pbft->peers[i], msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
 	}
-//	    pbft->nReqInFly++;
     }
     return true;
 }

@@ -349,24 +349,48 @@ uint32_t UnlockToAbortReq::Execute(const int seq, CCoinsViewCache& view, uint256
     return 1;
 }
 
-CPbftBlock::CPbftBlock(){
+CPbftBlock::CPbftBlock() {
     hashMerkleRoot.SetNull();
     vReq.clear();
+}
+
+CPbftBlock::CPbftBlock(std::deque<TypedReq> vReqIn) {
+    hashMerkleRoot.SetNull();
+    vReq.insert(vReq.end(), vReqIn.begin(), vReqIn.end());
 }
 
 void CPbftBlock::UpdateMerkleRoot(){
     hashMerkleRoot = PbftBlockMerkleRoot(*this); 
 }
 
-uint32_t CPbftBlock::Execute(const int seq, CConnman* connman) const {
+CReqReplyEntry::CReqReplyEntry() { }
+
+CReqReplyEntry::CReqReplyEntry(uint256 hashIn, char resIn): reqHash(hashIn), exeResult(resIn) { }
+
+uint256 CReqReplyEntry::GetHash() const {
+    uint256 result;
+    CHash256 hasher;
+    hasher.Write((const unsigned char*)reqHash.begin(), reqHash.size());
+    hasher.Write((const unsigned char*)&exeResult, sizeof(exeResult));
+    hasher.Finalize((unsigned char*)&result);
+    return result;
+}
+
+CReplyBlock::CReplyBlock(uint32_t nReq): peerID(pbftID) {
+    hashMerkleRoot.SetNull();
+    vReq.reserve(nReq);
+}
+
+void CReplyBlock::UpdateMerkleRoot(){
+    hashMerkleRoot = PbftBlockMerkleRoot(*this); 
+}
+
+uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CReplyBlock& replyBlock) const {
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
     uint32_t txCnt = 0;
     for (uint i = 0; i < vReq.size(); i++) {
-	assert(vReq[i].pReq->Execute(seq, *pcoinsTip) == 1); // 1 --- execution succeed, 0 --- execution fail
-	if (vReq[i].type == ClientReqType::LOCK) {
-	    CInputShardReply reply = g_pbft->assembleInputShardReply(seq, i);
-	    connman->PushMessage(g_pbft->client, msgMaker.Make(NetMsgType::OMNI_LOCK_REPLY, reply));
-	} else {
+	replyBlock.vReq.emplace_back(vReq[i].pReq->tx_mutable.GetHash(), vReq[i].pReq->Execute(seq, *pcoinsTip)); // 'y' --- execution succeed, 'n' --- execution fail
+	if (!vReq[i].type == ClientReqType::LOCK) {
 	    /* only count TX and UNLOCK requests */
 	    txCnt++;
 	}
@@ -391,11 +415,3 @@ uint256 TypedReq::GetHash() const {
     return result;
 }
 
-uint256 PbftBlockMerkleRoot(const CPbftBlock& block) {
-    std::vector<uint256> leaves;
-    leaves.resize(block.vReq.size());
-    for (size_t s = 0; s < block.vReq.size(); s++) {
-        leaves[s] = block.vReq[s].GetHash();
-    }
-    return ComputeMerkleRoot(leaves);
-}

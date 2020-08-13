@@ -242,6 +242,7 @@ extern const char *PBFT_PP; // pbft pre-prepare
 extern const char *PBFT_P; // pbft prepare
 extern const char *PBFT_C; // pbft commit
 extern const char *PBFT_REPLY; // pbft commit
+extern const char *PBFT_REPLY_BLK;
 extern const char *PBFT_TX; // use to differentiate pbft tx from normal tx
 extern const char *PBFT_PUBKEY; 
 extern const char *PBFT_CLIENT; // a pbft client use this msg to inform the leader that it is a client not a follower.

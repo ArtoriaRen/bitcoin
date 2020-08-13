@@ -306,15 +306,15 @@ CReply CPbft::assembleReply(const uint32_t seq) {
     return toSent;
 }
 
-CInputShardReply CPbft::assembleInputShardReply(const uint32_t seq, const uint32_t idx) {
-    /* Hard code to reply with execute success b/c the server select only valid tx to form blocks. */
-    CInputShardReply toSent(1, log[seq].ppMsg.pbft_block.vReq[idx].pReq->GetDigest(), ((LockReq*)log[seq].ppMsg.pbft_block.vReq[idx].pReq.get())->totalValueInOfShard);
-    uint256 hash;
-    toSent.getHash(hash);
-    privateKey.Sign(hash, toSent.vchSig);
-    toSent.sigSize = toSent.vchSig.size();
-    return toSent;
-}
+//CInputShardReply CPbft::assembleInputShardReply(const uint32_t seq, const uint32_t idx) {
+//    /* Hard code to reply with execute success b/c the server select only valid tx to form blocks. */
+//    CInputShardReply toSent(1, log[seq].ppMsg.pbft_block.vReq[idx].pReq->GetDigest(), ((LockReq*)log[seq].ppMsg.pbft_block.vReq[idx].pReq.get())->totalValueInOfShard);
+//    uint256 hash;
+//    toSent.getHash(hash);
+//    privateKey.Sign(hash, toSent.vchSig);
+//    toSent.sigSize = toSent.vchSig.size();
+//    return toSent;
+//}
 
 int CPbft::executeBlock(CConnman* connman) {
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
@@ -326,9 +326,23 @@ int CPbft::executeBlock(CConnman* connman) {
      * log slots after it to be executed. */
     //for (; i < logSize; i++) {
 //        if (log[i].phase.load(std::memory_order_relaxed) == PbftPhase::reply) {
-	    log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, connman);
-	    CReply reply = assembleReply(i);
-	    connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
+	    CReplyBlock replyBlock(log[i].ppMsg.pbft_block.vReq.size());
+	    log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, connman, replyBlock);
+	    replyBlock.UpdateMerkleRoot();
+	    if (isLeader()) {
+		/* send PBFT_REPLY_BLK msg to client */
+		privateKey.Sign(replyBlock.hashMerkleRoot, replyBlock.vchSig);
+		replyBlock.sigSize = replyBlock.vchSig.size();
+		connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY_BLK, replyBlock));
+	    } else {
+		/* send PBFT_REPLY msg to client. Use reply block merkle root as msg digest. */
+		CReply toSent(log[i].txCnt, replyBlock.hashMerkleRoot);
+		uint256 hash;
+		toSent.getHash(hash);
+		privateKey.Sign(hash, toSent.vchSig);
+		toSent.sigSize = toSent.vchSig.size();
+		connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, toSent));
+	    }
 	    nCompletedTx  += log[i].txCnt;
 	    std::cout << "Execute block " << log[i].ppMsg.digest.GetHex() << " at log slot = " << i << ", contains " << log[i].txCnt << " tx. Current total completed tx = " << nCompletedTx << ", waitForMap has " << g_pbft->waitForMap.size() << " prereq tx" << std::endl;
 //        } else {

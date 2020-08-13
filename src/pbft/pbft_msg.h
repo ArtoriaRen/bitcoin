@@ -19,6 +19,7 @@
 #include "primitives/transaction.h"
 #include "net.h"
 #include "coins.h"
+#include "consensus/merkle.h"
 //global view number
 
 enum PbftPhase {pre_prepare, prepare, commit, reply, end};
@@ -146,6 +147,58 @@ public:
 //    virtual ~CClientReq(){};
 };
 
+class CReqReplyEntry {
+public:
+    uint256 reqHash;
+    char exeResult;
+
+    CReqReplyEntry();
+    CReqReplyEntry(uint256 hashIn, char resIn);
+    uint256 GetHash() const;
+};
+
+class CReplyBlock {
+public:
+    int32_t peerID;
+    uint256 hashMerkleRoot; 
+    std::vector<CReqReplyEntry> vReq;
+    uint32_t sigSize;
+    std::vector<unsigned char> vchSig; //serilized ecdsa signature.
+
+    CReplyBlock(uint32_t nReq);
+    void UpdateMerkleRoot();
+
+    template<typename Stream>
+    void Serialize(Stream& s) const{
+	s.write((char*)&peerID, sizeof(peerID));
+	s.write((char*)&hashMerkleRoot, sizeof(hashMerkleRoot));
+	uint nReq = vReq.size();
+	s.write((char*)&nReq, sizeof(nReq));
+	for (uint i = 0; i < nReq; i++) {
+	    vReq[i].reqHash.Serialize(s);
+	    s.write(&vReq[i].exeResult, sizeof(vReq[i].exeResult));
+	}
+	s.write((char*)&sigSize, sizeof(sigSize));
+	s.write((char*)vchSig.data(), sigSize);
+    }
+    
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+	s.read((char*)&peerID, sizeof(peerID));
+	s.read((char*)&hashMerkleRoot, sizeof(hashMerkleRoot));
+	uint nReq = 0;
+	s.read((char*)&nReq, sizeof(nReq));
+	vReq.resize(nReq);
+	for (uint i = 0; i < nReq; i++) {
+	    vReq[i].reqHash.Unserialize(s);
+	    s.read(&vReq[i].exeResult, sizeof(vReq[i].exeResult));
+	}
+	s.read((char*)&sigSize, sizeof(sigSize));
+	vchSig.resize(sigSize);
+	s.read((char*)vchSig.data(), sigSize);
+    }
+};
+
 class TypedReq{
 public:
     ClientReqType type;
@@ -162,8 +215,9 @@ public:
     std::vector<TypedReq> vReq;
 
     CPbftBlock();
+    CPbftBlock(std::deque<TypedReq> vReqIn);
     void UpdateMerkleRoot();
-    uint32_t Execute(const int seq, CConnman* connman) const;
+    uint32_t Execute(const int seq, CConnman* connman, CReplyBlock& replyBlock) const;
 };
 
 class TxReq: public CClientReq {
@@ -274,32 +328,6 @@ public:
     uint256 GetDigest() const override;
 };
 
-/* We currently do not verify the proof-of-rejection part of OmniLeder.
- * proof-of-rejection verification requires every peer to know the publickey
- * of every committee. In our case of lacking threshold signature implementation,
- * the peer has to know all the pubkey keys of peers in the output committee and
- * verify everyone's signature. The process is tedious. */
-//class UnlockToAbortReq: public CClientReq {
-//public:
-//    std::vector<COutPoint> voutpoint;
-//
-//    template<typename Stream>
-//    void Serialize(Stream& s) const{
-//	for (uint i = 0; i < voutpoint.size(); i++) {
-//	    voutpoint[i].Serialize(s);
-//	}
-//    }
-//    template<typename Stream>
-//    void Unserialize(Stream& s) {
-//	for (uint i = 0; i < voutpoint.size(); i++) {
-//	    voutpoint[i].Unserialize(s);
-//	}
-//    }
-//
-//    /* mark UTXO(s) in the req as spent */
-//    void Execute(const int seq) const override;
-//    uint256 GetDigest() const override;
-//};
 
 class CPre_prepare : public CPbftMessage{
 public:
@@ -367,8 +395,15 @@ public:
     }
 };
 
-
-uint256 PbftBlockMerkleRoot(const CPbftBlock& block);
+template <class T>
+uint256 PbftBlockMerkleRoot(const T& block) {
+    std::vector<uint256> leaves;
+    leaves.resize(block.vReq.size());
+    for (size_t s = 0; s < block.vReq.size(); s++) {
+        leaves[s] = block.vReq[s].GetHash();
+    }
+    return ComputeMerkleRoot(leaves);
+}
 
 
 
