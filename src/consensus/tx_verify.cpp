@@ -222,15 +222,12 @@ bool CheckTransaction(const CTransaction& tx, CValidationState &state, bool fChe
     return true;
 }
 
-bool Consensus::CheckTxInputs(const CTransaction& tx, CValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& txfee, uint256* dependedTx)
+bool Consensus::CheckTxInputs(const CTransaction& tx, CValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& txfee)
 {
     // are the actual inputs available?
     if (!tx.IsCoinBase()) {
         for (unsigned int i = 0; i < tx.vin.size(); i++) {
             if (!inputs.HaveCoin(tx.vin[i].prevout)) {
-		if (dependedTx != nullptr) {
-		    *dependedTx = tx.vin[i].prevout.hash;
-		}
 		return state.DoS(100, false, REJECT_INVALID, "bad-txns-inputs-missingorspent", false,
                          strprintf("%s: inputs missing/spent", __func__));
             }
@@ -273,7 +270,7 @@ bool Consensus::CheckTxInputs(const CTransaction& tx, CValidationState& state, c
     return true;
 }
 
-bool Consensus::CheckLockReqInputs(const CTransaction& tx, CValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& totalValueIn, uint256* dependedTx) {
+bool Consensus::CheckLockReqInputs(const CTransaction& tx, CValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& totalValueIn) {
     int32_t myShardId = pbftID/CPbft::groupSize;
     /*----pick out input UTXOs in our shard----*/
     TxPlacer txPlacer;
@@ -290,9 +287,6 @@ bool Consensus::CheckLockReqInputs(const CTransaction& tx, CValidationState& sta
 
     for (CTxIn input: vinInMyShard) {
 	if (!inputs.HaveCoin(input.prevout)) {
-	    if (dependedTx != nullptr) {
-		*dependedTx = input.prevout.hash;
-	    }
 	    return state.DoS(100, false, REJECT_INVALID, "bad-txns-inputs-missingorspent", false,
 			     strprintf("%s: inputs missing/spent", __func__));
 	}

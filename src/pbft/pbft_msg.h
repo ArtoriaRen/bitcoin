@@ -142,7 +142,7 @@ public:
     /* we did not put serialization methods here because c++ does not allow
      * virtual template method.
      */
-    virtual uint32_t Execute(const int seq, CCoinsViewCache& view, uint256* dependedTx = nullptr) const = 0; // seq is passed in because we use it as block height.
+    virtual uint32_t Execute(const int seq, CCoinsViewCache& view) const = 0; // seq is passed in because we use it as block height.
     virtual uint256 GetDigest() const = 0;
 //    virtual ~CClientReq(){};
 };
@@ -246,7 +246,7 @@ public:
     void Unserialize(Stream& s) {
 	tx_mutable.Unserialize(s);
     }
-    uint32_t Execute(const int seq, CCoinsViewCache& view, uint256* dependedTx = nullptr) const override;
+    uint32_t Execute(const int seq, CCoinsViewCache& view) const override;
     uint256 GetDigest() const override;
 };
 
@@ -270,7 +270,7 @@ public:
     void Unserialize(Stream& s) {
 	tx_mutable.Unserialize(s);
     }
-    uint32_t Execute(const int seq, CCoinsViewCache& view, uint256* dependedTx = nullptr) const override;
+    uint32_t Execute(const int seq, CCoinsViewCache& view) const override;
     uint256 GetDigest() const override;
 };
 
@@ -309,7 +309,7 @@ public:
 	    vInputShardReply[i].Unserialize(s);
 	}
     }
-    uint32_t Execute(const int seq, CCoinsViewCache& view, uint256* dependedTx = nullptr) const override;
+    uint32_t Execute(const int seq, CCoinsViewCache& view) const override;
     uint256 GetDigest() const override;
 };
 
@@ -337,7 +337,7 @@ public:
 	     vNegativeReply[i].Unserialize(s);
 	}
     }
-    uint32_t Execute(const int seq, CCoinsViewCache& view, uint256* dependedTx = nullptr) const override;
+    uint32_t Execute(const int seq, CCoinsViewCache& view) const override;
     uint256 GetDigest() const override;
 };
 

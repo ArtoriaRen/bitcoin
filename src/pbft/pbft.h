@@ -111,7 +111,7 @@ public:
     bool checkMsg(CPbftMessage* msg);
     /*return the last executed seq */
     int executeBlock(CConnman* connman);
-    bool checkExecute(const TypedReq& typedReq, uint256* dependedTx);
+    bool checkExecute(const TypedReq& typedReq);
 
     inline void printQueueSize(){
 	    /* log queue size if we have reached the period. */
