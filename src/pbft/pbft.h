@@ -107,7 +107,7 @@ public:
     CPre_prepare assemblePPMsg(const CPbftBlock& pbft_block);
     CPbftMessage assembleMsg(const uint32_t seq); 
     CReply assembleReply(const uint32_t seq);
-//    CInputShardReply assembleInputShardReply(const uint32_t seq, const uint32_t idx);
+    CInputShardReply assembleInputShardReply(const uint32_t seq, const uint32_t idx, const uint32_t exe_res);
     bool checkMsg(CPbftMessage* msg);
     /*return the last executed seq */
     int executeBlock(CConnman* connman);

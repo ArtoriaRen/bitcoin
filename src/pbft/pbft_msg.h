@@ -150,11 +150,26 @@ public:
 class CReqReplyEntry {
 public:
     uint256 reqHash;
+    ClientReqType type;
     char exeResult;
 
     CReqReplyEntry();
-    CReqReplyEntry(uint256 hashIn, char resIn);
+    CReqReplyEntry(const uint256& hashIn, const ClientReqType typeIn, char resIn);
     uint256 GetHash() const;
+
+    template<typename Stream>
+    void Serialize(Stream& s) const {
+        reqHash.Serialize(s);
+        s.write((char*) &type, sizeof (type));
+        s.write(&exeResult, sizeof (exeResult));
+    }
+
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+        reqHash.Unserialize(s);
+        s.read((char*) &type, sizeof (type));
+        s.read(&exeResult, sizeof (exeResult));
+    }
 };
 
 class CReplyBlock {
@@ -175,8 +190,7 @@ public:
 	uint nReq = vReq.size();
 	s.write((char*)&nReq, sizeof(nReq));
 	for (uint i = 0; i < nReq; i++) {
-	    vReq[i].reqHash.Serialize(s);
-	    s.write(&vReq[i].exeResult, sizeof(vReq[i].exeResult));
+	    vReq[i].Serialize(s);
 	}
 	s.write((char*)&sigSize, sizeof(sigSize));
 	s.write((char*)vchSig.data(), sigSize);
@@ -190,8 +204,7 @@ public:
 	s.read((char*)&nReq, sizeof(nReq));
 	vReq.resize(nReq);
 	for (uint i = 0; i < nReq; i++) {
-	    vReq[i].reqHash.Unserialize(s);
-	    s.read(&vReq[i].exeResult, sizeof(vReq[i].exeResult));
+	    vReq[i].Unserialize(s);
 	}
 	s.read((char*)&sigSize, sizeof(sigSize));
 	vchSig.resize(sigSize);

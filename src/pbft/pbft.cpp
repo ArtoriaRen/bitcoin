@@ -306,15 +306,14 @@ CReply CPbft::assembleReply(const uint32_t seq) {
     return toSent;
 }
 
-//CInputShardReply CPbft::assembleInputShardReply(const uint32_t seq, const uint32_t idx) {
-//    /* Hard code to reply with execute success b/c the server select only valid tx to form blocks. */
-//    CInputShardReply toSent(1, log[seq].ppMsg.pbft_block.vReq[idx].pReq->GetDigest(), ((LockReq*)log[seq].ppMsg.pbft_block.vReq[idx].pReq.get())->totalValueInOfShard);
-//    uint256 hash;
-//    toSent.getHash(hash);
-//    privateKey.Sign(hash, toSent.vchSig);
-//    toSent.sigSize = toSent.vchSig.size();
-//    return toSent;
-//}
+CInputShardReply CPbft::assembleInputShardReply(const uint32_t seq, const uint32_t idx, const uint32_t exe_res) {
+    CInputShardReply toSent(exe_res, log[seq].ppMsg.pbft_block.vReq[idx].pReq->GetDigest(), ((LockReq*)log[seq].ppMsg.pbft_block.vReq[idx].pReq.get())->totalValueInOfShard);
+    uint256 hash;
+    toSent.getHash(hash);
+    privateKey.Sign(hash, toSent.vchSig);
+    toSent.sigSize = toSent.vchSig.size();
+    return toSent;
+}
 
 int CPbft::executeBlock(CConnman* connman) {
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);

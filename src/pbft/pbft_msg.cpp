@@ -363,14 +363,16 @@ void CPbftBlock::UpdateMerkleRoot(){
     hashMerkleRoot = PbftBlockMerkleRoot(*this); 
 }
 
-CReqReplyEntry::CReqReplyEntry() { }
+CReqReplyEntry::CReqReplyEntry() {
+}
 
-CReqReplyEntry::CReqReplyEntry(uint256 hashIn, char resIn): reqHash(hashIn), exeResult(resIn) { }
+CReqReplyEntry::CReqReplyEntry(const uint256& hashIn, const ClientReqType typeIn, char resIn) : reqHash(hashIn), type(typeIn), exeResult(resIn) { }
 
 uint256 CReqReplyEntry::GetHash() const {
     uint256 result;
     CHash256 hasher;
     hasher.Write((const unsigned char*)reqHash.begin(), reqHash.size());
+    hasher.Write((const unsigned char*)&type, sizeof(type));
     hasher.Write((const unsigned char*)&exeResult, sizeof(exeResult));
     hasher.Finalize((unsigned char*)&result);
     return result;
@@ -389,10 +391,16 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CReplyBlock& repl
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
     uint32_t txCnt = 0;
     for (uint i = 0; i < vReq.size(); i++) {
-	replyBlock.vReq.emplace_back(vReq[i].pReq->tx_mutable.GetHash(), vReq[i].pReq->Execute(seq, *pcoinsTip)); // 'y' --- execution succeed, 'n' --- execution fail
-	if (!vReq[i].type == ClientReqType::LOCK) {
-	    /* only count TX and UNLOCK requests */
-	    txCnt++;
+	uint32_t res = vReq[i].pReq->Execute(seq, *pcoinsTip);
+	if (vReq[i].type == ClientReqType::LOCK) {
+	    CInputShardReply reply = g_pbft->assembleInputShardReply(seq, i, res);
+	    connman->PushMessage(g_pbft->client, msgMaker.Make(NetMsgType::OMNI_LOCK_REPLY, reply));
+	} else {
+	    replyBlock.vReq.emplace_back(vReq[i].pReq->GetDigest(), vReq[i].type, res == 1 ? 'y' : 'n'); // 'y' --- execution succeed, 'n' --- execution fail
+	    if (vReq[i].type == ClientReqType::TX || vReq[i].type == ClientReqType::UNLOCK_TO_COMMIT) {
+		/* only count TX and UNLOCK_TO_COMMIT requests */
+		txCnt++;
+	    }
 	}
     }
     bool flushed = pcoinsTip->Flush(); // flush to pcoinsTip
