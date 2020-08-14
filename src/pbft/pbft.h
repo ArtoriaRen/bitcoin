@@ -44,8 +44,10 @@ public:
     uint32_t blockHeight;
     uint32_t n;  // n-th tx in the block body
     bool aborted;
+    uint32_t nAbortReplyShards;
+    uint32_t nInputShards;
     TxBlockInfo();
-    TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn);
+    TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn, uint32_t nInputShardsIn);
 };
 
 class ThreadSafeQueue {
@@ -68,6 +70,14 @@ private:
     std::condition_variable cond_;
 };
 
+class CReplyBlockStat{
+public:
+    CReplyBlock replyBlk; // received from leader
+    uint32_t nConfirm; //received from followers. Analyze the block when nConfirm == 2f
+
+    CReplyBlockStat();
+};
+
 class CPbft{
 public:
     static const uint32_t nFaulty = 1;
@@ -79,7 +89,6 @@ public:
 
     std::unordered_map<uint256, std::unordered_set<std::string>, BlockHasher> replyMap; // key is txid, value is a set of senders' addressName
 
-    //std::vector<CInputShardReply> vInputShardReplies;
     std::unordered_map<uint256, LockReply, BlockHasher> inputShardReplyMap; 
 
     std::unordered_map<uint256, uint256, BlockHasher> txUnlockReqMap; //  key is the digest of a unlock to commit or unlock to abort req, value is txid
@@ -91,14 +100,17 @@ public:
     ThreadSafeQueue txResendQueue;
 
     std::unordered_map<uint256, TxStat, BlockHasher> mapTxStartTime;
+    std::unordered_map<uint256, CReplyBlockStat, BlockHasher> mapReplyBlockStat; // <block_merkle_root, <block, num_of_CReply>>
+
     uint32_t lastCompletedTx;
     uint32_t nCompletedTx; // tx that has been committed
-    //uint32_t nCommitNoResendTx; // tx that is commit for the first time they were sent. 
-    //uint32_t nAbortedTx; // tx that is aborted for the first time they were sent. 
+    uint32_t nCommitNoResendTx; // tx that is commit for the first time they were sent. 
+    uint32_t nAbortedTx; // tx that is aborted for the first time they were sent. 
     struct timeval thruStartTime;
 
     CPbft();
     bool checkReplySig(const CReply* pReply) const;
+    bool checkReplyBlockSig(CReplyBlock* pReplyBlock) const;
     void logThruput(struct timeval& endTime);
 
 private:

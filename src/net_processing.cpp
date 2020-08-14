@@ -40,6 +40,8 @@
 
 std::atomic<int64_t> nTimeBestReceived(0); // Used only to inform the wallet of when we last received a block
 
+static void processReplyBlock(const uint256& merkleRoot);
+
 struct IteratorComparator
 {
     template<typename I>
@@ -1839,6 +1841,21 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	}
     }
 
+    else if (strCommand == NetMsgType::PBFT_REPLY_BLK) {
+        CReplyBlock replyBlock;
+	vRecv >> replyBlock;
+	if (!g_pbft->checkReplyBlockSig(&replyBlock)) {
+	    std::cout << strCommand << " from " << replyBlock.peerID << " sig verification fail"  << std::endl;
+	} else {
+	    std::cout << strCommand << " sig ok" << std::endl;
+	}
+	assert(g_pbft->mapReplyBlockStat[replyBlock.hashMerkleRoot].replyBlk.isNull());
+	g_pbft->mapReplyBlockStat[replyBlock.hashMerkleRoot].replyBlk = replyBlock;
+	if (g_pbft->mapReplyBlockStat[replyBlock.hashMerkleRoot].nConfirm == 2 * CPbft::nFaulty) {
+	    processReplyBlock(replyBlock.hashMerkleRoot);
+	}
+    }
+
     else if (strCommand == NetMsgType::PBFT_REPLY)
     {
 	CReply reply;
@@ -1849,12 +1866,18 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    std::cout << strCommand << " sig ok" << std::endl;
 	}
 	std::cout << __func__ << ": received PBFT_REPLY for block merkle root = " << reply.digest.ToString().substr(0,10) << ", txCnt = " << reply.txCnt << " from " << pfrom->GetAddrName() << std::endl;
-	g_pbft->replyMap[reply.digest].emplace(pfrom->GetAddrName());
-	if (g_pbft->replyMap[reply.digest].size() == 2 * CPbft::nFaulty + 1) {
-	    g_pbft->nCompletedTx += reply.txCnt;
-	    std::cout << __func__ << ": current total completed tx = " << g_pbft->nCompletedTx << std::endl;
-	    struct timeval endTime;
-	    gettimeofday(&endTime, NULL);
+
+	CReplyBlockStat& replyStat = g_pbft->mapReplyBlockStat[reply.digest];
+	replyStat.nConfirm++;
+	if (replyStat.nConfirm == 2 * CPbft::nFaulty && !replyStat.replyBlk.isNull()) {
+	    processReplyBlock(reply.digest);
+	}
+//	g_pbft->replyMap[reply.digest].emplace(pfrom->GetAddrName());
+//	if (g_pbft->replyMap[reply.digest].size() == 2 * CPbft::nFaulty + 1) {
+//	    g_pbft->nCompletedTx += reply.txCnt;
+//	    std::cout << __func__ << ": current total completed tx = " << g_pbft->nCompletedTx << std::endl;
+//	    struct timeval endTime;
+//	    gettimeofday(&endTime, NULL);
 	//    /* ---- calculate latency ---- */
 	//    if (g_pbft->txUnlockReqMap.find(reply.digest) == g_pbft->txUnlockReqMap.end()) {
 	//	/* single-shard tx */
@@ -1897,9 +1920,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	//		g_pbft->nCompletedTx++;
 	//		if (!txinfo.aborted)
 	//		    g_pbft->nCommitNoResendTx++;
-			if (g_pbft->nCompletedTx - g_pbft->lastCompletedTx >= thruInterval) {
-			    g_pbft->logThruput(endTime);
-			}
+//			if (g_pbft->nCompletedTx - g_pbft->lastCompletedTx >= thruInterval) {
+//			    g_pbft->logThruput(endTime);
+//			}
 
 	//	} else if (reply.reply == 'y' && inputShardRplMap[txid].decision == 'a') {
 	//	  
@@ -1916,13 +1939,14 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	//	} 
 	//	std::cout << "cross-shard, latency = " << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << " ms" << std::endl;
 	//    }
-	}
+//	}
     }
 
     else if (strCommand == NetMsgType::OMNI_LOCK_REPLY)
     {
 	CInputShardReply reply;
 	vRecv >> reply;
+	assert(g_pbft->inputShardReplyMap.find(reply.digest) != g_pbft->inputShardReplyMap.end());
 	if (g_pbft->inputShardReplyMap[reply.digest].decision != '\0') {
 	    return true;
 	}
@@ -3869,3 +3893,99 @@ public:
         mapOrphanTransactionsByPrev.clear();
     }
 } instance_of_cnetprocessingcleanup;
+
+static void processReplyBlock(const uint256& merkleRoot) {
+    uint32_t txCnt = 0;
+    struct timeval endTime;
+    gettimeofday(&endTime, NULL);
+    const CReplyBlockStat& replyStat = g_pbft->mapReplyBlockStat[merkleRoot];
+    for (int i = 0; i < replyStat.replyBlk.vReq.size(); i++) {
+	const uint256& req_hash = replyStat.replyBlk.vReq[i].reqHash;
+	const ClientReqType& type = replyStat.replyBlk.vReq[i].type;
+	const char exe_result = replyStat.replyBlk.vReq[i].exeResult;
+	switch (type) {
+	    case ClientReqType::TX:
+	    {
+		const uint256& txid = req_hash;
+		TxStat& stat = g_pbft->mapTxStartTime[txid]; 
+		TxBlockInfo& txinfo = g_pbft->txInFly[txid];
+		std::cout << "tx " << txid.GetHex().substr(0,10);
+		if (exe_result == 'y') {
+		    txCnt++;
+		    std::cout << ", SUCCEED, ";
+		    g_pbft->txInFly.erase(txid);
+		    if (!txinfo.aborted) {
+			g_pbft->nCommitNoResendTx++;
+		    }
+		    std::cout << "single-shard, latency = " << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << " ms" << std::endl;
+		    g_pbft->mapTxStartTime.erase(txid);
+		} else {
+		    std::cout << ", FAIL, ";
+		    if (!txinfo.aborted){
+			txinfo.aborted = true;
+			g_pbft->nAbortedTx++;
+		    }
+		    g_pbft->txResendQueue.push_back(txinfo);
+		} 
+		break;
+	    }
+	    case ClientReqType::UNLOCK_TO_COMMIT:
+	    {
+//			auto& inputShardRplMap = g_pbft->inputShardReplyMap;
+		uint256& txid = g_pbft->txUnlockReqMap[req_hash];
+		TxStat& stat = g_pbft->mapTxStartTime[txid]; 
+		TxBlockInfo& txinfo = g_pbft->txInFly[txid];
+		std::cout << "tx " << txid.GetHex().substr(0,10);
+		if (exe_result == 'y') {
+		    /* only the output shard send committed reply, so no risk of printing info more than once for a tx. */
+		    std::cout << ", COMMITTED, ";
+		    g_pbft->txInFly.erase(txid);
+		    txCnt++;
+		    if (!txinfo.aborted) {
+			g_pbft->nCommitNoResendTx++;
+		    }
+		    std::cout << "cross-shard, latency = " << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << " ms" << std::endl;
+		    g_pbft->mapTxStartTime.erase(txid);
+		} else {
+		    std::cout << ", fail to commit, " << std::endl;
+		} 
+		break;
+	    }
+	    case ClientReqType::UNLOCK_TO_ABORT:
+	    {
+		uint256& txid = g_pbft->txUnlockReqMap[req_hash];
+		TxStat& stat = g_pbft->mapTxStartTime[txid]; 
+		TxBlockInfo& txinfo = g_pbft->txInFly[txid];
+		std::cout << "tx " << txid.GetHex().substr(0,10);
+		txinfo.nAbortReplyShards++;
+		/* only resend a tx if all its input shards abort it successfully. 
+		 * Otherwise it may again aborted becase we send it too frequently.
+		 */
+		if (exe_result == 'y' && txinfo.nAbortReplyShards == txinfo.nInputShards) {
+		    std::cout << ", ABORTED, ";
+		    if (!txinfo.aborted){
+			txinfo.aborted = true;
+			g_pbft->nAbortedTx++;
+		    }
+		    g_pbft->txResendQueue.push_back(txinfo);
+		} else if (exe_result == 'n') {
+		    std::cout << "fail to abort. " << std::endl;
+		} 
+		break;
+	    }
+	    case ClientReqType::LOCK:
+	    {
+		std::cout << __func__ << "reply block should not include LOCK req." << std::endl;
+	    }
+	    default:
+		std::cout << __func__ << "invalid req type" << std::endl;
+	}
+
+
+    }
+    g_pbft->nCompletedTx += txCnt;
+    std::cout << __func__ << ": current total completed tx = " << g_pbft->nCompletedTx << std::endl;
+    if (g_pbft->nCompletedTx - g_pbft->lastCompletedTx >= thruInterval) {
+	g_pbft->logThruput(endTime);
+    }
+}

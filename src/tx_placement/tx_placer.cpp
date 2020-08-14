@@ -109,13 +109,13 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
 	if ((j & 0x04) == 0) {
 	    if (ShutdownRequested())
 	    	return cnt;
-	    //while (!g_pbft->txResendQueue.empty()) {
-	    //    TxBlockInfo& txInfo = g_pbft->txResendQueue.front();
-	    //    sendTx(txInfo.tx, txInfo.n, txInfo.blockHeight);
-	    //    g_pbft->txResendQueue.pop_front();
-	    //    cnt++;
-	    //    nanosleep(&sleep_length, NULL);
-	    //}
+	    while (!g_pbft->txResendQueue.empty()) {
+	        TxBlockInfo& txInfo = g_pbft->txResendQueue.front();
+	        sendTx(txInfo.tx, txInfo.n, txInfo.blockHeight);
+	        g_pbft->txResendQueue.pop_front();
+	        cnt++;
+	        nanosleep(&sleep_length, NULL);
+	    }
 	}
     }
 
@@ -158,7 +158,7 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 	/* send tx and collect time info to calculate latency. 
 	 * We also remove all reply msg for this req for resending aborted tx. */
 	g_pbft->replyMap[hashTx].clear();
-	g_pbft->txInFly.insert(std::make_pair(hashTx, std::move(TxBlockInfo(tx, block_height, idx))));
+	g_pbft->txInFly.insert(std::make_pair(hashTx, std::move(TxBlockInfo(tx, block_height, idx, shards.size() - 1))));
 	g_pbft->mapTxStartTime.erase(hashTx);
 	struct TxStat stat;
 	if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {

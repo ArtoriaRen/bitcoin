@@ -43,6 +43,7 @@ const char *PBFT_TX="pbfttx"; // use to differentiate pbft tx from normal tx
 const char *PBFT_PUBKEY="pubkey";
 const char *PBFT_CLIENT="client"; // a pbft client use this msg to inform the leader that it is a client not a follower.
 const char *PBFT_REPLY="pbftrpl"; // pbft reply
+const char *PBFT_REPLY_BLK = "pbftblkrpl";
 const char *OMNI_LOCK="omnilock"; // lock req of OmniLedger
 const char *OMNI_LOCK_REPLY="lockrly"; // lock reply of OmniLedger
 const char *OMNI_UNLOCK_COMMIT="unlockcmt"; 
@@ -83,6 +84,7 @@ const static std::string allNetMessageTypes[] = {
     NetMsgType::PBFT_PUBKEY,
     NetMsgType::PBFT_CLIENT,
     NetMsgType::PBFT_REPLY, // pbft reply
+    NetMsgType::PBFT_REPLY_BLK,
     NetMsgType::OMNI_LOCK, // lock req of OmniLedger
     NetMsgType::OMNI_LOCK_REPLY, // lock reply of OmniLedger
     NetMsgType::OMNI_UNLOCK_COMMIT, 

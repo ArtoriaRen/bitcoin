@@ -1,6 +1,16 @@
 #include "pbft/pbft_msg.h"
 #include "hash.h"
 #include "pbft.h"
+#include "consensus/merkle.h"
+
+static uint256 PbftBlockMerkleRoot(const CReplyBlock& block) {
+    std::vector<uint256> leaves;
+    leaves.resize(block.vReq.size());
+    for (size_t s = 0; s < block.vReq.size(); s++) {
+        leaves[s] = block.vReq[s].GetHash();
+    }
+    return ComputeMerkleRoot(leaves);
+}
 
 CReply::CReply(): txCnt(0), digest(), sigSize(0), vchSig(){ 
     vchSig.reserve(72); // the expected sig size is 72 bytes.
@@ -70,3 +80,34 @@ uint256 UnlockToAbortReq::GetDigest() const {
     return result;
 }
 
+CReqReplyEntry::CReqReplyEntry() { }
+
+CReqReplyEntry::CReqReplyEntry(const uint256& hashIn, const ClientReqType typeIn, char resIn) : reqHash(hashIn), type(typeIn), exeResult(resIn) { }
+
+uint256 CReqReplyEntry::GetHash() const {
+    uint256 result;
+    CHash256 hasher;
+    hasher.Write((const unsigned char*) reqHash.begin(), reqHash.size());
+    hasher.Write((const unsigned char*)&type, sizeof(type));
+    hasher.Write((const unsigned char*) &exeResult, sizeof (exeResult));
+    hasher.Finalize((unsigned char*) &result);
+    return result;
+}
+
+CReplyBlock::CReplyBlock() {
+    hashMerkleRoot.SetNull();
+    vReq.clear();
+}
+
+CReplyBlock::CReplyBlock(uint32_t nReq): peerID(pbftID) {
+    hashMerkleRoot.SetNull();
+    vReq.reserve(nReq);
+}
+
+void CReplyBlock::UpdateMerkleRoot() {
+    hashMerkleRoot = PbftBlockMerkleRoot(*this);
+}
+
+bool CReplyBlock::isNull() const {
+    return hashMerkleRoot.IsNull() && vReq.empty();
+}

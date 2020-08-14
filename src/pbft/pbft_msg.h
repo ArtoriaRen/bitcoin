@@ -18,6 +18,10 @@
 #include "uint256.h"
 #include "primitives/transaction.h"
 
+enum ClientReqType {
+    TX, LOCK, UNLOCK_TO_COMMIT, UNLOCK_TO_ABORT
+};
+
 class CReply {
 public:
     uint32_t txCnt; // execution result
@@ -148,6 +152,73 @@ public:
 	}
     }
     uint256 GetDigest() const;
+};
+
+class CReqReplyEntry {
+public:
+    uint256 reqHash;
+    ClientReqType type;
+    char exeResult;
+
+    CReqReplyEntry();
+    CReqReplyEntry(const uint256& hashIn, const ClientReqType typeIn, char resIn);
+    uint256 GetHash() const;
+
+    template<typename Stream>
+    void Serialize(Stream& s) const {
+	reqHash.Serialize(s);
+	s.write((char*)&type, sizeof (type));
+	s.write(&exeResult, sizeof (exeResult));
+    }
+
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+	reqHash.Unserialize(s);
+	s.read((char*)&type, sizeof (type));
+	s.read(&exeResult, sizeof(exeResult));
+    }
+};
+
+class CReplyBlock {
+public:
+    int32_t peerID;
+    uint256 hashMerkleRoot;
+    std::vector<CReqReplyEntry> vReq;
+    uint32_t sigSize;
+    std::vector<unsigned char> vchSig; //serilized ecdsa signature.
+
+    CReplyBlock();
+    CReplyBlock(uint32_t nReq);
+    void UpdateMerkleRoot();
+    bool isNull() const;
+
+    template<typename Stream>
+    void Serialize(Stream& s) const {
+        s.write((char*) &peerID, sizeof (peerID));
+        s.write((char*) &hashMerkleRoot, sizeof (hashMerkleRoot));
+        uint nReq = vReq.size();
+        s.write((char*) &nReq, sizeof (nReq));
+        for (uint i = 0; i < nReq; i++) {
+            vReq[i].Serialize(s);
+        }
+        s.write((char*) &sigSize, sizeof (sigSize));
+        s.write((char*) vchSig.data(), sigSize);
+    }
+
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+        s.read((char*) &peerID, sizeof (peerID));
+        s.read((char*) &hashMerkleRoot, sizeof (hashMerkleRoot));
+        uint nReq = 0;
+        s.read((char*) &nReq, sizeof (nReq));
+        vReq.resize(nReq);
+        for (uint i = 0; i < nReq; i++) {
+            vReq[i].Unserialize(s);
+        }
+        s.read((char*) &sigSize, sizeof (sigSize));
+        vchSig.resize(sigSize);
+        s.read((char*) vchSig.data(), sigSize);
+    }
 };
 
 #endif
