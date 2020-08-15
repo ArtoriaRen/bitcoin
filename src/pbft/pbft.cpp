@@ -323,33 +323,35 @@ int CPbft::executeBlock(CConnman* connman) {
      * their seqs are greater than the seq passed in. If we only execute up to
      * the seq passed in, a slot missing a pbftc msg might permanently block
      * log slots after it to be executed. */
-    //for (; i < logSize; i++) {
-//        if (log[i].phase.load(std::memory_order_relaxed) == PbftPhase::reply) {
+    for (; i < logSize; i++) {
+        if (log[i].phase.load(std::memory_order_relaxed) == PbftPhase::reply) {
 	    CReplyBlock replyBlock(log[i].ppMsg.pbft_block.vReq.size());
 	    log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, connman, replyBlock);
-	    replyBlock.UpdateMerkleRoot();
-	    if (isLeader()) {
-		/* send PBFT_REPLY_BLK msg to client */
-		privateKey.Sign(replyBlock.hashMerkleRoot, replyBlock.vchSig);
-		replyBlock.sigSize = replyBlock.vchSig.size();
-		connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY_BLK, replyBlock));
-	    } else {
-		/* send PBFT_REPLY msg to client. Use reply block merkle root as msg digest. */
-		CReply toSent(log[i].txCnt, replyBlock.hashMerkleRoot);
-		uint256 hash;
-		toSent.getHash(hash);
-		privateKey.Sign(hash, toSent.vchSig);
-		toSent.sigSize = toSent.vchSig.size();
-		connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, toSent));
+	    if (!replyBlock.isNull())
+	    {
+		replyBlock.UpdateMerkleRoot();
+		if (isLeader()) {
+		    /* send PBFT_REPLY_BLK msg to client */
+		    privateKey.Sign(replyBlock.hashMerkleRoot, replyBlock.vchSig);
+		    replyBlock.sigSize = replyBlock.vchSig.size();
+		    connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY_BLK, replyBlock));
+		} else {
+		    /* send PBFT_REPLY msg to client. Use reply block merkle root as msg digest. */
+		    CReply toSent(log[i].txCnt, replyBlock.hashMerkleRoot);
+		    uint256 hash;
+		    toSent.getHash(hash);
+		    privateKey.Sign(hash, toSent.vchSig);
+		    toSent.sigSize = toSent.vchSig.size();
+		    connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, toSent));
+		}
+		nCompletedTx  += log[i].txCnt;
 	    }
-	    nCompletedTx  += log[i].txCnt;
-	    std::cout << "Execute block " << log[i].ppMsg.digest.GetHex() << " at log slot = " << i << ", contains " << log[i].txCnt << " tx. Current total completed tx = " << nCompletedTx << ", waitForMap has " << g_pbft->waitForMap.size() << " prereq tx" << std::endl;
-//        } else {
-//            break;
-//        }
-    //}
-    //lastExecutedSeq = i - 1;
-    lastExecutedSeq++;
+	    std::cout << "Execute block " << log[i].ppMsg.digest.GetHex() << " at log slot = " << i << ", contains " << log[i].txCnt << " TX or UNLOCK_TO_COMMIT req. Current total completed tx = " << nCompletedTx << std::endl;
+        } else {
+            break;
+        }
+    }
+    lastExecutedSeq = i - 1;
     /* if lastExecutedIndex is less than seq, we delay sending reply until 
      * the all requsts up to seq has been executed. This may be triggered 
      * by future requests.

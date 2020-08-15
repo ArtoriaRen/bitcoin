@@ -345,6 +345,10 @@ void CPbftBlock::UpdateMerkleRoot(){
     hashMerkleRoot = PbftBlockMerkleRoot(*this); 
 }
 
+bool CReplyBlock::isNull() const {
+    return hashMerkleRoot.IsNull() && vReq.empty();
+}
+
 CReqReplyEntry::CReqReplyEntry() {
 }
 

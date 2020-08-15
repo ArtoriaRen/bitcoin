@@ -3499,7 +3499,7 @@ bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CD
         vRecv >> *pUnlockCommitReq;
 	TypedReq typedReq = {ClientReqType::UNLOCK_TO_COMMIT, pUnlockCommitReq};
 	pbft->reqQueue.push_back(typedReq);
-        g_connman->WakeMessageHandler();
+        //g_connman->WakeMessageHandler();
 //	CTransaction tx(pUnlockCommitReq->tx_mutable);
 //	std::cout << __func__ << ": push to req queue unlockCommitReq. tx = " << tx.GetHash().GetHex().substr(0, 10) << std::endl;
     }
@@ -3510,7 +3510,7 @@ bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CD
         vRecv >> *pUnlockAbortReq;
 	TypedReq typedReq = {ClientReqType::UNLOCK_TO_ABORT, pUnlockAbortReq};
 	pbft->reqQueue.push_back(typedReq);
-        g_connman->WakeMessageHandler();
+        //g_connman->WakeMessageHandler();
 //	CTransaction tx(pUnlockCommitReq->tx_mutable);
 //	std::cout << __func__ << ": push to req queue unlockCommitReq. tx = " << tx.GetHash().GetHex().substr(0, 10) << std::endl;
     }

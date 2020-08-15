@@ -1826,7 +1826,7 @@ bool AppInitMain()
     //randomPlaceTxInBlock();
     //extractRawTxInBlock();
 
-    g_pbft->txCheckCoinView.reset(new CCoinsViewCache(pcoinsTip.get()));
+    //g_pbft->txCheckCoinView.reset(new CCoinsViewCache(pcoinsTip.get()));
     while (true) {
 //	if (!g_pbft->reqQueue.empty()){
 //	    /* assemble block and send PP msg. */
@@ -1845,14 +1845,12 @@ bool AppInitMain()
 		 */
 		g_client_connman->WakeMessageHandler();
 	    }
+	} else {
+	    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}
 
 	if (ShutdownRequested()) {
 	    break;
-	}
-	
-	if ((g_pbft->log[g_pbft->lastExecutedSeq + 1].phase.load(std::memory_order_relaxed) != PbftPhase::reply) && g_pbft->reqQueue.empty()) {
-	    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}
     }
     return true;

@@ -182,6 +182,7 @@ public:
 
     CReplyBlock(uint32_t nReq);
     void UpdateMerkleRoot();
+    bool isNull() const;
 
     template<typename Stream>
     void Serialize(Stream& s) const{
