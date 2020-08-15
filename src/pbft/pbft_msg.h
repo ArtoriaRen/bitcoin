@@ -17,6 +17,8 @@
 #include "util.h"
 #include "uint256.h"
 #include "primitives/transaction.h"
+#include "net.h"
+#include "coins.h"
 //global view number
 
 enum PbftPhase {pre_prepare, prepare, commit, reply, end};
@@ -130,11 +132,15 @@ public:
 class CClientReq{
 public:
     CMutableTransaction tx_mutable;
-    CClientReq(const CTransaction& tx): tx_mutable(tx) {}
+    uint256 hash;
+
+    CClientReq(const CTransaction& tx);
+    const uint256& GetHash() const;
+    
     /* we did not put serialization methods here because c++ does not allow
      * virtual template method.
      */
-    virtual char Execute(const int seq) const = 0; // seq is passed in because we use it as block height.
+    virtual char Execute(const int seq, CCoinsViewCache& view) const = 0; // seq is passed in because we use it as block height.
     virtual uint256 GetDigest() const = 0;
 //    virtual ~CClientReq(){};
 };
@@ -152,7 +158,7 @@ public:
     void Unserialize(Stream& s) {
 	tx_mutable.Unserialize(s);
     }
-    char Execute(const int seq) const override;
+    char Execute(const int seq, CCoinsViewCache& view) const override;
     uint256 GetDigest() const override;
 };
 
@@ -189,7 +195,7 @@ public:
 	    s.read((char*) &vInputUtxoIdxToLock[i], sizeof (vInputUtxoIdxToLock[i]));
         }
     }
-    char Execute(const int seq) const override;
+    char Execute(const int seq, CCoinsViewCache& view) const override;
     uint256 GetDigest() const override;
 };
 
@@ -228,7 +234,7 @@ public:
 	    vInputShardReply[i].Unserialize(s);
 	}
     }
-    char Execute(const int seq) const override;
+    char Execute(const int seq, CCoinsViewCache& view) const override;
     uint256 GetDigest() const override;
 };
 
@@ -256,96 +262,106 @@ public:
 	     vNegativeReply[i].Unserialize(s);
 	}
     }
-    char Execute(const int seq) const override;
+    char Execute(const int seq, CCoinsViewCache& view) const override;
     uint256 GetDigest() const override;
 };
 
-/* We currently do not verify the proof-of-rejection part of OmniLeder.
- * proof-of-rejection verification requires every peer to know the publickey
- * of every committee. In our case of lacking threshold signature implementation,
- * the peer has to know all the pubkey keys of peers in the output committee and
- * verify everyone's signature. The process is tedious. */
-//class UnlockToAbortReq: public CClientReq {
-//public:
-//    std::vector<COutPoint> voutpoint;
-//
-//    template<typename Stream>
-//    void Serialize(Stream& s) const{
-//	for (uint i = 0; i < voutpoint.size(); i++) {
-//	    voutpoint[i].Serialize(s);
-//	}
-//    }
-//    template<typename Stream>
-//    void Unserialize(Stream& s) {
-//	for (uint i = 0; i < voutpoint.size(); i++) {
-//	    voutpoint[i].Unserialize(s);
-//	}
-//    }
-//
-//    /* mark UTXO(s) in the req as spent */
-//    void Execute(const int seq) const override;
-//    uint256 GetDigest() const override;
-//};
+class TypedReq{
+public:
+    ClientReqType type;
+    std::shared_ptr<CClientReq> pReq;
+
+    uint256 GetHash() const;
+
+    template<typename Stream>
+    void Serialize(Stream& s) const{
+        s.write((char*) &type, sizeof (type));
+        if (type == ClientReqType::TX) {
+            assert(pReq != nullptr);
+            static_cast<TxReq*> (pReq.get())->Serialize(s);
+        } else if (type == ClientReqType::LOCK) {
+            assert(pReq != nullptr);
+            static_cast<LockReq*> (pReq.get())->Serialize(s);
+        } else if (type == ClientReqType::UNLOCK_TO_COMMIT) {
+            assert(pReq != nullptr);
+            static_cast<UnlockToCommitReq*> (pReq.get())->Serialize(s);
+        } else if (type == ClientReqType::UNLOCK_TO_ABORT) {
+            assert(pReq != nullptr);
+            static_cast<UnlockToAbortReq*> (pReq.get())->Serialize(s);
+        }  
+    }
+
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+	s.read((char*)&type, sizeof(type));
+	if(type == ClientReqType::TX) {
+	    pReq.reset(new TxReq());
+	    static_cast<TxReq*>(pReq.get())->Unserialize(s);
+	} else if(type == ClientReqType::LOCK) {
+	    pReq.reset(new LockReq());
+	    static_cast<LockReq*>(pReq.get())->Unserialize(s);
+	} else if(type == ClientReqType::UNLOCK_TO_COMMIT) {
+	    pReq.reset(new UnlockToCommitReq());
+	    static_cast<UnlockToCommitReq*>(pReq.get())->Unserialize(s);
+	} else if(type == ClientReqType::UNLOCK_TO_ABORT) {
+	    pReq.reset(new UnlockToAbortReq());
+	    static_cast<UnlockToAbortReq*>(pReq.get())->Unserialize(s);
+	}
+    }
+};
+
+class CPbftBlock{
+public:
+    uint256 hash; 
+    std::vector<TypedReq> vReq;
+
+    CPbftBlock();
+    CPbftBlock(std::deque<TypedReq> vReqIn);
+    void ComputeHash();
+    uint32_t Execute(const int seq, CConnman* connman) const;
+
+    template<typename Stream>
+    void Serialize(Stream& s) const{
+	uint block_size = vReq.size();
+	s.write((char*)&block_size, sizeof(block_size));
+	for (uint i = 0; i < vReq.size(); i++) {
+	    vReq[i].Serialize(s);
+	}
+    }
+
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+	uint block_size;
+	s.read((char*)&block_size, sizeof(block_size));
+	vReq.resize(block_size);
+	for (uint i = 0; i < vReq.size(); i++) {
+	    vReq[i].Unserialize(s);
+	}
+    }
+};
 
 class CPre_prepare : public CPbftMessage{
 public:
-    /* The client request type (currently only for OmniLedger):
-     * The type is used to decide how the client request should be serialized,
-     * and deserialized when a peer receives a ppMsg.
-     */
-    ClientReqType type;
-    /* If we use P2P network to disseminate client req before the primary send Pre_prepare msg,
-     * the req does not have to be in the Pre-prepare message.*/
-    std::shared_ptr<CClientReq> req;
-
+    CPbftBlock pbft_block;
    
-    CPre_prepare():CPbftMessage(), req(nullptr){ }
-    CPre_prepare(const CPbftMessage& pbftMsg, const std::shared_ptr<CClientReq>& reqIn):CPbftMessage(pbftMsg), req(reqIn){ }
+    CPre_prepare():CPbftMessage(), pbft_block() { }
+    CPre_prepare(const CPbftMessage& pbftMsg, const CPbftBlock& blockIn):CPbftMessage(pbftMsg), pbft_block(blockIn) { }
     
-    //add explicit?
     CPre_prepare(const CPre_prepare& msg);
     CPre_prepare(const CPbftMessage& msg);
 
     template<typename Stream>
     void Serialize(Stream& s) const{
 	CPbftMessage::Serialize(s);
-	s.write((char*)&type, sizeof(type));
-	if(type == ClientReqType::TX) {
-	    assert(req != nullptr);
-	    static_cast<TxReq*>(req.get())->Serialize(s);
-	} else if (type == ClientReqType::LOCK) {
-	    assert(req != nullptr);
-	    static_cast<LockReq*>(req.get())->Serialize(s);
-	} else if (type == ClientReqType::UNLOCK_TO_COMMIT) {
-	    assert(req != nullptr);
-	    static_cast<UnlockToCommitReq*>(req.get())->Serialize(s);
-	} else if (type == ClientReqType::UNLOCK_TO_ABORT) {
-	    assert(req != nullptr);
-	    static_cast<UnlockToAbortReq*>(req.get())->Serialize(s);
-	}  
+	pbft_block.Serialize(s);
     }
     
     template<typename Stream>
     void Unserialize(Stream& s) {
 	CPbftMessage::Unserialize(s);
-	s.read((char*)&type, sizeof(type));
-	if(type == ClientReqType::TX) {
-	    req.reset(new TxReq());
-	    static_cast<TxReq*>(req.get())->Unserialize(s);
-	} else if(type == ClientReqType::LOCK) {
-	    req.reset(new LockReq());
-	    static_cast<LockReq*>(req.get())->Unserialize(s);
-	} else if(type == ClientReqType::UNLOCK_TO_COMMIT) {
-	    req.reset(new UnlockToCommitReq());
-	    static_cast<UnlockToCommitReq*>(req.get())->Unserialize(s);
-	} else if(type == ClientReqType::UNLOCK_TO_ABORT) {
-	    req.reset(new UnlockToAbortReq());
-	    static_cast<UnlockToAbortReq*>(req.get())->Unserialize(s);
-	}
+	pbft_block.Unserialize(s);
     }
 };
-
-
 
 #endif /* PBFT_MSG_H */
 
