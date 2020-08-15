@@ -28,11 +28,8 @@
 extern int32_t pbftID;
 extern int32_t nMaxReqInFly; 
 extern int32_t QSizePrintPeriod;
+extern int32_t maxBlockSize; 
 
-typedef struct TypedReq{
-    ClientReqType type;
-    std::shared_ptr<CClientReq> pReq;
-} TypedReq;
 
 class ThreadSafeQueue {
 public:
@@ -41,6 +38,7 @@ public:
 
     TypedReq& front();
     std::deque<TypedReq> get_all();
+    std::deque<TypedReq> get_upto(uint32_t upto);
     void pop_front();
 
     void push_back(const TypedReq& item);
@@ -81,6 +79,7 @@ public:
      * req  enters the reply phase, another req at the front of the reqQueue is 
      * added to the pbft log and start consensus process. */
     int nReqInFly; 
+    uint32_t nCompletedTx;
     /* a queue storing client req waiting for being processed. */
     ThreadSafeQueue reqQueue;
     /* we need the client conn man to wake up the client listening thread to send
@@ -99,13 +98,13 @@ public:
     // Check Commit message signature, add to corresponding log, check if we have accumulated 2f+1 Commit message. If so, execute transactions and reply. 
     bool ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck = true);
 
-    CPre_prepare assemblePPMsg(const std::shared_ptr<CClientReq>& pclientReq, ClientReqType type);
+    CPre_prepare assemblePPMsg(const CPbftBlock& pbft_block);
     CPbftMessage assembleMsg(const uint32_t seq); 
-    CReply assembleReply(const uint32_t seq);
-    CInputShardReply assembleInputShardReply(const uint32_t seq);
+    CReply assembleReply(const uint32_t seq, const char exe_res);
+    CInputShardReply assembleInputShardReply(const uint32_t seq, const char exe_res, const CAmount& inputUtxoValueSum);
     bool checkMsg(CPbftMessage* msg);
     /*return the last executed seq */
-    int executeTransaction(const int seq);
+    int executeLog(const int seq, CConnman* connman);
 
     inline void printQueueSize(){
 	    /* log queue size if we have reached the period. */

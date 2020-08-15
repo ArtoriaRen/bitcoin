@@ -816,8 +816,8 @@ void InitParameterInteraction()
     if (gArgs.IsArgSet("-startblock")) {
         randomPlaceBlock = gArgs.GetArg("-startblock", 600000);
     }
-    if (gArgs.IsArgSet("-endblock")) {
-        blockEnd = gArgs.GetArg("-endblock", 600001);
+    if (gArgs.IsArgSet("-maxblocksize")) {
+        maxBlockSize= gArgs.GetArg("-maxblocksize", 100);
     }
     if (gArgs.IsArgSet("-numcommittees")) {
         num_committees = gArgs.GetArg("-numcommittees", 2);

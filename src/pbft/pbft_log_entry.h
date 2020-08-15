@@ -28,10 +28,10 @@ public:
 
     PbftPhase phase;
     // execution result for this log entry
-    char result;
+    uint32_t txCnt;
 
     //---placeholder. default phase should be pre-prepare.
-    CPbftLogEntry(): prepareCount(0), commitCount(0), phase(PbftPhase::pre_prepare){}
+    CPbftLogEntry(): prepareCount(0), commitCount(0), phase(PbftPhase::pre_prepare), txCnt(0){}
 };
 
 

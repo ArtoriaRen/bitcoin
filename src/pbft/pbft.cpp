@@ -20,6 +20,7 @@
 #include "netmessagemaker.h"
 #include <memory>
 #include "tx_placement/tx_placer.h"
+#include "netmessagemaker.h"
 
 bool fIsClient; // if this node is a pbft client.
 std::string leaderAddrString;
@@ -27,6 +28,7 @@ std::string clientAddrString;
 int32_t pbftID; 
 int32_t nMaxReqInFly; 
 int32_t QSizePrintPeriod;
+int32_t maxBlockSize = 2000;
 
 ThreadSafeQueue::ThreadSafeQueue() { }
 
@@ -45,6 +47,20 @@ std::deque<TypedReq> ThreadSafeQueue::get_all() {
     std::deque<TypedReq> ret(queue_);
     queue_.clear();
     return ret;
+}
+
+std::deque<TypedReq> ThreadSafeQueue::get_upto(uint32_t upto) {
+    std::unique_lock<std::mutex> mlock(mutex_);
+    if (queue_.size() < upto) {
+	std::deque<TypedReq> ret(queue_);
+	queue_.clear();
+	return ret;
+    } else {
+	std::deque<TypedReq> ret;
+	ret.insert(ret.end(), queue_.begin(), queue_.begin() + upto);
+	queue_.erase(queue_.begin(), queue_.begin() + upto);
+	return ret;
+    }
 }
 
 void ThreadSafeQueue::pop_front() {
@@ -81,7 +97,7 @@ bool ThreadSafeQueue::empty() {
     return queue_.empty();
 }
 
-CPbft::CPbft() : localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize * num_committees)), nReqInFly(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), privateKey(CKey()) {
+CPbft::CPbft() : localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize * num_committees)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
@@ -91,14 +107,14 @@ CPbft::CPbft() : localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq
 bool CPbft::ProcessPP(CConnman* connman, CPre_prepare& ppMsg) {
     // sanity check for signature, seq, view, digest.
     /*Faulty nodes may proceed even if the sanity check fails*/
-    std::cout << __func__ << ": req type = " <<  ppMsg.type << std::endl;
     if (!checkMsg(&ppMsg)) {
         return false;
     }
 
     // check if the digest matches client req
-    if (ppMsg.digest != ppMsg.req->GetDigest()) {
-	std::cerr << "digest does not match client tx. Client txid = " << ppMsg.req->GetDigest().GetHex() << ", but digest = " << ppMsg.digest.GetHex() << std::endl;
+    ppMsg.pbft_block.ComputeHash();
+    if (ppMsg.digest != ppMsg.pbft_block.hash) {
+	std::cerr << "digest does not match block hash tx. block hash = " << ppMsg.pbft_block.hash.GetHex() << ", but digest = " << ppMsg.digest.GetHex() << std::endl;
 	return false;
     }
     // add to log
@@ -215,24 +231,7 @@ bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
 	 * cMsg.seq will not be executed.
 	 */
 	int startReplySeq = lastExecutedSeq + 1; 
-	executeTransaction(cMsg.seq); // this updates the lastExecutedIndex  
-	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-	/* send reply to for all log slots that are in the reply phase.
-	 * Since lastExecutedSeq increaes monotonically, this logic guarantees 
-	 * to send reply to client only once. 
-	 */
-	for (int i = startReplySeq; i <= lastExecutedSeq; i++) {
-	    ClientReqType& reqType = log[cMsg.seq].ppMsg.type; 
-	    if (reqType == ClientReqType::TX 
-		    || reqType == ClientReqType::UNLOCK_TO_COMMIT  
-		    || reqType == ClientReqType::UNLOCK_TO_ABORT) {
-		CReply reply = assembleReply(cMsg.seq);
-		connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
-	    } else if (log[cMsg.seq].ppMsg.type == ClientReqType::LOCK) {
-		CInputShardReply reply = assembleInputShardReply(cMsg.seq);
-		connman->PushMessage(client, msgMaker.Make(NetMsgType::OMNI_LOCK_REPLY, reply));
-	    } 
-	}
+	executeLog(cMsg.seq, connman); // this updates the lastExecutedIndex  
 	/* wake up the client-listening thread to send results to clients. The 
 	 * client-listening thread is probably already up if the client sends 
 	 * request too frequently. 
@@ -277,14 +276,13 @@ bool CPbft::checkMsg(CPbftMessage* msg) {
     return true;
 }
 
-CPre_prepare CPbft::assemblePPMsg(const std::shared_ptr<CClientReq>& pclientReq, ClientReqType type) {
+CPre_prepare CPbft::assemblePPMsg(const CPbftBlock& pbft_block) {
     CPre_prepare toSent; // phase is set to Pre_prepare by default.
     toSent.seq = nextSeq++;
     toSent.view = 0;
     localView = 0; // also change the local view, or the sanity check would fail.
-    toSent.type = type;
-    toSent.req = pclientReq;
-    toSent.digest = toSent.req->GetDigest();
+    toSent.pbft_block = pbft_block;
+    toSent.digest = toSent.pbft_block.hash;
     uint256 hash;
     toSent.getHash(hash); // this hash is used for signature, so client tx is not included in this hash.
     privateKey.Sign(hash, toSent.vchSig);
@@ -301,11 +299,11 @@ CPbftMessage CPbft::assembleMsg(const uint32_t seq) {
     return toSent;
 }
 
-CReply CPbft::assembleReply(const uint32_t seq) {
+CReply CPbft::assembleReply(const uint32_t seq, const char exe_res) {
     /* 'y' --- execute sucessfully
      * 'n' --- execute fail
      */
-    CReply toSent(log[seq].result, log[seq].ppMsg.digest);
+    CReply toSent(exe_res, log[seq].ppMsg.digest);
     uint256 hash;
     toSent.getHash(hash);
     privateKey.Sign(hash, toSent.vchSig);
@@ -313,8 +311,8 @@ CReply CPbft::assembleReply(const uint32_t seq) {
     return toSent;
 }
 
-CInputShardReply CPbft::assembleInputShardReply(const uint32_t seq) {
-    CInputShardReply toSent(log[seq].result, log[seq].ppMsg.digest, ((LockReq*)log[seq].ppMsg.req.get())->totalValueInOfShard);
+CInputShardReply CPbft::assembleInputShardReply(const uint32_t seq, const char exe_res, const CAmount& inputUtxoValueSum) {
+    CInputShardReply toSent(exe_res, log[seq].ppMsg.digest, inputUtxoValueSum);
     uint256 hash;
     toSent.getHash(hash);
     privateKey.Sign(hash, toSent.vchSig);
@@ -322,7 +320,7 @@ CInputShardReply CPbft::assembleInputShardReply(const uint32_t seq) {
     return toSent;
 }
 
-int CPbft::executeTransaction(const int seq) {
+int CPbft::executeLog(const int seq, CConnman* connman) {
     // execute all lower-seq tx until this one if possible.
     int i = lastExecutedSeq + 1;
     /* We should go on to execute all log slots that are in reply phase even
@@ -331,7 +329,9 @@ int CPbft::executeTransaction(const int seq) {
      * log slots after it to be executed. */
     for (; i < logSize; i++) {
         if (log[i].phase == PbftPhase::reply) {
-	    log[i].result = log[i].ppMsg.req->Execute(i);
+	    log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, connman);
+	    nCompletedTx += log[i].txCnt;
+	    std::cout << "Execute block " << log[i].ppMsg.digest.GetHex() << " at log slot = " << i  << ", block size = " << log[i].ppMsg.pbft_block.vReq.size() << ", contains " << log[i].txCnt << " TX or UNLOCK_TO_COMMIT req. current total completed tx = " << nCompletedTx << std::endl;
         } else {
             break;
         }

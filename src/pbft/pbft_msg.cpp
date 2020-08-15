@@ -15,6 +15,7 @@
 #include "coins.h"
 #include "script/interpreter.h"
 #include "undo.h"
+#include "netmessagemaker.h"
 
 void UpdateLockCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo, int nHeight);
 
@@ -40,7 +41,7 @@ void CPbftMessage::getHash(uint256& result){
 	    .Finalize((unsigned char*)&result);
 }
 
-CPre_prepare::CPre_prepare(const CPre_prepare& msg): CPbftMessage(msg), req(msg.req) { }
+CPre_prepare::CPre_prepare(const CPre_prepare& msg): CPbftMessage(msg), pbft_block(msg.pbft_block) { }
 
 CPre_prepare::CPre_prepare(const CPbftMessage& msg): CPbftMessage(msg) { }
 
@@ -58,12 +59,20 @@ void CReply::getHash(uint256& result) const {
 	    .Finalize((unsigned char*)&result);
 }
 
-char TxReq::Execute(const int seq) const {
+
+CClientReq::CClientReq(const CTransaction& tx): tx_mutable(tx) {
+    hash = tx_mutable.GetHash();
+}
+
+const uint256& CClientReq::GetHash() const {
+    return hash;
+}
+
+char TxReq::Execute(const int seq, CCoinsViewCache& view) const {
     /* -------------logic from Bitcoin code for tx processing--------- */
     CTransaction tx(tx_mutable);
     
     CValidationState state;
-    CCoinsViewCache view(pcoinsTip.get());
     if(!tx.IsCoinBase()) {
 	bool fScriptChecks = true;
 	unsigned int flags = SCRIPT_VERIFY_NONE; // only verify pay to public key hash
@@ -99,8 +108,6 @@ char TxReq::Execute(const int seq) const {
     }
 
     UpdateCoins(tx, view, seq);
-    bool flushed = view.Flush(); // flush to pcoinsTip
-    assert(flushed);
     /* -------------logic from Bitcoin code for tx processing--------- */
 
     std::cout << __func__ << ": excuted tx " << tx.GetHash().ToString()
@@ -113,7 +120,7 @@ uint256 TxReq::GetDigest() const {
 }
 
 
-char LockReq::Execute(const int seq) const {
+char LockReq::Execute(const int seq, CCoinsViewCache& view) const {
     /* we did not check if there is any input coins belonging our shard because
      * we believe the client is honest and will not send an LOCK req to a 
      * irrelavant shard. In OmniLedger, we already beleive in the client to be 
@@ -124,7 +131,6 @@ char LockReq::Execute(const int seq) const {
     CTransaction tx(tx_mutable);
     
     CValidationState state;
-    CCoinsViewCache view(pcoinsTip.get());
     bool fScriptChecks = true;
 //	    CBlockUndo blockundo;
     unsigned int flags = SCRIPT_VERIFY_NONE; // only verify pay to public key hash
@@ -165,8 +171,6 @@ char LockReq::Execute(const int seq) const {
     CTxUndo txUndo;
     UpdateLockCoins(tx, view, txUndo, seq);
     mapTxUndo.insert(std::make_pair(tx.GetHash(), txUndo));
-    bool flushed = view.Flush(); // flush to pcoinsTip
-    assert(flushed);
     /* -------------logic from Bitcoin code for tx processing--------- */
     std::cout << __func__ << ": locked input UTXOs for tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << std::endl;
     return 'y';
@@ -189,8 +193,8 @@ void CInputShardReply::getHash(uint256& result) const {
 	    .Finalize((unsigned char*)&result);
 }
 
-UnlockToCommitReq::UnlockToCommitReq(): tx_mutable(CMutableTransaction()) {}
-UnlockToCommitReq::UnlockToCommitReq(const CTransaction& txIn, const uint sigCountIn, std::vector<CInputShardReply>&& vReply) : tx_mutable(txIn), nInputShardReplies(sigCountIn), vInputShardReply(vReply){}
+UnlockToCommitReq::UnlockToCommitReq(): CClientReq(CMutableTransaction()) {}
+UnlockToCommitReq::UnlockToCommitReq(const CTransaction& txIn, const uint sigCountIn, std::vector<CInputShardReply>&& vReply) : CClientReq(txIn), nInputShardReplies(sigCountIn), vInputShardReply(vReply){}
 
 uint256 UnlockToCommitReq::GetDigest() const {
     uint256 tx_hash(tx_mutable.GetHash());
@@ -209,7 +213,7 @@ uint256 UnlockToCommitReq::GetDigest() const {
 
 bool checkInputShardReplySigs(const std::vector<CInputShardReply>& vReplies);
 
-char UnlockToCommitReq::Execute(const int seq) const {
+char UnlockToCommitReq::Execute(const int seq, CCoinsViewCache& view) const {
     if (!checkInputShardReplySigs(vInputShardReply)) {
         std::cout << __func__ << ": verify sigs fail!" << std::endl;
 	return 'n';
@@ -219,7 +223,6 @@ char UnlockToCommitReq::Execute(const int seq) const {
     CTransaction tx(tx_mutable);
     
     CValidationState state;
-    CCoinsViewCache view(pcoinsTip.get());
     unsigned int flags = SCRIPT_VERIFY_NONE; // only verify pay to public key hash
 
     /* Step 1: check the total input UTXO value is greater than the total output value.
@@ -258,8 +261,6 @@ char UnlockToCommitReq::Execute(const int seq) const {
      * 2) In output shard: add output coins to coinsview.
      */
     UpdateUnlockCommitCoins(tx, view, seq);
-    bool flushed = view.Flush(); // flush to pcoinsTip
-    assert(flushed);
     /* -------------logic from Bitcoin code for tx processing--------- */
     std::cout << __func__ << ":  commit tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << std::endl;
     return 'y';
@@ -284,11 +285,11 @@ bool checkInputShardReplySigs(const std::vector<CInputShardReply>& vReplies) {
     return true;
 }
 
-UnlockToAbortReq::UnlockToAbortReq(): tx_mutable(CMutableTransaction()) {
+UnlockToAbortReq::UnlockToAbortReq(): CClientReq(CMutableTransaction()) {
     vNegativeReply.resize(2 * CPbft::nFaulty + 1);
 }
 
-UnlockToAbortReq::UnlockToAbortReq(const CTransaction& txIn, const std::vector<CInputShardReply>& lockFailReplies) : tx_mutable(txIn), vNegativeReply(lockFailReplies){
+UnlockToAbortReq::UnlockToAbortReq(const CTransaction& txIn, const std::vector<CInputShardReply>& lockFailReplies) : CClientReq(txIn), vNegativeReply(lockFailReplies){
     assert(vNegativeReply.size() == 2 * CPbft::nFaulty + 1);
 }
 
@@ -307,7 +308,7 @@ uint256 UnlockToAbortReq::GetDigest() const {
     return result;
 }
 
-char UnlockToAbortReq::Execute(const int seq) const {
+char UnlockToAbortReq::Execute(const int seq, CCoinsViewCache& view) const {
     if (!checkInputShardReplySigs(vNegativeReply)) {
         std::cout << __func__ << ": verify sigs fail!" << std::endl;
 	return 'n';
@@ -316,10 +317,6 @@ char UnlockToAbortReq::Execute(const int seq) const {
     /* -------------logic from Bitcoin code for tx processing--------- */
     CTransaction tx(tx_mutable);
     
-    CValidationState state;
-    CCoinsViewCache view(pcoinsTip.get());
-    unsigned int flags = SCRIPT_VERIFY_NONE; // only verify pay to public key hash
-
     /* Step 1: check all replies are negative. */
     for (auto r: vNegativeReply) {
 	assert(r.reply == 'n');
@@ -335,12 +332,58 @@ char UnlockToAbortReq::Execute(const int seq) const {
     if (mapTxUndo.find(tx.GetHash()) != mapTxUndo.end()) {
 	std::cout << __func__ << ":  abort tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << ", restoring locked UTXOs."<< std::endl;
 	UpdateUnlockAbortCoins(tx, view, mapTxUndo[tx.GetHash()]);
-	bool flushed = view.Flush(); // flush to pcoinsTip
-	assert(flushed);
     } else {
 	std::cout << __func__ << ":  abort tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << ", no UTXO to restore."<< std::endl;
     }
     /* ------------- end logic from Bitcoin code for tx processing--------- */
 
     return 'y';
+}
+
+CPbftBlock::CPbftBlock(){
+    hash.SetNull();
+    vReq.clear();
+}
+
+CPbftBlock::CPbftBlock(std::deque<TypedReq> vReqIn) {
+    hash.SetNull();
+    vReq.insert(vReq.end(), vReqIn.begin(), vReqIn.end());
+}
+
+void CPbftBlock::ComputeHash(){
+    CHash256 hasher;
+    for (uint i = 0; i < vReq.size(); i++) {
+	hasher.Write((const unsigned char*)vReq[i].pReq->GetHash().begin(), vReq[i].pReq->GetHash().size());
+    }
+    hasher.Finalize((unsigned char*)&hash);
+}
+
+uint32_t CPbftBlock::Execute(const int seq, CConnman* connman) const {
+    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+    uint32_t txCnt = 0;
+    CCoinsViewCache view(pcoinsTip.get());
+    for (uint i = 0; i < vReq.size(); i++) {
+	char exe_res = vReq[i].pReq->Execute(seq, view);
+	if (vReq[i].type == ClientReqType::LOCK) {
+	    CInputShardReply reply = g_pbft->assembleInputShardReply(seq, exe_res, ((LockReq*)vReq[i].pReq.get())->totalValueInOfShard);
+	    connman->PushMessage(g_pbft->client, msgMaker.Make(NetMsgType::OMNI_LOCK_REPLY, reply));
+	} else {
+	    CReply reply = g_pbft->assembleReply(seq, exe_res);
+	    connman->PushMessage(g_pbft->client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
+	    if (vReq[i].type == ClientReqType::TX || vReq[i].type == ClientReqType::UNLOCK_TO_COMMIT) {
+		/* only count TX and UNLOCK_TO_COMMIT requests */
+		txCnt++;
+	    }
+	}
+    }
+    bool flushed = view.Flush(); // flush to pcoinsTip
+    assert(flushed);
+    return txCnt;
+}
+
+uint256 TypedReq::GetHash() const {
+    uint256 req_hash(pReq->GetDigest());
+    uint256 result;
+    CHash256().Write((const unsigned char*)req_hash.begin(), req_hash.size()).Write((const unsigned char*)type, sizeof(type)).Finalize((unsigned char*)&result);
+    return result;
 }
