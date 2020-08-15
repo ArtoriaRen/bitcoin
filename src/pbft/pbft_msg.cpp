@@ -15,6 +15,7 @@
 #include "consensus/params.h"
 #include "undo.h"
 #include "consensus/tx_verify.h"
+#include "netmessagemaker.h"
 
 CPbftMessage::CPbftMessage(): view(0), seq(0), digest(), peerID(pbftID), sigSize(0), vchSig(){
     vchSig.reserve(72); // the expected sig size is 72 bytes.
@@ -31,16 +32,16 @@ void CPbftMessage::getHash(uint256& result){
 	    .Finalize((unsigned char*)&result);
 }
 
-CPre_prepare::CPre_prepare(const CPre_prepare& msg): CPbftMessage(msg), tx_mutable(msg.tx_mutable) { }
+CPre_prepare::CPre_prepare(const CPre_prepare& msg): CPbftMessage(msg), pbft_block(msg.pbft_block) { }
 
 CPre_prepare::CPre_prepare(const CPbftMessage& msg): CPbftMessage(msg) { }
 
-char CPre_prepare::Execute(const int seq) const {
+
+
+char ExecuteTx(CMutableTxRef tx_mutable, const int seq, CCoinsViewCache& view) {
     /* -------------logic from Bitcoin code for tx processing--------- */
-    CTransaction tx(tx_mutable);
-    
+    CTransaction tx(*tx_mutable);
     CValidationState state;
-    CCoinsViewCache view(pcoinsTip.get());
     if(!tx.IsCoinBase()) {
         bool fScriptChecks = true;
     //	    CBlockUndo blockundo;
@@ -81,8 +82,6 @@ char CPre_prepare::Execute(const int seq) const {
 //		blockundo.vtxundo.push_back(CTxUndo());
 //	    }
     UpdateCoins(tx, view, seq);
-    bool flushed = view.Flush(); // flush to pcoinsTip
-    assert(flushed);
     /* -------------logic from Bitcoin code for tx processing--------- */
 
     std::cout << __func__ << ": excuted tx " << tx.GetHash().ToString()
@@ -102,4 +101,37 @@ void CReply::getHash(uint256& result) const {
     CHash256().Write((const unsigned char*)&reply, sizeof(reply))
 	    .Write(digest.begin(), sizeof(digest))
 	    .Finalize((unsigned char*)&result);
+}
+
+CPbftBlock::CPbftBlock(){
+    hash.SetNull();
+    vReq.clear();
+}
+
+CPbftBlock::CPbftBlock(std::deque<CMutableTxRef> vReqIn) {
+    hash.SetNull();
+    vReq.insert(vReq.end(), vReqIn.begin(), vReqIn.end());
+}
+
+void CPbftBlock::ComputeHash(){
+    CHash256 hasher;
+    for (uint i = 0; i < vReq.size(); i++) {
+	hasher.Write((const unsigned char*)vReq[i]->GetHash().begin(), vReq[i]->GetHash().size());
+    }
+    hasher.Finalize((unsigned char*)&hash);
+}
+
+uint32_t CPbftBlock::Execute(const int seq, CConnman* connman) const {
+    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+    uint32_t txCnt = 0;
+    CCoinsViewCache view(pcoinsTip.get());
+    for (uint i = 0; i < vReq.size(); i++) {
+	char exe_res = ExecuteTx(vReq[i], seq, view);
+        CReply reply = g_pbft->assembleReply(seq, exe_res);
+        connman->PushMessage(g_pbft->client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
+        txCnt++;
+    }
+    bool flushed = view.Flush(); // flush to pcoinsTip
+    assert(flushed);
+    return txCnt;
 }

@@ -1897,27 +1897,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	}
     }
 
-    /* The pbft leader receiving a tx will assemble pp message. */
-    else if (strCommand == NetMsgType::PBFT_TX) {
-        CTransactionRef ptx;
-        vRecv >> ptx;
-        const CTransaction& tx = *ptx;
-	CPre_prepare ppMsg = pbft->assemblePPMsg(tx);
-	/* add the ppMsg to the leader's own log. */
-	pbft->log[ppMsg.seq].ppMsg = ppMsg;
-	pbft->log[ppMsg.seq].phase = PbftPhase::prepare;
-	const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
-	std::cout << __func__ << ": received tx = " << tx.ToString()
-                << ", peers.size = " << pbft->peers.size()
-		<< ", log slot "<< ppMsg.seq << " for tx = "
-		<< pbft->log[ppMsg.seq].ppMsg.tx_mutable.GetHash().GetHex() << std::endl;
-        uint32_t start_peerID = pbftID + 1; // skip the leader id b/c it is myself
-	uint32_t end_peerID = start_peerID + CPbft::groupSize - 1;
-	for (uint32_t i = start_peerID; i < end_peerID; i++) {
-	    connman->PushMessage(pbft->peers[i], msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
-	}
-    }
-
     else if (strCommand == NetMsgType::PBFT_PP) {
         CPre_prepare ppMsg;
         vRecv >> ppMsg;
@@ -2995,24 +2974,21 @@ bool PeerLogicValidation::SendPPMessages(){
 
     if (pbft->isLeader() && pbft->reqQueue.size() > 0) {
 	pbft->printQueueSize(); // only log queue size here cuz it will not change anywhere else
-	//while (!pbft->reqQueue.empty() && pbft->nReqInFly < nMaxReqInFly) {
-	std::deque<CTransactionRef> reqQ(pbft->reqQueue.get_all());
-	for (uint i = 0; i < reqQ.size(); i++) {
-	    CTransactionRef req = reqQ[i];
-	    /* send ppMsg for this reqs.*/
-	    CPre_prepare ppMsg = pbft->assemblePPMsg(*req);
-	    pbft->log[ppMsg.seq].ppMsg = ppMsg;
-	    pbft->log[ppMsg.seq].phase = PbftPhase::prepare;
-	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-	    std::cout << ", log slot "<< ppMsg.seq << " for tx = "
-		    << pbft->log[ppMsg.seq].ppMsg.tx_mutable.GetHash().GetHex().substr(0, 10)
-		    << ", peers.size = " << pbft->peers.size()<< std::endl;
-	    uint32_t start_peerID = pbftID + 1; // skip the leader id b/c it is myself
-	    uint32_t end_peerID = start_peerID + CPbft::groupSize - 1;
-	    for (uint32_t i = start_peerID; i < end_peerID; i++) {
-		connman->PushMessage(pbft->peers[i], msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
-	    }
-//	    pbft->nReqInFly++;
+	CPbftBlock pbftblock(pbft->reqQueue.get_upto(static_cast<uint32_t>(maxBlockSize)));
+	pbftblock.ComputeHash();
+	std::cout << __func__ << ": block size = " << pbftblock.vReq.size() << " client reqs" << std::endl;
+	CPre_prepare ppMsg = pbft->assemblePPMsg(pbftblock);
+	pbft->log[ppMsg.seq].ppMsg = ppMsg;
+	pbft->log[ppMsg.seq].phase = PbftPhase::prepare;
+	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+	std::cout << __func__ << ": log slot "<< ppMsg.seq << " for pbftblock = "
+		<< pbft->log[ppMsg.seq].ppMsg.pbft_block.hash.GetHex().substr(0, 10)
+		<< ", block size = " << pbft->log[ppMsg.seq].ppMsg.pbft_block.vReq.size()
+		<< " reqs." << std::endl;
+	uint32_t start_peerID = pbftID + 1; // skip the leader id b/c it is myself
+	uint32_t end_peerID = start_peerID + CPbft::groupSize - 1;
+	for (uint32_t i = start_peerID; i < end_peerID; i++) {
+	    connman->PushMessage(pbft->peers[i], msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
 	}
     }
     return true;
@@ -3495,7 +3471,8 @@ bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CD
     else if (strCommand == NetMsgType::PBFT_TX) {
         CTransactionRef ptx;
         vRecv >> ptx;
-        pbft->reqQueue.push_back(ptx);
+        CMutableTxRef pMutabletx = std::make_shared<CMutableTransaction>(*ptx);
+        pbft->reqQueue.push_back(pMutabletx);
         g_connman->WakeMessageHandler();
 //        std::cout << __func__ << ": push to req queue tx = " << ptx->GetHash().GetHex().substr(0, 10) << std::endl;
     }

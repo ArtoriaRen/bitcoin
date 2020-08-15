@@ -17,7 +17,10 @@
 #include "util.h"
 #include "uint256.h"
 #include "primitives/transaction.h"
-//global view number
+#include "net.h"
+#include "coins.h"
+
+typedef std::shared_ptr<CMutableTransaction> CMutableTxRef;
 
 enum PbftPhase {pre_prepare, prepare, commit, reply, end};
 
@@ -93,35 +96,6 @@ public:
     void getHash(uint256& result) const;
 };
 
-class CPre_prepare : public CPbftMessage{
-    // CBlock block;
-    /* we can use P2P network to disseminate the block before the primary send Pre_prepare msg 
-     * so that the block does not have to be in the Pre-prepare message.*/
-public:
-    CMutableTransaction tx_mutable;
-
-    CPre_prepare():CPbftMessage(){
-    }
-    
-    //add explicit?
-    CPre_prepare(const CPre_prepare& msg);
-    CPre_prepare(const CPbftMessage& msg);
-
-    template<typename Stream>
-    void Serialize(Stream& s) const{
-	CPbftMessage::Serialize(s);
-	tx_mutable.Serialize(s);
-    }
-    
-    template<typename Stream>
-    void Unserialize(Stream& s) {
-	CPbftMessage::Unserialize(s);
-	tx_mutable.Unserialize(s);
-    }
-
-    char Execute(const int seq) const;
-};
-
 
 //class CPrepare: public CPbftMessage{
 //    
@@ -139,6 +113,59 @@ public:
 //};
 
 
+
+class CPbftBlock{
+public:
+    uint256 hash; 
+    std::vector<CMutableTxRef> vReq;
+
+    CPbftBlock();
+    CPbftBlock(std::deque<CMutableTxRef> vReqIn);
+    void ComputeHash();
+    uint32_t Execute(const int seq, CConnman* connman) const;
+
+    template<typename Stream>
+    void Serialize(Stream& s) const{
+	uint block_size = vReq.size();
+	s.write((char*)&block_size, sizeof(block_size));
+	for (uint i = 0; i < vReq.size(); i++) {
+	    vReq[i]->Serialize(s);
+	}
+    }
+
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+	uint block_size;
+	s.read((char*)&block_size, sizeof(block_size));
+	vReq.resize(block_size);
+	for (uint i = 0; i < vReq.size(); i++) {
+	    vReq[i]->Unserialize(s);
+	}
+    }
+};
+
+class CPre_prepare : public CPbftMessage{
+public:
+    CPbftBlock pbft_block;
+   
+    CPre_prepare():CPbftMessage(), pbft_block() { }
+    CPre_prepare(const CPbftMessage& pbftMsg, const CPbftBlock& blockIn):CPbftMessage(pbftMsg), pbft_block(blockIn) { }
+    
+    CPre_prepare(const CPre_prepare& msg);
+    CPre_prepare(const CPbftMessage& msg);
+
+    template<typename Stream>
+    void Serialize(Stream& s) const{
+	CPbftMessage::Serialize(s);
+	pbft_block.Serialize(s);
+    }
+    
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+	CPbftMessage::Unserialize(s);
+	pbft_block.Unserialize(s);
+    }
+};
 
 #endif /* PBFT_MSG_H */
 

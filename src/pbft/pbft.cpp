@@ -13,6 +13,8 @@
 #include "crypto/aes.h"
 #include "consensus/tx_verify.h"
 #include "netmessagemaker.h"
+#include <memory>
+#include "netmessagemaker.h"
 
 bool fIsClient; // if this node is a pbft client.
 std::string leaderAddrString;
@@ -20,8 +22,9 @@ std::string clientAddrString;
 int32_t pbftID; 
 int32_t nMaxReqInFly; 
 int32_t QSizePrintPeriod;
+int32_t maxBlockSize = 2000;
 
-CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), privateKey(CKey()) {
+CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
@@ -31,7 +34,7 @@ ThreadSafeQueue::ThreadSafeQueue() { }
 
 ThreadSafeQueue::~ThreadSafeQueue() { }
 
-CTransactionRef& ThreadSafeQueue::front() {
+CMutableTxRef& ThreadSafeQueue::front() {
     std::unique_lock<std::mutex> mlock(mutex_);
     while (queue_.empty()) {
         cond_.wait(mlock);
@@ -39,11 +42,25 @@ CTransactionRef& ThreadSafeQueue::front() {
     return queue_.front();
 }
 
-std::deque<CTransactionRef> ThreadSafeQueue::get_all() {
+std::deque<CMutableTxRef> ThreadSafeQueue::get_all() {
     std::unique_lock<std::mutex> mlock(mutex_);
-    std::deque<CTransactionRef> ret(queue_);
+    std::deque<CMutableTxRef> ret(queue_);
     queue_.clear();
     return ret;
+}
+
+std::deque<CMutableTxRef> ThreadSafeQueue::get_upto(uint32_t upto) {
+    std::unique_lock<std::mutex> mlock(mutex_);
+    if (queue_.size() < upto) {
+	std::deque<CMutableTxRef> ret(queue_);
+	queue_.clear();
+	return ret;
+    } else {
+	std::deque<CMutableTxRef> ret;
+	ret.insert(ret.end(), queue_.begin(), queue_.begin() + upto);
+	queue_.erase(queue_.begin(), queue_.begin() + upto);
+	return ret;
+    }
 }
 
 void ThreadSafeQueue::pop_front() {
@@ -54,14 +71,14 @@ void ThreadSafeQueue::pop_front() {
     queue_.pop_front();
 }
 
-void ThreadSafeQueue::push_back(const CTransactionRef& item) {
+void ThreadSafeQueue::push_back(const CMutableTxRef& item) {
     std::unique_lock<std::mutex> mlock(mutex_);
     queue_.push_back(item);
     mlock.unlock(); // unlock before notificiation to minimize mutex con
     cond_.notify_one(); // notify one waiting thread
 }
 
-void ThreadSafeQueue::push_back(CTransactionRef&& item) {
+void ThreadSafeQueue::push_back(CMutableTxRef&& item) {
     std::unique_lock<std::mutex> mlock(mutex_);
     queue_.push_back(std::move(item));
     mlock.unlock(); // unlock before notificiation to minimize mutex con
@@ -88,8 +105,9 @@ bool CPbft::ProcessPP(CConnman* connman, CPre_prepare& ppMsg) {
     }
 
     // check if the digest matches client req
-    if (ppMsg.digest != ppMsg.tx_mutable.GetHash()) {
-	std::cerr << "digest does not match client tx. Client txid = " << ppMsg.tx_mutable.GetHash().GetHex() << ", but digest = " << ppMsg.digest.GetHex() << std::endl;
+    ppMsg.pbft_block.ComputeHash();
+    if (ppMsg.digest != ppMsg.pbft_block.hash) {
+	std::cerr << "digest does not match block hash tx. block hash = " << ppMsg.pbft_block.hash.GetHex() << ", but digest = " << ppMsg.digest.GetHex() << std::endl;
 	return false;
     }
     // add to log
@@ -202,16 +220,7 @@ bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
 	 * cMsg.seq will not be executed.
 	 */
 	int startReplySeq = lastExecutedSeq + 1; 
-	executeTransaction(cMsg.seq); // this updates the lastExecutedIndex  
-	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-	/* send reply to for all log slots that are in the reply phase.
-	 * Since lastExecutedSeq increaes monotonically, this logic guarantees 
-	 * to send reply to client only once. 
-	 */
-	CReply cReply = assembleReply(cMsg.seq);
-	for (int i = startReplySeq; i <= lastExecutedSeq; i++) {
-            connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, cReply));
-	}
+	executeLog(cMsg.seq, connman); // this updates the lastExecutedIndex  
 	/* wake up the client-listening thread to send results to clients. The 
 	 * client-listening thread is probably already up if the client sends 
 	 * request too frequently. 
@@ -256,16 +265,13 @@ bool CPbft::checkMsg(CPbftMessage* msg) {
     return true;
 }
 
-CPre_prepare CPbft::assemblePPMsg(const CTransaction& tx) {
-#ifdef MSG_ASSEMBLE
-    std::cout << "assembling pre_prepare, seq = " << seq << "client req = " << clientReq << std::endl;
-#endif
+CPre_prepare CPbft::assemblePPMsg(const CPbftBlock& pbft_block) {
     CPre_prepare toSent; // phase is set to Pre_prepare by default.
     toSent.seq = nextSeq++;
     toSent.view = 0;
     localView = 0; // also change the local view, or the sanity check would fail.
-    toSent.digest = tx.GetHash();
-    toSent.tx_mutable = CMutableTransaction(tx);
+    toSent.pbft_block = pbft_block;
+    toSent.digest = toSent.pbft_block.hash;
     uint256 hash;
     toSent.getHash(hash); // this hash is used for signature, so client tx is not included in this hash.
     privateKey.Sign(hash, toSent.vchSig);
@@ -282,18 +288,19 @@ CPbftMessage CPbft::assembleMsg(uint32_t seq) {
     return toSent;
 }
 
-CReply CPbft::assembleReply(uint32_t seq) {
+CReply CPbft::assembleReply(const uint32_t seq, const char exe_res) {
     /* 'y' --- execute sucessfully
      * 'n' --- execute fail
      */
-    CReply toSent(log[seq].result, log[seq].ppMsg.digest);
+    CReply toSent(exe_res, log[seq].ppMsg.digest);
     uint256 hash;
     toSent.getHash(hash);
     privateKey.Sign(hash, toSent.vchSig);
+    toSent.sigSize = toSent.vchSig.size();
     return toSent;
 }
 
-int CPbft::executeTransaction(const int seq) {
+int CPbft::executeLog(const int seq, CConnman* connman) {
     // execute all lower-seq tx until this one if possible.
     int i = lastExecutedSeq + 1;
     /* We should go on to execute all log slots that are in reply phase even
@@ -302,7 +309,9 @@ int CPbft::executeTransaction(const int seq) {
      * log slots after it to be executed. */
     for (; i < logSize; i++) {
         if (log[i].phase == PbftPhase::reply) {
-	    log[i].result = log[i].ppMsg.Execute(i);
+	    log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, connman);
+	    nCompletedTx += log[i].txCnt;
+	    std::cout << "Execute block " << log[i].ppMsg.digest.GetHex() << " at log slot = " << i  << ", block size = " << log[i].ppMsg.pbft_block.vReq.size() << ", contains " << log[i].txCnt << " TX or UNLOCK_TO_COMMIT req. current total completed tx = " << nCompletedTx << std::endl;
         } else {
             break;
         }

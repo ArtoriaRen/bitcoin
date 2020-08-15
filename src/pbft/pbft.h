@@ -28,24 +28,26 @@
 extern int32_t pbftID;
 extern int32_t nMaxReqInFly; 
 extern int32_t QSizePrintPeriod;
+extern int32_t maxBlockSize; 
 
 class ThreadSafeQueue {
 public:
     ThreadSafeQueue();
     ~ThreadSafeQueue();
 
-    CTransactionRef& front();
-    std::deque<CTransactionRef> get_all();
+    CMutableTxRef& front();
+    std::deque<CMutableTxRef> get_all();
+    std::deque<CMutableTxRef> get_upto(uint32_t upto);
     void pop_front();
 
-    void push_back(const CTransactionRef& item);
-    void push_back(CTransactionRef&& item);
+    void push_back(const CMutableTxRef& item);
+    void push_back(CMutableTxRef&& item);
 
     int size();
     bool empty();
 
 private:
-    std::deque<CTransactionRef> queue_;
+    std::deque<CMutableTxRef> queue_;
     std::mutex mutex_;
     std::condition_variable cond_;
 };
@@ -72,6 +74,7 @@ public:
     std::unordered_map<int32_t, CPubKey> pubKeyMap;
 
     int nReqInFly; 
+    uint32_t nCompletedTx;
     /* a queue storing client req waiting for being processed. */
     ThreadSafeQueue reqQueue;
     /* we need the client conn man to wake up the client listening thread to send
@@ -90,12 +93,12 @@ public:
     // Check Commit message signature, add to corresponding log, check if we have accumulated 2f+1 Commit message. If so, execute transactions and reply. 
     bool ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck = true);
 
-    CPre_prepare assemblePPMsg(const CTransaction& tx);
+    CPre_prepare assemblePPMsg(const CPbftBlock& pbft_block);
     CPbftMessage assembleMsg(const uint32_t seq); 
-    CReply assembleReply(const uint32_t seq);
+    CReply assembleReply(const uint32_t seq, const char exe_res);
     bool checkMsg(CPbftMessage* msg);
     /*return the last executed seq */
-    int executeTransaction(const int seq);
+    int executeLog(const int seq, CConnman* connman);
 
     inline void printQueueSize(){
 	    /* log queue size if we have reached the period. */
