@@ -1763,5 +1763,17 @@ bool AppInitMain()
     StartWallets(scheduler);
 #endif
 
+    uint32_t txCnt = 0;
+    while (true) {
+	if (!g_pbft->txResendQueue.empty()) {
+	    txCnt += sendAllTailTx(5000); // send at rate 200 tx/s. Sleep for 5000 us.
+	} else {
+	    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	}
+	if (ShutdownRequested()) {
+	    std::cout << "init thread sent " << txCnt << "tail tx" << std::endl;
+	    break;
+	}
+    }
     return true;
 }

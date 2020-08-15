@@ -1849,6 +1849,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	} else {
 	    std::cout << strCommand << " sig ok" << std::endl;
 	}
+	std::cout << __func__ << ": received PBFT_REPLY_BLK for block merkle root = " <<  replyBlock.hashMerkleRoot.ToString().substr(0,10) << ",  block size = " <<  replyBlock.vReq.size() << " from " << pfrom->GetAddrName() << std::endl;
 	assert(g_pbft->mapReplyBlockStat[replyBlock.hashMerkleRoot].replyBlk.isNull());
 	g_pbft->mapReplyBlockStat[replyBlock.hashMerkleRoot].replyBlk = replyBlock;
 	if (g_pbft->mapReplyBlockStat[replyBlock.hashMerkleRoot].nConfirm == 2 * CPbft::nFaulty) {
@@ -1865,7 +1866,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	} else {
 	    std::cout << strCommand << " sig ok" << std::endl;
 	}
-	std::cout << __func__ << ": received PBFT_REPLY for block merkle root = " << reply.digest.ToString().substr(0,10) << ", txCnt = " << reply.txCnt << " from " << pfrom->GetAddrName() << std::endl;
+	std::cout << __func__ << ": received PBFT_REPLY for digest = " << reply.digest.ToString().substr(0,10) << ", txCnt = " << reply.txCnt << " from " << pfrom->GetAddrName() << std::endl;
 
 	CReplyBlockStat& replyStat = g_pbft->mapReplyBlockStat[reply.digest];
 	replyStat.nConfirm++;
