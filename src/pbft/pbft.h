@@ -100,8 +100,8 @@ public:
 
     CPre_prepare assemblePPMsg(const CPbftBlock& pbft_block);
     CPbftMessage assembleMsg(const uint32_t seq); 
-    CReply assembleReply(const uint32_t seq, const char exe_res);
-    CInputShardReply assembleInputShardReply(const uint32_t seq, const char exe_res, const CAmount& inputUtxoValueSum);
+    CReply assembleReply(const uint32_t seq, const uint32_t idx, const char exe_res);
+    CInputShardReply assembleInputShardReply(const uint32_t seq, const uint32_t idx, const char exe_res, const CAmount& inputUtxoValueSum);
     bool checkMsg(CPbftMessage* msg);
     /*return the last executed seq */
     int executeLog(const int seq, CConnman* connman);

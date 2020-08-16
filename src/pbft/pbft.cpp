@@ -299,11 +299,11 @@ CPbftMessage CPbft::assembleMsg(const uint32_t seq) {
     return toSent;
 }
 
-CReply CPbft::assembleReply(const uint32_t seq, const char exe_res) {
+CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char exe_res) {
     /* 'y' --- execute sucessfully
      * 'n' --- execute fail
      */
-    CReply toSent(exe_res, log[seq].ppMsg.digest);
+    CReply toSent(exe_res, log[seq].ppMsg.pbft_block.vReq[idx].pReq->GetDigest());
     uint256 hash;
     toSent.getHash(hash);
     privateKey.Sign(hash, toSent.vchSig);
@@ -311,8 +311,8 @@ CReply CPbft::assembleReply(const uint32_t seq, const char exe_res) {
     return toSent;
 }
 
-CInputShardReply CPbft::assembleInputShardReply(const uint32_t seq, const char exe_res, const CAmount& inputUtxoValueSum) {
-    CInputShardReply toSent(exe_res, log[seq].ppMsg.digest, inputUtxoValueSum);
+CInputShardReply CPbft::assembleInputShardReply(const uint32_t seq, const uint32_t idx, const char exe_res, const CAmount& inputUtxoValueSum) {
+    CInputShardReply toSent(exe_res, log[seq].ppMsg.pbft_block.vReq[idx].pReq->GetDigest(), inputUtxoValueSum);
     uint256 hash;
     toSent.getHash(hash);
     privateKey.Sign(hash, toSent.vchSig);
