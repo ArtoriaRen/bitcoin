@@ -299,11 +299,11 @@ CPbftMessage CPbft::assembleMsg(const uint32_t seq) {
     return toSent;
 }
 
-CReply CPbft::assembleReply(const uint32_t seq, const char exe_res) {
+CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char exe_res) {
     /* 'y' --- execute sucessfully
      * 'n' --- execute fail
      */
-    CReply toSent(exe_res, log[seq].ppMsg.digest);
+    CReply toSent(exe_res, log[seq].ppMsg.pbft_block.vReq[idx].pReq->GetDigest());
     uint256 hash;
     toSent.getHash(hash);
     privateKey.Sign(hash, toSent.vchSig);
@@ -311,13 +311,13 @@ CReply CPbft::assembleReply(const uint32_t seq, const char exe_res) {
     return toSent;
 }
 
-CInputShardReply CPbft::assembleInputShardReply(const uint32_t seq, const char exe_res, const CAmount& inputUtxoValueSum) {
+CInputShardReply CPbft::assembleInputShardReply(const uint32_t seq, const uint32_t idx, const char exe_res, const CAmount& inputUtxoValueSum) {
     /* Strictly speaking, the reply should use log[seq].ppMsg.digest, aka the hash of the 
      * OMNI_LOCK req as the digestIn argument, but the client would need to create another map 
      * mapping OMNI_LOCK req hash to txid. Since we trust the client to be the
      * 2PC leader, we believe it would not send a TxReq or another LockReq for the same tx. 
      * Otherwise, these req would have the same digest field of the reply. */
-    CInputShardReply toSent(exe_res, log[seq].ppMsg.digest, inputUtxoValueSum);
+    CInputShardReply toSent(exe_res, log[seq].ppMsg.pbft_block.vReq[idx].pReq->GetDigest(), inputUtxoValueSum);
     uint256 hash;
     toSent.getHash(hash);
     privateKey.Sign(hash, toSent.vchSig);

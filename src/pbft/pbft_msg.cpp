@@ -378,10 +378,10 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman) const {
     for (uint i = 0; i < vReq.size(); i++) {
 	char exe_res = vReq[i].pReq->Execute(seq, view);
 	if (vReq[i].type == ClientReqType::LOCK) {
-	    CInputShardReply reply = g_pbft->assembleInputShardReply(seq, exe_res, ((LockReq*)vReq[i].pReq.get())->totalValueInOfShard);
+	    CInputShardReply reply = g_pbft->assembleInputShardReply(seq, i, exe_res, ((LockReq*)vReq[i].pReq.get())->totalValueInOfShard);
 	    connman->PushMessage(g_pbft->client, msgMaker.Make(NetMsgType::OMNI_LOCK_REPLY, reply));
 	} else {
-	    CReply reply = g_pbft->assembleReply(seq, exe_res);
+	    CReply reply = g_pbft->assembleReply(seq, i, exe_res);
 	    connman->PushMessage(g_pbft->client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
 	    if (vReq[i].type == ClientReqType::TX || vReq[i].type == ClientReqType::UNLOCK_TO_COMMIT) {
 		/* only count TX and UNLOCK_TO_COMMIT requests */
