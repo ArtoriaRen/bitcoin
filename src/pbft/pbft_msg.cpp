@@ -60,7 +60,9 @@ void CReply::getHash(uint256& result) const {
 }
 
 
-CClientReq::CClientReq(const CTransaction& tx): tx_mutable(tx) {
+CClientReq::CClientReq(const CTransaction& tx): tx_mutable(tx), hash(tx.GetHash()) { }
+
+void CClientReq::UpdateHash() {
     hash = tx_mutable.GetHash();
 }
 

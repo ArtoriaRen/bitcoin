@@ -131,9 +131,12 @@ public:
 class CClientReq{
 public:
     CMutableTransaction tx_mutable;
+
+    /* in-memory only. for fast hash retrivel. should never go across network. */
     uint256 hash;
 
     CClientReq(const CTransaction& tx);
+    void UpdateHash();
     const uint256& GetHash() const;
     
     /* we did not put serialization methods here because c++ does not allow
@@ -141,6 +144,16 @@ public:
      */
     virtual char Execute(const int seq, CCoinsViewCache& view) const = 0; // seq is passed in because we use it as block height.
     virtual uint256 GetDigest() const = 0;
+
+    template<typename Stream>
+    void Serialize(Stream& s) const{
+	tx_mutable.Serialize(s);
+    }
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+	tx_mutable.Unserialize(s);
+	UpdateHash();
+    }
 //    virtual ~CClientReq(){};
 };
 
@@ -151,11 +164,11 @@ public:
 
     template<typename Stream>
     void Serialize(Stream& s) const{
-	tx_mutable.Serialize(s);
+	CClientReq::Serialize(s);
     }
     template<typename Stream>
     void Unserialize(Stream& s) {
-	tx_mutable.Unserialize(s);
+	CClientReq::Unserialize(s);
     }
     char Execute(const int seq, CCoinsViewCache& view) const override;
     uint256 GetDigest() const override;
@@ -175,11 +188,11 @@ public:
 
     template<typename Stream>
     void Serialize(Stream& s) const{
-	tx_mutable.Serialize(s);
+	CClientReq::Serialize(s);
     }
     template<typename Stream>
     void Unserialize(Stream& s) {
-	tx_mutable.Unserialize(s);
+	CClientReq::Unserialize(s);
     }
     char Execute(const int seq, CCoinsViewCache& view) const override;
     uint256 GetDigest() const override;
@@ -205,7 +218,7 @@ public:
 
     template<typename Stream>
     void Serialize(Stream& s) const{
-	tx_mutable.Serialize(s);
+	CClientReq::Serialize(s);
 	s.write((char*)&nInputShardReplies, sizeof(nInputShardReplies));
 	for (uint i = 0; i < nInputShardReplies; i++) {
 	    vInputShardReply[i].Serialize(s);
@@ -213,7 +226,7 @@ public:
     }
     template<typename Stream>
     void Unserialize(Stream& s) {
-	tx_mutable.Unserialize(s);
+	CClientReq::Unserialize(s);
 	s.read((char*)&nInputShardReplies, sizeof(nInputShardReplies));
 	vInputShardReply.resize(nInputShardReplies);
 	for (uint i = 0; i < nInputShardReplies; i++) {
@@ -236,14 +249,14 @@ public:
 
     template<typename Stream>
     void Serialize(Stream& s) const{
-	tx_mutable.Serialize(s);
+	CClientReq::Serialize(s);
 	for (auto reply: vNegativeReply) {
 	    reply.Serialize(s);
 	}
     }
     template<typename Stream>
     void Unserialize(Stream& s) {
-	tx_mutable.Unserialize(s);
+	CClientReq::Unserialize(s);
 	for (uint i = 0; i < vNegativeReply.size(); i++) {
 	     vNegativeReply[i].Unserialize(s);
 	}
