@@ -76,7 +76,7 @@ int32_t TxPlacer::randomPlaceUTXO(const uint256& txid) {
 	return (int32_t)(inShardId.GetLow64());
 }
 
-std::vector<int32_t> TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCache& cache, std::vector<std::vector<uint32_t> >& vShardUtxoIdxToLock){
+std::vector<int32_t> TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCache& cache, std::vector<std::vector<uint32_t> >& vShardUtxoIdxToLock, const uint32_t block_height){
     std::vector<int32_t> ret;
 
     /* random place coinbase tx */
@@ -95,9 +95,7 @@ std::vector<int32_t> TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCach
     //std::cout << " tx " << tx.GetHash().GetHex().substr(0,10) << " inputs : ";
     for(uint32_t i = 0; i < tx.vin.size(); i++) {
 	//std::cout << "Outpoint (" << tx.vin[i].prevout.hash.GetHex().substr(0, 10) << ", " << tx.vin[i].prevout.n << "), ";
-	if(!cache.HaveCoin(tx.vin[i].prevout)) {
-	    return ret;
-	}
+	assert(cache.HaveCoin(tx.vin[i].prevout));
 	mapInputShardUTXO[cache.AccessCoin(tx.vin[i].prevout).shardAffinity].push_back(i);
     }
     //std::cout << std::endl;
@@ -109,8 +107,7 @@ std::vector<int32_t> TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCach
      * info of this outputs of tx to coinsviewcache for future use. 
      */
     //std::cout << __func__ << ": add to mapTxShard, tx = " << tx.GetHash().GetHex().substr(0, 10) << ", outputShard = " << outputShard << std::endl;
-    bool flushed = cache.Flush(); // flush to pcoinsTip
-    assert(flushed);
+    AddCoins(cache, tx, block_height, outputShard);
 
     /* inputShardIds.size() is the shard span of this tx. */
     shardCntMap[tx.vin.size()][mapInputShardUTXO.size()]++;
@@ -345,13 +342,14 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
 	if ((j & 0x04) == 0) {
 	    if (ShutdownRequested())
 	    	return cnt;
-	    while (!g_pbft->txResendQueue.empty()) {
-		TxBlockInfo& txInfo = g_pbft->txResendQueue.front();
-		sendTx(txInfo.tx, txInfo.n, txInfo.blockHeight);
-		g_pbft->txResendQueue.pop_front();
-	        cnt++;
-		//nanosleep(&sleep_length, NULL);
-	    }
+	    //while (!g_pbft->txResendQueue.empty()) {
+	    //    TxBlockInfo& txInfo = g_pbft->txResendQueue.front();
+	    //    std::cout << "resend tx " << txInfo.tx->GetHash() << std::endl;
+	    //    sendTx(txInfo.tx, txInfo.n, txInfo.blockHeight);
+	    //    g_pbft->txResendQueue.pop_front();
+	    //    cnt++;
+	    //    //nanosleep(&sleep_length, NULL);
+	    //}
 	}
     }
     return cnt;
@@ -378,11 +376,11 @@ uint32_t sendAllTailTx(int txSendPeriod) {
 
 bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height) {
 	TxPlacer txPlacer;
-	CCoinsViewCache view(pcoinsTip.get());
+	//CCoinsViewCache view(pcoinsTip.get());
 	const uint256& hashTx = tx->GetHash();
 	/* get the input shards and output shards id*/
 	std::vector<std::vector<uint32_t> > vShardUtxoIdxToLock;
-	std::vector<int32_t> shards = txPlacer.smartPlace(*tx, view, vShardUtxoIdxToLock);
+	std::vector<int32_t> shards = txPlacer.smartPlace(*tx, *pcoinsTip, vShardUtxoIdxToLock, block_height);
 
 	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	assert((tx->IsCoinBase() && shards.size() == 1) || (!tx->IsCoinBase() && shards.size() >= 2)); // there must be at least one output shard and one input shard for non-coinbase tx.

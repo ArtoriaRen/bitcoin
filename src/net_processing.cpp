@@ -1863,8 +1863,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		std::cout << "tx " << reply.digest.GetHex().substr(0,10);
 		if (reply.reply == 'y') {
 			std::cout << ", SUCCEED, ";
-			TxBlockInfo& txinfo= g_pbft->txInFly[reply.digest];
-			AddCoins(*pcoinsTip, *(txinfo.tx), txinfo.blockHeight, reply.peerID/CPbft::groupSize);
 			g_pbft->txInFly.erase(reply.digest);
 			g_pbft->nCompletedTx++;
 			if (g_pbft->nCompletedTx % thruInterval == 0) {
@@ -1884,8 +1882,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		if (reply.reply == 'y' && inputShardRplMap[txid].decision == 'c') {
 			/* only the output shard send committed reply, so no risk of printing info more than once for a tx. */
 			std::cout << ", COMMITTED, ";
-			TxBlockInfo& txinfo = g_pbft->txInFly[txid];
-			AddCoins(*pcoinsTip, *(txinfo.tx), txinfo.blockHeight, reply.peerID/CPbft::groupSize);
 			g_pbft->txInFly.erase(txid);
 			g_pbft->nCompletedTx++;
 			if (g_pbft->nCompletedTx % thruInterval == 0) {
