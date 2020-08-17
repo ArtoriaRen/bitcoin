@@ -142,6 +142,11 @@ char LockReq::Execute(const int seq, CCoinsViewCache& view) const {
 
     /* Step 1: find all input UTXOs whose chainAffinity is our shard. Check if they are unspent.
      * We use INT_MAX as block height, so that we never fail coinbase maturity check. */
+    std::cout << "tx " << tx.GetHash().GetHex().substr(0, 10) << " locking inputs: ";
+    for(auto& inputidx: vInputUtxoIdxToLock) {
+	    std::cout << inputidx << ", ";
+    }
+    std::cout << std::endl;
     if (!Consensus::CheckLockReqInputs(tx, state, view, INT_MAX, totalValueInOfShard, vInputUtxoIdxToLock)) {
 	std::cerr << __func__ << ": Consensus::CheckTxInputs: " << tx.GetHash().ToString() << ", " << FormatStateMessage(state) << std::endl;
 	return 'n';
@@ -186,7 +191,7 @@ uint256 LockReq::GetDigest() const {
     CHash256 hasher;
     hasher.Write((const unsigned char*)tx_hash.begin(), tx_hash.size());
     for (uint i = 0; i < nOutpointToLock; i++) {
-	hasher .Write((const unsigned char*)&vInputUtxoIdxToLock[i], sizeof(vInputUtxoIdxToLock[i]));
+	hasher.Write((const unsigned char*)&vInputUtxoIdxToLock[i], sizeof(vInputUtxoIdxToLock[i]));
     }
     uint256 result;
     hasher.Finalize((unsigned char*)&result);

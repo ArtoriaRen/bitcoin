@@ -1321,8 +1321,10 @@ void UpdateLockCoins(const CTransaction& tx, const std::vector<uint32_t>& vInput
     TxPlacer txPlacer;
 
     /* check if we are expecting a unlock_to_commit req in the future for this tx.*/
-    if (txPlacer.smartPlaceUTXO(tx.vin[0].prevout, *pcoinsTip) == myShardId)
+    if (txPlacer.smartPlaceUTXO(tx.vin[0].prevout, inputs) == myShardId) {
 	g_pbft->txToBeCommitted.insert(tx.GetHash());
+	std::cout << "tx " << tx.GetHash().GetHex().substr(0, 10) << " is to be committed in our shard. " << std::endl;
+    }
 
     /* mark inputs in our shard spent */
     undoInfo.vInputIdx = vInputUtxoIdxToLock;
@@ -1346,8 +1348,12 @@ void UpdateUnlockCommitCoins(const CTransaction& tx, CCoinsViewCache& inputs, in
 //    assert(txPlacer.randomPlaceUTXO(tx.GetHash()) == myShardId);
 
     auto iter = g_pbft->txToBeCommitted.find(tx.GetHash());
+    if (iter == g_pbft->txToBeCommitted.end()){
+	    std::cout << "tx " << tx.GetHash().GetHex().substr(0,10) << " is not in the ToBeCommitted set." << std::endl;
+    }
     assert(iter != g_pbft->txToBeCommitted.end());
     g_pbft->txToBeCommitted.erase(iter);
+    std::cout << "tx " << tx.GetHash().GetHex().substr(0,10) << " is removed form the ToBeCommitted set." << std::endl;
     
     /* TODO: for smart placement
      * output shard should be the shard of the first input and should be the id

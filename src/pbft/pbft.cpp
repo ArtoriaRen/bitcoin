@@ -230,7 +230,6 @@ bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
 	/* if some seq ahead of the cMsg.seq is not in the reply phase yet, 
 	 * cMsg.seq will not be executed.
 	 */
-	int startReplySeq = lastExecutedSeq + 1; 
 	executeLog(cMsg.seq, connman); // this updates the lastExecutedIndex  
 	/* wake up the client-listening thread to send results to clients. The 
 	 * client-listening thread is probably already up if the client sends 
@@ -317,7 +316,7 @@ CInputShardReply CPbft::assembleInputShardReply(const uint32_t seq, const uint32
      * mapping OMNI_LOCK req hash to txid. Since we trust the client to be the
      * 2PC leader, we believe it would not send a TxReq or another LockReq for the same tx. 
      * Otherwise, these req would have the same digest field of the reply. */
-    CInputShardReply toSent(exe_res, log[seq].ppMsg.pbft_block.vReq[idx].pReq->GetDigest(), inputUtxoValueSum);
+    CInputShardReply toSent(exe_res, log[seq].ppMsg.pbft_block.vReq[idx].pReq->GetHash(), inputUtxoValueSum);
     uint256 hash;
     toSent.getHash(hash);
     privateKey.Sign(hash, toSent.vchSig);
