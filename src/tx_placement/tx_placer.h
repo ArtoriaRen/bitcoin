@@ -25,10 +25,43 @@ extern int lastAssignedAffinity;
 //extern uint32_t txEndBlock;
 extern bool buildWaitGraph;
 
+/* The shard info for one tx */
+class ShardInfo{
+public: 
+    std::vector<int32_t> shards; // output_shard, input_shard1, input_shard2, ....
+    std::vector<std::vector<uint32_t> > vShardUtxoIdxToLock;
+
+    template<typename Stream>
+    void Serialize(Stream& s) const{
+	uint32_t size = shards.size();
+	s.write(reinterpret_cast<const char*>(&size), sizeof(size));
+	s.write(reinterpret_cast<const char*>(shards.data()), size * sizeof(shards[0]));
+	for (uint i = 0; i < vShardUtxoIdxToLock.size(); i++) {
+	    size = vShardUtxoIdxToLock[i].size();
+	    s.write(reinterpret_cast<const char*>(&size), sizeof(size));
+	    s.write(reinterpret_cast<const char*>(vShardUtxoIdxToLock[i].data()), size * sizeof(vShardUtxoIdxToLock[i][0]));
+	}
+    }
+    
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+	uint32_t size;
+	s.read(reinterpret_cast<char*>(&size), sizeof(size));
+	shards.resize(size);
+	s.read(reinterpret_cast<char*>(shards.data()), sizeof(size * sizeof(shards[0])));
+	for (uint i = 0; i < vShardUtxoIdxToLock.size(); i++) {
+	    s.read(reinterpret_cast<char*>(&size), sizeof(size));
+	    vShardUtxoIdxToLock[i].resize(size);
+	    s.read(reinterpret_cast<char*>(vShardUtxoIdxToLock[i].data()), sizeof(size * sizeof(shards[0])));
+	}
+    }
+};
+
 class TxPlacer{
 public:
     std::map<uint, std::map<uint, uint>> shardCntMap; // < input_utxo_count, shard_count, tx_count>
     uint totalTxNum;
+    std::vector<ShardInfo> vShardInfo;
 
     /* return the number of shards that input UTXOs and output UTXOs span */
     TxPlacer();
@@ -51,7 +84,9 @@ public:
     int32_t smartPlaceUTXO(const COutPoint& txin, const CCoinsViewCache& cache);
 
     void printPlaceResult();
-    // TODO: smartPlaceSorted
+
+    void loadShardInfo(int block_height);
+
 };
 
 typedef struct {
@@ -90,6 +125,10 @@ void extractRawTxInBlock();
  * historical tx since they had been spent and not exist in chainstate.
  */
 void smartPlaceTxInBlock(const std::shared_ptr<const CBlock> pblock);
+
+inline std::string getShardInfoFilename(int block_height) {
+    return std::to_string(block_height) + "_shardinfo.out";
+}
 
 extern TxPlacer g_txplacer;
 

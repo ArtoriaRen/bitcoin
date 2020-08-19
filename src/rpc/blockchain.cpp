@@ -1496,6 +1496,79 @@ UniValue preciousblock(const JSONRPCRequest& request)
     return NullUniValue;
 }
 
+static std::string vector_to_string(const std::vector<int>& vec) {
+    std::string ret;
+    for (int i = 0; i < vec.size(); i++) {
+	ret += std::to_string(vec[i]);
+	ret += ',';
+    }
+    return ret.substr(0, ret.size() - 1);
+}
+
+UniValue genshardinfofile(const JSONRPCRequest& request)
+{
+    if (request.fHelp || request.params.size() != 1)
+        throw std::runtime_error(
+            "genshardinfofile \"blockheight\"\n"
+            "\n store shard info of tx in the block to an output file.\n"
+            "\nArguments:\n"
+            "1. \"blockheight\"   (numerical, required) the block height of the block whose tx will be analyzed.\n"
+            "\nResult:\n"
+            "\nExamples:\n"
+            + HelpExampleCli("genshardinfofile", "\"blockheight\"")
+            + HelpExampleRpc("genshardinfofile", "\"blockheight\"")
+        );
+
+    int block_height = request.params[0].get_int();
+    std::ofstream outfile;
+    outfile.open(getShardInfoFilename(block_height));
+    
+    TxPlacer txPlacer;
+    CBlock block;
+    CBlockIndex* pblockindex = chainActive[block_height];
+    if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
+	std::cerr << "Block not found on disk" << std::endl;
+    }
+    for (uint j = 0; j < block.vtx.size(); j++) {
+	CTransactionRef tx = block.vtx[j]; 
+	ShardInfo shardInfo;
+	std::vector<std::vector<uint32_t> > vShardUtxoIdxToLock;
+	shardInfo.shards = txPlacer.smartPlace(*tx, *pcoinsTip, shardInfo.vShardUtxoIdxToLock, block_height);
+	shardInfo.Serialize(outfile);
+    }
+    outfile.close();
+    return NullUniValue;
+}
+
+UniValue printshardinfo(const JSONRPCRequest& request)
+{
+    if (request.fHelp || request.params.size() != 1)
+        throw std::runtime_error(
+            "printshardinfo \"blockheight\"\n"
+            "\n print shard info of tx in the block. \n"
+            "\nArguments:\n"
+            "1. \"blockheight\"   (numerical, required) the block height of the block whose tx will be analyzed.\n"
+            "\nResult:\n"
+            "\nExamples:\n"
+            + HelpExampleCli("printshardinfo", "\"blockheight\"")
+            + HelpExampleRpc("printshardinfo", "\"blockheight\"")
+        );
+
+    int block_height = request.params[0].get_int();
+    
+    TxPlacer txPlacer;
+    txPlacer.loadShardInfo(block_height);
+    for (int i = 0; i < txPlacer.vShardInfo.size(); i++) {
+	std::cout << i << "-th" << " tx "  << " : ";
+	auto& shards = txPlacer.vShardInfo[i].shards;
+	for (int shard : shards)
+	    std::cout << shard << ", ";
+	std::cout << std::endl;
+    }
+
+    return NullUniValue;
+}
+
 UniValue sendtxinblocks(const JSONRPCRequest& request)
 {
     if (request.fHelp || request.params.size() != 3)
@@ -1748,6 +1821,8 @@ static const CRPCCommand commands[] =
     { "blockchain",         "preciousblock",          &preciousblock,          {"blockhash"} },
 
     { "blockchain",         "sendtxinblocks",         &sendtxinblocks,         {"startblockheight","endblockheight","sendrate"} },
+    { "blockchain",         "genshardinfofile",       &genshardinfofile,       {"blockheight"} },
+    { "blockchain",         "genshardinfofile",       &printshardinfo,         {"blockheight"} },
     /* Not shown in help */
     { "hidden",             "invalidateblock",        &invalidateblock,        {"blockhash"} },
     { "hidden",             "reconsiderblock",        &reconsiderblock,        {"blockhash"} },

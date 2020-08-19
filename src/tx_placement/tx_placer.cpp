@@ -18,6 +18,7 @@
 #include <time.h>
 #include "txdb.h"
 #include "init.h"
+#include <fstream>
 
 static const uint32_t SEC = 1000000; // 1 sec = 10^6 microsecond
 
@@ -462,3 +463,22 @@ void buildDependencyGraph(uint32_t block_height) {
 //	shardCntMap[pblock->vtx[j]->vin.size()][txPlacer.smartPlace(pblock->vtx[j])]++;
 //    }
 //}
+
+void TxPlacer::loadShardInfo(int block_height) {
+    CBlock block;
+    CBlockIndex* pblockindex = chainActive[block_height];
+    if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
+        std::cerr << "Block not found on disk" << std::endl;
+    }
+    std::cout << __func__ << ": loading shard info for " << block.vtx.size() << " tx in block " << block_height << std::endl;
+    std::ifstream shardInfoFile;
+    shardInfoFile.open(getShardInfoFilename(block_height));
+    assert(shardInfoFile.is_open());
+    /* we did not clear vShardInfo b/c it will be overwirtten during file unserialization. */
+    vShardInfo.resize(block.vtx.size());
+    for (uint i = 0; i < vShardInfo.size(); i++) {
+	vShardInfo[i].Unserialize(shardInfoFile);
+    }
+    shardInfoFile.close();
+}
+

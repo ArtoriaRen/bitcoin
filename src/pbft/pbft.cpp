@@ -91,5 +91,4 @@ void CPbft::logThruput(struct timeval& endTime) {
     std::cout << "At time " << endTime.tv_sec << "." << endTime.tv_usec << ", completed " <<  nCompletedTx << "tx" << ": throughput = " << thruput << std::endl;
 }
 
-
 std::unique_ptr<CPbft> g_pbft;
