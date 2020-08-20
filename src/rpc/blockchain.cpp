@@ -1529,11 +1529,15 @@ UniValue genshardinfofile(const JSONRPCRequest& request)
     if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
 	std::cerr << "Block not found on disk" << std::endl;
     }
-    for (uint j = 0; j < block.vtx.size(); j++) {
-	CTransactionRef tx = block.vtx[j]; 
+    for (uint i = 0; i < block.vtx.size(); i++) {
+	CTransactionRef tx = block.vtx[i]; 
 	ShardInfo shardInfo;
-	std::vector<std::vector<uint32_t> > vShardUtxoIdxToLock;
 	shardInfo.shards = txPlacer.smartPlace(*tx, *pcoinsTip, shardInfo.vShardUtxoIdxToLock, block_height);
+	std::cout << i << "-th" << " tx "  << " : ";
+	auto& shards = shardInfo.shards;
+	for (int shard : shards)
+	    std::cout << shard << ", ";
+	std::cout << std::endl;
 	shardInfo.Serialize(outfile);
     }
     outfile.close();
@@ -1822,7 +1826,7 @@ static const CRPCCommand commands[] =
 
     { "blockchain",         "sendtxinblocks",         &sendtxinblocks,         {"startblockheight","endblockheight","sendrate"} },
     { "blockchain",         "genshardinfofile",       &genshardinfofile,       {"blockheight"} },
-    { "blockchain",         "genshardinfofile",       &printshardinfo,         {"blockheight"} },
+    { "blockchain",         "printshardinfo",         &printshardinfo,         {"blockheight"} },
     /* Not shown in help */
     { "hidden",             "invalidateblock",        &invalidateblock,        {"blockhash"} },
     { "hidden",             "reconsiderblock",        &reconsiderblock,        {"blockhash"} },

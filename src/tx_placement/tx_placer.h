@@ -36,6 +36,7 @@ public:
 	uint32_t size = shards.size();
 	s.write(reinterpret_cast<const char*>(&size), sizeof(size));
 	s.write(reinterpret_cast<const char*>(shards.data()), size * sizeof(shards[0]));
+	assert(vShardUtxoIdxToLock.size() == size - 1);
 	for (uint i = 0; i < vShardUtxoIdxToLock.size(); i++) {
 	    size = vShardUtxoIdxToLock[i].size();
 	    s.write(reinterpret_cast<const char*>(&size), sizeof(size));
@@ -48,11 +49,12 @@ public:
 	uint32_t size;
 	s.read(reinterpret_cast<char*>(&size), sizeof(size));
 	shards.resize(size);
-	s.read(reinterpret_cast<char*>(shards.data()), sizeof(size * sizeof(shards[0])));
+	s.read(reinterpret_cast<char*>(shards.data()), size * sizeof(shards[0]));
+	vShardUtxoIdxToLock.resize(size - 1);
 	for (uint i = 0; i < vShardUtxoIdxToLock.size(); i++) {
 	    s.read(reinterpret_cast<char*>(&size), sizeof(size));
 	    vShardUtxoIdxToLock[i].resize(size);
-	    s.read(reinterpret_cast<char*>(vShardUtxoIdxToLock[i].data()), sizeof(size * sizeof(shards[0])));
+	    s.read(reinterpret_cast<char*>(vShardUtxoIdxToLock[i].data()), size * sizeof(vShardUtxoIdxToLock[i][0]));
 	}
     }
 };
