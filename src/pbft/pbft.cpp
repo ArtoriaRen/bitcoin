@@ -9,8 +9,8 @@
 int32_t pbftID;
 uint32_t thruInterval; // calculate throughput once completing every "thruInterval" tx
 
-TxBlockInfo::TxBlockInfo(): blockHeight(0), n(0) { }
-TxBlockInfo::TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn): tx(txIn), blockHeight(blockHeightIn), n(nIn) { }
+TxBlockInfo::TxBlockInfo(): blockHeight(0), n(0), outputShard(-1) { }
+TxBlockInfo::TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn, int32_t outputShardIn): tx(txIn), blockHeight(blockHeightIn), n(nIn), outputShard(outputShardIn) { }
 
 ThreadSafeQueue::ThreadSafeQueue() { }
 

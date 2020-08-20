@@ -31,7 +31,7 @@ bool buildWaitGraph = false;
 template<typename T>
 static std::string vector_to_string(const std::vector<T>& vec) {
     std::string ret;
-    for (int i = 0; i < vec.size(); i++) {
+    for (uint i = 0; i < vec.size(); i++) {
         ret += std::to_string(vec[i]);
         ret += ',';
     }
@@ -412,7 +412,7 @@ bool TxPlacer::sendTx(const CTransactionRef tx, const uint idx, const uint32_t b
 	/* send tx and collect time info to calculate latency. 
 	 * We also remove all reply msg for this req for resending aborted tx. */
 	g_pbft->replyMap[hashTx].clear();
-	g_pbft->txInFly.insert(std::make_pair(hashTx, std::move(TxBlockInfo(tx, block_height, idx))));
+	g_pbft->txInFly.insert(std::make_pair(hashTx, std::move(TxBlockInfo(tx, block_height, idx, shards[0]))));
 	g_pbft->mapTxStartTime.erase(hashTx);
 	struct TxStat stat;
 	if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {

@@ -43,8 +43,9 @@ public:
     CTransactionRef tx;
     uint32_t blockHeight;
     uint32_t n;  // n-th tx in the block body
+    int32_t outputShard; // Used for resolving to which shard a unlock_to_cmt req should be sent
     TxBlockInfo();
-    TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn);
+    TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn, int32_t outputShardIn = -1);
 };
 
 class ThreadSafeQueue {
@@ -85,7 +86,9 @@ public:
 
     /* <txid, shard_ptr(tx)>
      * Every time we send a cross-shard tx to its input shards, we add an element to this map. 
-     * This map is used when the input shards reply and we need to assemble a commit req. This map enables us to figure out the tx given a txid. */
+     * This map is used when the input shards reply and we need to assemble a commit req.
+     * This map enables us to figure out the tx given a txid. 
+     */
     std::unordered_map<uint256, TxBlockInfo, BlockHasher> txInFly;
     ThreadSafeQueue txResendQueue;
 

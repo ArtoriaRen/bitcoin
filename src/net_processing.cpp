@@ -1975,7 +1975,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	    TxPlacer txPlacer;
 	    //int32_t outputShard = txPlacer.randomPlaceUTXO(g_pbft->txInFly[reply.digest]->GetHash());
-	    int32_t outputShard = txPlacer.smartPlaceUTXO(g_pbft->txInFly[reply.digest].tx->vin[0].prevout, *pcoinsTip);
+	    int32_t outputShard = g_pbft->txInFly[reply.digest].outputShard;
 	    std::cout << "sending unlock_to_commit with req_hash = " << commitReq.GetDigest().GetHex().substr(0, 10) << " to shard " << outputShard << std::endl;
 	    connman->PushMessage(g_pbft->leaders[outputShard], msgMaker.Make(NetMsgType::OMNI_UNLOCK_COMMIT, commitReq));
 	} 
