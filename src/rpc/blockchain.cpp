@@ -1496,15 +1496,6 @@ UniValue preciousblock(const JSONRPCRequest& request)
     return NullUniValue;
 }
 
-static std::string vector_to_string(const std::vector<int>& vec) {
-    std::string ret;
-    for (int i = 0; i < vec.size(); i++) {
-	ret += std::to_string(vec[i]);
-	ret += ',';
-    }
-    return ret.substr(0, ret.size() - 1);
-}
-
 UniValue genshardinfofile(const JSONRPCRequest& request)
 {
     if (request.fHelp || request.params.size() != 1)
@@ -1533,11 +1524,11 @@ UniValue genshardinfofile(const JSONRPCRequest& request)
 	CTransactionRef tx = block.vtx[i]; 
 	ShardInfo shardInfo;
 	shardInfo.shards = txPlacer.smartPlace(*tx, *pcoinsTip, shardInfo.vShardUtxoIdxToLock, block_height);
-	std::cout << i << "-th" << " tx "  << " : ";
-	auto& shards = shardInfo.shards;
-	for (int shard : shards)
-	    std::cout << shard << ", ";
-	std::cout << std::endl;
+//	std::cout << i << "-th" << " tx "  << " : ";
+//	auto& shards = shardInfo.shards;
+//	for (int shard : shards)
+//	    std::cout << shard << ", ";
+//	std::cout << std::endl;
 	shardInfo.Serialize(outfile);
     }
     outfile.close();
@@ -1564,12 +1555,12 @@ UniValue printshardinfo(const JSONRPCRequest& request)
     txPlacer.loadShardInfo(block_height);
     for (int i = 0; i < txPlacer.vShardInfo.size(); i++) {
 	std::cout << i << "-th" << " tx "  << " : ";
-	auto& shards = txPlacer.vShardInfo[i].shards;
-	for (int shard : shards)
-	    std::cout << shard << ", ";
-	std::cout << std::endl;
+//	auto& shards = txPlacer.vShardInfo[i].shards;
+//	for (int shard : shards)
+//	    std::cout << shard << ", ";
+//	std::cout << std::endl;
+	txPlacer.vShardInfo[i].print();
     }
-
     return NullUniValue;
 }
 

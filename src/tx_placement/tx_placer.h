@@ -57,6 +57,8 @@ public:
 	    s.read(reinterpret_cast<char*>(vShardUtxoIdxToLock[i].data()), size * sizeof(vShardUtxoIdxToLock[i][0]));
 	}
     }
+
+    void print() const;
 };
 
 class TxPlacer{

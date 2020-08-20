@@ -28,6 +28,24 @@ int lastAssignedAffinity = -1;
 //uint32_t txEndBlock;
 bool buildWaitGraph = false;
 
+template<typename T>
+static std::string vector_to_string(const std::vector<T>& vec) {
+    std::string ret;
+    for (int i = 0; i < vec.size(); i++) {
+        ret += std::to_string(vec[i]);
+        ret += ',';
+    }
+    return ret.substr(0, ret.size() - 1);
+}
+
+void ShardInfo::print() const {
+    std::cout <<  vector_to_string(shards) << std::endl;
+    for(uint i = 0; i < vShardUtxoIdxToLock.size(); i++) {
+	std::cout << "shard " << shards[i+1] << " should lock UTXO idx: ";
+	std::cout << vector_to_string(vShardUtxoIdxToLock[i]) << std::endl; 
+    }
+}
+
 TxPlacer::TxPlacer():totalTxNum(0){}
 
 
