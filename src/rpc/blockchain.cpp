@@ -1553,7 +1553,7 @@ UniValue printshardinfo(const JSONRPCRequest& request)
     
     TxPlacer txPlacer;
     txPlacer.loadShardInfo(block_height);
-    for (int i = 0; i < txPlacer.vShardInfo.size(); i++) {
+    for (auto i = 0; i < txPlacer.vShardInfo.size(); i++) {
 	std::cout << i << "-th" << " tx "  << " : ";
 //	auto& shards = txPlacer.vShardInfo[i].shards;
 //	for (int shard : shards)
@@ -1588,9 +1588,10 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
     uint32_t txCnt = 0, nonTailCnt = 0;
     gettimeofday(&startTime, NULL); 
 //    expectedLastSendTime = startTime;
+    TxPlacer txPlacer;
     for (int i = txStartBlock; i < txEndBlock; i++) {
 //	txCnt += sendTxInBlock(i, expectedLastSendTime, txSendPeriod);
-	txCnt += sendTxInBlock(i, txSendPeriod);
+	txCnt += txPlacer.sendTxInBlock(i, txSendPeriod);
 	std::cout << txCnt << " tx upto block " << i << " are sent. " << std::endl;
     }
     nonTailCnt = txCnt;

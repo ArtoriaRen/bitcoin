@@ -340,13 +340,15 @@ void printShardAffinity(){
 
 
 //uint32_t sendTxInBlock(uint32_t block_height, struct timeval& expected_last_send_time, int txSendPeriod) {
-uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
+uint32_t TxPlacer::sendTxInBlock(uint32_t block_height, int txSendPeriod) {
     CBlock block;
     CBlockIndex* pblockindex = chainActive[block_height];
     if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
         std::cerr << "Block not found on disk" << std::endl;
     }
     std::cout << __func__ << ": sending " << block.vtx.size() << " tx in block " << block_height << std::endl;
+
+    loadShardInfo(block_height);
 
     const struct timespec sleep_length = {0, txSendPeriod * 1000};
     uint32_t cnt = 0;
@@ -374,7 +376,7 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
     return cnt;
 }
 
-uint32_t sendAllTailTx(int txSendPeriod) {
+uint32_t TxPlacer::sendAllTailTx(int txSendPeriod) {
     /* We have sent all tx but those waiting for prerequisite tx. Poll the 
      * queue to see if some dependent tx are ready until we sent all tx. */
     std::cout << "sending " << g_pbft->txResendQueue.size() << " tail tx ... " << std::endl;
@@ -393,13 +395,12 @@ uint32_t sendAllTailTx(int txSendPeriod) {
     return cnt;
 }
 
-bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height) {
+bool TxPlacer::sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height) {
 	TxPlacer txPlacer;
-	//CCoinsViewCache view(pcoinsTip.get());
 	const uint256& hashTx = tx->GetHash();
 	/* get the input shards and output shards id*/
-	std::vector<std::vector<uint32_t> > vShardUtxoIdxToLock;
-	std::vector<int32_t> shards = txPlacer.smartPlace(*tx, *pcoinsTip, vShardUtxoIdxToLock, block_height);
+	std::vector<int32_t>& shards = vShardInfo[idx].shards;
+	std::vector<std::vector<uint32_t> >& vShardUtxoIdxToLock = vShardInfo[idx].vShardUtxoIdxToLock;
 
 	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	assert((tx->IsCoinBase() && shards.size() == 1) || (!tx->IsCoinBase() && shards.size() >= 2)); // there must be at least one output shard and one input shard for non-coinbase tx.

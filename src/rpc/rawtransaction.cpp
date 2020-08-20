@@ -1018,15 +1018,9 @@ UniValue sendrawtransaction(const JSONRPCRequest& request)
     if(!g_connman)
         throw JSONRPCError(RPC_CLIENT_P2P_DISABLED, "Error: Peer-to-peer functionality missing or disabled");
 
-    //CInv inv(MSG_TX, hashTx);
-    //g_connman->ForEachNode([&inv](CNode* pnode)
-    //{
-    //    pnode->PushInventory(inv);
-    //});
-
     /* get the input shards and output shards id*/
-    sendTx(tx, 0, 601000);
-    g_pbft->txInFly.insert(std::make_pair(hashTx, std::move(TxBlockInfo(tx, 601000, 0))));
+//    sendTx(tx, 0, 601000);
+//    g_pbft->txInFly.insert(std::make_pair(hashTx, std::move(TxBlockInfo(tx, 601000, 0))));
 
     return hashTx.GetHex();
 }
