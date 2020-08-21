@@ -268,24 +268,23 @@ bool Consensus::CheckTxInputs(const CTransaction& tx, CValidationState& state, c
 
 bool Consensus::CheckLockReqInputs(const CTransaction& tx, CValidationState& state, const CCoinsViewCache& inputs, int nSpendHeight, CAmount& totalValueIn, const std::vector<uint32_t>& vInputUtxoIdxToLock) {
     int32_t myShardId = pbftID/CPbft::groupSize;
-    /*----pick out input UTXOs in our shard----*/
+    /*----check that we have all UTXOs in the vInputUtxoIdxToLock----*/
     TxPlacer txPlacer;
-    std::vector<CTxIn> vinInMyShard;
+    std::vector<Coin> vCoin(vInputUtxoIdxToLock.size());
     for (const uint32_t& idx: vInputUtxoIdxToLock) {
-	if (txPlacer.smartPlaceUTXO(tx.vin[idx].prevout, inputs) != myShardId)
-	{
-	    /* The input UTXO is not in our shard. Probably because the tx producing this UTXO is aborted. */
+	const Coin& coin = inputs.AccessCoin(tx.vin[idx].prevout);
+	if (coin.IsSpent()){
+	    /* This coin is not in our database. Probably because the tx producing this UTXO is aborted. */
 	    return state.DoS(100, false, REJECT_INVALID, "bad-txns-inputs-missingorspent", false,
 			     strprintf("%s: inputs missing/spent", __func__));
 	}
-	vinInMyShard.push_back(tx.vin[idx]);
+	assert(coin.shardAffinity == myShardId);
+	vCoin[idx] = coin;
     }
 
     CAmount nValueIn = 0;
-    for (unsigned int i = 0; i < vinInMyShard.size(); ++i) {
-        const COutPoint &prevout = vinInMyShard[i].prevout;
-        const Coin& coin = inputs.AccessCoin(prevout);
-        assert(!coin.IsSpent());
+    for (unsigned int i = 0; i < vInputUtxoIdxToLock.size(); ++i) {
+        const Coin& coin = vCoin[i];
 
         // If prev is coinbase, check that it's matured
         if (coin.IsCoinBase() && nSpendHeight - coin.nHeight < COINBASE_MATURITY) {

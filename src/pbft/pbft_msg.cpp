@@ -181,6 +181,10 @@ char LockReq::Execute(const int seq, CCoinsViewCache& view) const {
     TxUndoInfo undoInfo;
     UpdateLockCoins(tx, vInputUtxoIdxToLock, view, undoInfo, seq);
     mapTxUndo.insert(std::make_pair(tx.GetHash(), undoInfo));
+    if (vInputUtxoIdxToLock[0] == 0) {
+	g_pbft->txToBeCommitted.insert(tx.GetHash());
+	std::cout << "tx " << tx.GetHash().GetHex().substr(0, 10) << " is to be committed in our shard. " << std::endl;
+    }
     /* -------------logic from Bitcoin code for tx processing--------- */
     std::cout << __func__ << ": locked input UTXOs for tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << std::endl;
     return 'y';

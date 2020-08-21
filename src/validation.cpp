@@ -1309,22 +1309,12 @@ void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txund
         }
     }
     // add outputs
-    AddCoins(inputs, tx, nHeight, myShardId );
+    AddCoins(inputs, tx, nHeight, myShardId);
 }
 
 void UpdateLockCoins(const CTransaction& tx, const std::vector<uint32_t>& vInputUtxoIdxToLock, CCoinsViewCache& inputs, TxUndoInfo& undoInfo, int nHeight)
 {
     assert(!tx.IsCoinBase()); // coinbase tx has no valid input UTXO, so it should never be in a LockReq.
-
-    int32_t myShardId = pbftID/CPbft::groupSize;
-    /*----pick out input UTXOs in our shard----*/
-    TxPlacer txPlacer;
-
-    /* check if we are expecting a unlock_to_commit req in the future for this tx.*/
-    if (txPlacer.smartPlaceUTXO(tx.vin[0].prevout, inputs) == myShardId) {
-	g_pbft->txToBeCommitted.insert(tx.GetHash());
-	std::cout << "tx " << tx.GetHash().GetHex().substr(0, 10) << " is to be committed in our shard. " << std::endl;
-    }
 
     /* mark inputs in our shard spent */
     undoInfo.vInputIdx = vInputUtxoIdxToLock;
@@ -1541,8 +1531,6 @@ bool CheckLockInputs(const CTransaction& tx, const std::vector<uint32_t>& vInput
                 return true;
             }
 
-	    int32_t myShardId = pbftID/CPbft::groupSize;
-	    TxPlacer txPlacer;
             for (unsigned int i = 0; i < vInputUtxoIdxToLock.size(); i++) {
                 const COutPoint &prevout = tx.vin[vInputUtxoIdxToLock[i]].prevout;
                 const Coin& coin = inputs.AccessCoin(prevout);
@@ -4091,12 +4079,12 @@ bool CChainState::RollforwardBlock(const CBlockIndex* pindex, CCoinsViewCache& i
 
     for (const CTransactionRef& tx : block.vtx) {
 	/* get the shard affinity for output UTXOs*/
-	int32_t shardAffinity;
-	if (tx->IsCoinBase()){
-	    shardAffinity = TxPlacer().randomPlaceUTXO(tx->GetHash());
-	} else {
-	    shardAffinity = TxPlacer().smartPlaceUTXO(tx->vin[0].prevout, inputs);
-	}
+	int32_t shardAffinity = -1;
+//	if (tx->IsCoinBase()){
+//	    shardAffinity = TxPlacer().randomPlaceUTXO(tx->GetHash());
+//	} else {
+//	    shardAffinity = TxPlacer().smartPlaceUTXO(tx->vin[0].prevout, inputs);
+//	}
 
         if (!tx->IsCoinBase()) {
             for (const CTxIn &txin : tx->vin) {
