@@ -1865,14 +1865,11 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 			std::cout << ", SUCCEED, ";
 			g_pbft->txInFly.erase(reply.digest);
 			g_pbft->nCompletedTx++;
-			if (g_pbft->nCompletedTx % thruInterval == 0) {
-			    g_pbft->logThruput(endTime);
-			}
 		} else if (reply.reply == 'n') {
 			std::cout << ", FAIL, ";
 			g_pbft->txResendQueue.push_back(g_pbft->txInFly[reply.digest]);
 		} 
-		std::cout << "single-shard, latency = " << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << " ms" << std::endl;
+		std::cout << "single-shard, result received at " << endTime.tv_sec << "." << endTime.tv_usec << " s , latency = " << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << " ms" << std::endl;
 	    } else {
 		/* cross-shard tx */
 		auto& inputShardRplMap = g_pbft->inputShardReplyMap;
@@ -1884,10 +1881,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 			std::cout << ", COMMITTED, ";
 			g_pbft->txInFly.erase(txid);
 			g_pbft->nCompletedTx++;
-			if (g_pbft->nCompletedTx % thruInterval == 0) {
-			    g_pbft->logThruput(endTime);
-			}
-
 		} else if (reply.reply == 'y' && inputShardRplMap[txid].decision == 'a') {
 		  
 		        /* This info is printed only once for an aborted tx b/c  it is only printed when the number of replies equals (2f+1). Strictly speaking, this is not correct, we should wait for reply for every input shard that have locked some UTXOs. */
@@ -1896,7 +1889,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		} else if (reply.reply == 'n') {
 			std::cout << " fail to commit or abort, ";
 		} 
-		std::cout << "cross-shard, latency = " << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << " ms" << std::endl;
+		std::cout << "cross-shard, result received at " << endTime.tv_sec << "." << endTime.tv_usec << " s, latency = " << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << " ms" << std::endl;
 	    }
 	}
     }
