@@ -91,7 +91,8 @@ public:
 
     std::unordered_map<uint256, TxStat, BlockHasher> mapTxStartTime;
     uint32_t nCompletedTx;
-    struct timeval thruStartTime;
+    struct timeval testStartTime;
+    struct timeval nextLogTime;
 
     CPbft();
     bool checkReplySig(const CReply* pReply) const;

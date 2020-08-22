@@ -61,7 +61,8 @@ bool ThreadSafeQueue::empty() {
 }
 
 CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), nCompletedTx(0), privateKey(CKey()) {
-    thruStartTime = {0, 0};
+    testStartTime = {0, 0};
+    nextLogTime = {0, 0};
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
 }
@@ -83,11 +84,19 @@ bool CPbft::checkReplySig(const CReply* pReply) const {
 }
 
 void CPbft::logThruput(struct timeval& endTime) {
-    uint32_t thruput = 0;
-    if (thruStartTime.tv_sec != 0) {
-	thruput = thruInterval * 1000000 / ((endTime.tv_sec - thruStartTime.tv_sec) * 1000000 + (endTime.tv_usec - thruStartTime.tv_usec));
+    if (testStartTime.tv_sec == 0) {
+	/* test just started. log the start time */
+	std::cout << "At time " << endTime.tv_sec << "." << endTime.tv_usec << ", sending tx starts. This is the initial throughput log. " << std::endl;
+	testStartTime = endTime;
+	/* log at the next second */
+	nextLogTime.tv_sec = endTime.tv_sec + 1;
+	nextLogTime.tv_usec = endTime.tv_usec;
+	return;
     }
-    thruStartTime = endTime;
+    uint32_t thruput = nCompletedTx * 1000000 / ((endTime.tv_sec - nextLogTime.tv_sec + 1) * 1000000 + (endTime.tv_usec - nextLogTime.tv_usec));
+    /* log at the next second */
+    nextLogTime.tv_sec = endTime.tv_sec + 1;
+    nextLogTime.tv_usec = endTime.tv_usec;
     std::cout << "At time " << endTime.tv_sec << "." << endTime.tv_usec << ", completed " <<  nCompletedTx << "tx" << ": throughput = " << thruput << std::endl;
 }
 

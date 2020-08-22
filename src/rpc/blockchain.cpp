@@ -37,6 +37,7 @@
 #include <condition_variable>
 #include "tx_placement/tx_placer.h"
 #include <sys/time.h>
+#include "pbft/pbft.h"
 
 struct CUpdatedBlock
 {
@@ -1466,6 +1467,7 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
     uint32_t txCnt = 0, nonTailCnt = 0;
     gettimeofday(&startTime, NULL); 
 //    expectedLastSendTime = startTime;
+    g_pbft->logThruput(startTime);
     for (int i = txStartBlock; i < txEndBlock; i++) {
 //	txCnt += sendTxInBlock(i, expectedLastSendTime, txSendPeriod);
 	txCnt += sendTxInBlock(i, txSendPeriod);

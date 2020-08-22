@@ -2033,6 +2033,12 @@ void CConnman::ThreadMessageHandler()
                 pnode->Release();
         }
 
+	struct timeval currentTime;
+	gettimeofday(&currentTime, NULL);
+	if (g_pbft->testStartTime.tv_sec > 0 && currentTime.tv_sec >= g_pbft->nextLogTime.tv_sec && currentTime.tv_usec >= g_pbft->nextLogTime.tv_usec) {
+	    g_pbft->logThruput(currentTime);
+	}
+
         std::unique_lock<std::mutex> lock(mutexMsgProc);
         if (!fMoreWork) {
             condMsgProc.wait_until(lock, std::chrono::steady_clock::now() + std::chrono::milliseconds(100), [this] { return fMsgProcWake; });
