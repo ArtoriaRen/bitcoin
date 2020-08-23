@@ -90,7 +90,10 @@ public:
     ThreadSafeQueue txResendQueue;
 
     std::unordered_map<uint256, TxStat, BlockHasher> mapTxStartTime;
+    uint32_t nLastCompletedTx;
     uint32_t nCompletedTx;
+    uint32_t nTotalFailedTx;
+    uint32_t nTotalSentTx;
     struct timeval testStartTime;
     struct timeval nextLogTime;
 

@@ -1869,6 +1869,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		} else if (reply.reply == 'n') {
 			std::cout << ", FAIL, ";
 			g_pbft->txResendQueue.push_back(g_pbft->txInFly[reply.digest]);
+			g_pbft->nTotalFailedTx++;
 		} 
 		std::cout << "single-shard, result received at " << endTime.tv_sec << "." << endTime.tv_usec << " s , latency = " << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << " ms" << std::endl;
 	    } else {
@@ -1888,6 +1889,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		        /* This info is printed only once for an aborted tx b/c  it is only printed when the number of replies equals (2f+1). Strictly speaking, this is not correct, we should wait for reply for every input shard that have locked some UTXOs. */
 			std::cout << ", ABORTED, ";
 			g_pbft->txResendQueue.push_back(g_pbft->txInFly[reply.digest]);
+			g_pbft->nTotalFailedTx++;
 		} else if (reply.reply == 'n') {
 			std::cout << "fail to commit or abort, ";
 		} 
@@ -1927,9 +1929,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
 	/* Check if we should send a unlock_to_abort req for the tx */
 	uint reply_threshold = 2 * CPbft::nFaulty + 1;
-	std::cout << "tx " << reply.digest.GetHex().substr(0,10);
 	if (shardReplies.size() == reply_threshold && reply.reply == 'n') {
-	    std::cout << ", LOCK_NOT_OK, ";
+	    std::cout << "tx " << reply.digest.GetHex().substr(0,10) << ", LOCK_NOT_OK, ";
 	    /* assemble a unlock_to_abort req including (2f + 1) replies from this shard */
 	    assert(g_pbft->txInFly.find(reply.digest) != g_pbft->txInFly.end());
 	    UnlockToAbortReq abortReq(std::move(CMutableTransaction(*g_pbft->txInFly[reply.digest].tx)), shardReplies);
@@ -1949,7 +1950,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    }
 	} else if (isLeastReplyShard && shardReplies.size() == reply_threshold && reply.reply == 'y') {
 	    if (reply.reply == 'y') {
-		    std::cout << ", LOCK_OK, ";
+		    std::cout << "tx " << reply.digest.GetHex().substr(0,10) << ", LOCK_OK, ";
 	    }  
 	    /* assemble a vector including (2f + 1) replies for every shard */
 	    std::vector<CInputShardReply> vReply;
