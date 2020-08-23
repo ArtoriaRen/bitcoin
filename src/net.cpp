@@ -1994,6 +1994,7 @@ void CConnman::OpenNetworkConnection(const CAddress& addrConnect, bool fCountFai
 
 void CConnman::ThreadMessageHandler()
 {
+    CPbft& pbft = *g_pbft;
     while (!flagInterruptMsgProc)
     {
         std::vector<CNode*> vNodesCopy;
@@ -2033,10 +2034,14 @@ void CConnman::ThreadMessageHandler()
                 pnode->Release();
         }
 
+	/* log throughput if enough long time has elapsed. */
+	bool testIsRunning = pbft.nTotalSentTx > 0  // test has started
+		&& pbft.nCompletedTx + pbft.nTotalFailedTx < pbft.nTotalSentTx; // test has not yet finished
 	struct timeval currentTime;
 	gettimeofday(&currentTime, NULL);
-	if (g_pbft->testStartTime.tv_sec > 0 && currentTime.tv_sec >= g_pbft->nextLogTime.tv_sec && currentTime.tv_usec >= g_pbft->nextLogTime.tv_usec) {
-	    g_pbft->logThruput(currentTime);
+	long time_elapsed = (currentTime.tv_sec - pbft.nextLogTime.tv_sec) * 1000000 + (currentTime.tv_usec - pbft.nextLogTime.tv_usec); 
+	if (testIsRunning && time_elapsed >= thruInterval) {
+	    pbft.logThruput(currentTime);
 	}
 
         std::unique_lock<std::mutex> lock(mutexMsgProc);

@@ -7,7 +7,7 @@
 #include <pbft/pbft.h>
 #include "tx_placement/tx_placer.h"
 int32_t pbftID;
-uint32_t thruInterval; // calculate throughput once completing every "thruInterval" tx
+uint32_t thruInterval; // calculate throughput once every "thruInterval" seconds
 
 TxBlockInfo::TxBlockInfo(): blockHeight(0), n(0), outputShard(-1) { }
 TxBlockInfo::TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn, int32_t outputShardIn): tx(txIn), blockHeight(blockHeightIn), n(nIn), outputShard(outputShardIn) { }
@@ -60,7 +60,7 @@ bool ThreadSafeQueue::empty() {
     return queue_.empty();
 }
 
-CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), nCompletedTx(0), privateKey(CKey()) {
+CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nTotalSentTx(0), privateKey(CKey()) {
     testStartTime = {0, 0};
     nextLogTime = {0, 0};
     privateKey.MakeNewKey(false);
@@ -88,16 +88,17 @@ void CPbft::logThruput(struct timeval& endTime) {
 	/* test just started. log the start time */
 	std::cout << "At time " << endTime.tv_sec << "." << endTime.tv_usec << ", sending tx starts. This is the initial throughput log. " << std::endl;
 	testStartTime = endTime;
-	/* log at the next second */
-	nextLogTime.tv_sec = endTime.tv_sec + 1;
+	/* log when thruInterval seconds has passed by  */
+	nextLogTime.tv_sec = endTime.tv_sec + thruInterval;
 	nextLogTime.tv_usec = endTime.tv_usec;
 	return;
     }
-    uint32_t thruput = nCompletedTx * 1000000 / ((endTime.tv_sec - nextLogTime.tv_sec + 1) * 1000000 + (endTime.tv_usec - nextLogTime.tv_usec));
-    /* log at the next second */
-    nextLogTime.tv_sec = endTime.tv_sec + 1;
+    double thruput = (nCompletedTx - nLastCompletedTx) / ((endTime.tv_sec - nextLogTime.tv_sec + thruInterval) + (endTime.tv_usec - nextLogTime.tv_usec) * 0.000001);
+    /* log when thruInterval seconds has passed by  */
+    nextLogTime.tv_sec = endTime.tv_sec + thruInterval;
     nextLogTime.tv_usec = endTime.tv_usec;
-    std::cout << "At time " << endTime.tv_sec << "." << endTime.tv_usec << ", completed " <<  nCompletedTx << "tx" << ": throughput = " << thruput << std::endl;
+    nLastCompletedTx = nCompletedTx;
+    std::cout << "At time " << endTime.tv_sec << "." << endTime.tv_usec << ", completed " <<  nCompletedTx << " tx" << ": throughput = " << thruput << std::endl;
 }
 
 std::unique_ptr<CPbft> g_pbft;

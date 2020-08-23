@@ -433,6 +433,7 @@ bool TxPlacer::sendTx(const CTransactionRef tx, const uint idx, const uint32_t b
 		g_connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_LOCK, lockReq));
 	    }
 	}
+	g_pbft->nTotalSentTx++;
 	return true;
 }
 
