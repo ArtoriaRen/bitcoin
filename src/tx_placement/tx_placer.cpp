@@ -103,7 +103,7 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
 	const uint256& hashTx = tx->GetHash();
 	sendTx(block.vtx[j], j, block_height);
 	cnt++;
-	//nanosleep(&sleep_length, NULL);
+	nanosleep(&sleep_length, NULL);
 
 	/* send one aborted tx every four tx */
 	if ((j & 0x04) == 0) {
@@ -167,17 +167,17 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 	    gettimeofday(&stat.startTime, NULL);
 	    g_pbft->mapTxStartTime.insert(std::make_pair(hashTx, stat));
 	    g_connman->PushMessage(g_pbft->leaders[shards[0]], msgMaker.Make(NetMsgType::PBFT_TX, *tx));
-	//} else {
-	//    /* this is a cross-shard tx */
-	//    stat.type = TxType::CROSS_SHARD;
-	//    gettimeofday(&stat.startTime, NULL);
-	//    g_pbft->mapTxStartTime.insert(std::make_pair(hashTx, stat));
-	//    for (uint i = 1; i < shards.size(); i++) {
-	//	g_pbft->inputShardReplyMap[hashTx].lockReply.insert(std::make_pair(shards[i], std::vector<CInputShardReply>()));
-	//	g_pbft->inputShardReplyMap[hashTx].decision = '\0';
-	//	g_connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_LOCK, *tx));
-	//    }
-	    g_pbft->nTotalSentTx++;
+	} else {
+	    /* this is a cross-shard tx */
+	    stat.type = TxType::CROSS_SHARD;
+	    gettimeofday(&stat.startTime, NULL);
+	    g_pbft->mapTxStartTime.insert(std::make_pair(hashTx, stat));
+	    for (uint i = 1; i < shards.size(); i++) {
+		g_pbft->inputShardReplyMap[hashTx].lockReply.insert(std::make_pair(shards[i], std::vector<CInputShardReply>()));
+		g_pbft->inputShardReplyMap[hashTx].decision = '\0';
+		g_connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_LOCK, *tx));
+	    }
 	}
+	g_pbft->nTotalSentTx++;
 	return true;
 }
