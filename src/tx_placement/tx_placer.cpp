@@ -357,7 +357,7 @@ uint32_t TxPlacer::sendTxInBlock(uint32_t block_height, int txSendPeriod) {
 	const uint256& hashTx = tx->GetHash();
 	sendTx(block.vtx[j], j, block_height);
 	cnt++;
-	//nanosleep(&sleep_length, NULL);
+	nanosleep(&sleep_length, NULL);
 
 	/* send one aborted tx every four tx */
 	if ((j & 0x04) == 0) {
