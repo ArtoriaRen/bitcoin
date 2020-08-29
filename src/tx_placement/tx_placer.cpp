@@ -109,13 +109,13 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
 	if ((j & 0x04) == 0) {
 	    if (ShutdownRequested())
 	    	return cnt;
-	    while (!g_pbft->txResendQueue.empty()) {
-		TxBlockInfo& txInfo = g_pbft->txResendQueue.front();
-		sendTx(txInfo.tx, txInfo.n, txInfo.blockHeight);
-		g_pbft->txResendQueue.pop_front();
-	        cnt++;
-		//nanosleep(&sleep_length, NULL);
-	    }
+	    //while (!g_pbft->txResendQueue.empty()) {
+	    //    TxBlockInfo& txInfo = g_pbft->txResendQueue.front();
+	    //    sendTx(txInfo.tx, txInfo.n, txInfo.blockHeight);
+	    //    g_pbft->txResendQueue.pop_front();
+	    //    cnt++;
+	    //    //nanosleep(&sleep_length, NULL);
+	    //}
 	}
     }
 
