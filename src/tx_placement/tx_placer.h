@@ -132,7 +132,7 @@ void extractRawTxInBlock();
 void smartPlaceTxInBlock(const std::shared_ptr<const CBlock> pblock);
 
 inline std::string getShardInfoFilename(int block_height) {
-    return std::to_string(block_height) + "_shardinfo.out";
+    return "/home/l27ren/shard_info_files/" + std::to_string(num_committees) + "committees/"+ std::to_string(block_height) + "_shardinfo.out";
 }
 
 extern TxPlacer g_txplacer;
