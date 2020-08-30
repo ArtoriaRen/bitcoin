@@ -270,7 +270,8 @@ bool Consensus::CheckLockReqInputs(const CTransaction& tx, CValidationState& sta
     int32_t myShardId = pbftID/CPbft::groupSize;
     /*----check that we have all UTXOs in the vInputUtxoIdxToLock----*/
     TxPlacer txPlacer;
-    std::vector<Coin> vCoin(vInputUtxoIdxToLock.size());
+    std::vector<Coin> vCoin;
+    vCoin.reserve(vInputUtxoIdxToLock.size());
     for (const uint32_t& idx: vInputUtxoIdxToLock) {
 	const Coin& coin = inputs.AccessCoin(tx.vin[idx].prevout);
 	if (coin.IsSpent()){
@@ -279,7 +280,7 @@ bool Consensus::CheckLockReqInputs(const CTransaction& tx, CValidationState& sta
 			     strprintf("%s: inputs missing/spent", __func__));
 	}
 	assert(coin.shardAffinity == myShardId);
-	vCoin[idx] = coin;
+	vCoin.push_back(coin);
     }
 
     CAmount nValueIn = 0;
