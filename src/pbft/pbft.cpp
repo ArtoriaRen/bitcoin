@@ -101,6 +101,10 @@ CPbft::CPbft() : localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
+    for (int i = 0; i < 4; i++) {
+	totalExeTime[i] = 0;
+	totalExeCount[i] = 0;
+    }
 }
 
 

@@ -95,6 +95,11 @@ public:
      * smartPlaceUTXO(tx.vin[0]) to resolve the output shard of the tx. */
     std::unordered_set<uint256, BlockHasher> txToBeCommitted;
 
+    /* total execution time and count for Tx, LockReq, COMMIT, and ABORT reqs.
+     * For avg execution time calculation. */
+    unsigned long totalExeTime[4]; // in us
+    uint32_t totalExeCount[4];
+    
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
     bool ProcessPP(CConnman* connman, CPre_prepare& ppMsg);
