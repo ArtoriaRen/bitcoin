@@ -365,7 +365,10 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman) const {
     uint32_t txCnt = 0;
     CCoinsViewCache view(pcoinsTip.get());
     for (uint i = 0; i < vReq.size(); i++) {
+	struct timeval start_time, end_time;
+	gettimeofday(&start_time, NULL);
 	char exe_res = vReq[i].pReq->Execute(seq, view);
+	gettimeofday(&end_time, NULL);
 	if (vReq[i].type == ClientReqType::LOCK) {
 	    CInputShardReply reply = g_pbft->assembleInputShardReply(seq, i, exe_res, ((LockReq*)vReq[i].pReq.get())->totalValueInOfShard);
 	    connman->PushMessage(g_pbft->client, msgMaker.Make(NetMsgType::OMNI_LOCK_REPLY, reply));
@@ -377,9 +380,27 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman) const {
 		txCnt++;
 	    }
 	}
+
+	/* update execution time and count */
+	g_pbft->totalExeTime[vReq[i].type] += (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
+	g_pbft->totalExeCount[vReq[i].type]++;
     }
     bool flushed = view.Flush(); // flush to pcoinsTip
     assert(flushed);
+    std::cout << "Average execution time: ";
+    if (g_pbft->totalExeCount[0] != 0) {
+	std::cout << "TX = " << g_pbft->totalExeTime[0]/g_pbft->totalExeCount[0] << " us/req, ";
+    }
+    if (g_pbft->totalExeCount[1] != 0) {
+	std::cout << "LOCK = " << g_pbft->totalExeTime[1]/g_pbft->totalExeCount[1] << " us/req, ";
+    }
+    if (g_pbft->totalExeCount[2] != 0) {
+	std::cout << "LOCK = " << g_pbft->totalExeTime[2]/g_pbft->totalExeCount[2] << " us/req, ";
+    }
+    if (g_pbft->totalExeCount[3] != 0) {
+	std::cout << "LOCK = " << g_pbft->totalExeTime[3]/g_pbft->totalExeCount[3] << " us/req, ";
+    }
+
     return txCnt;
 }
 

@@ -25,7 +25,7 @@ enum PbftPhase {pre_prepare, prepare, commit, reply, end};
 /* Only input shards will receive LOCK and  UNLOCK_TO_ABORT req;
  * Only output shards will receive UNLOCK_TO_COMMIT req.
  */
-enum ClientReqType {TX, LOCK, UNLOCK_TO_COMMIT, UNLOCK_TO_ABORT};
+enum ClientReqType {TX = 0, LOCK, UNLOCK_TO_COMMIT, UNLOCK_TO_ABORT};
 
 class CPbft;
 
