@@ -415,10 +415,10 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman) const {
 	std::cout << "LOCK = " << g_pbft->totalExeTime[1]/g_pbft->totalExeCount[1] << " us/req, ";
     }
     if (g_pbft->totalExeCount[2] != 0) {
-	std::cout << "LOCK = " << g_pbft->totalExeTime[2]/g_pbft->totalExeCount[2] << " us/req, ";
+	std::cout << "COMMIT = " << g_pbft->totalExeTime[2]/g_pbft->totalExeCount[2] << " us/req, ";
     }
     if (g_pbft->totalExeCount[3] != 0) {
-	std::cout << "LOCK = " << g_pbft->totalExeTime[3]/g_pbft->totalExeCount[3] << " us/req, ";
+	std::cout << "ABORT = " << g_pbft->totalExeTime[3]/g_pbft->totalExeCount[3] << " us/req, ";
     }
 
     return txCnt;
