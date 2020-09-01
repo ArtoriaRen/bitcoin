@@ -1337,21 +1337,10 @@ void UpdateUnlockCommitCoins(const CTransaction& tx, CCoinsViewCache& inputs, in
 //    TxPlacer txPlacer;
 //    assert(txPlacer.randomPlaceUTXO(tx.GetHash()) == myShardId);
 
-    auto iter = g_pbft->txToBeCommitted.find(tx.GetHash());
-    if (iter == g_pbft->txToBeCommitted.end()){
-	    std::cout << "tx " << tx.GetHash().GetHex().substr(0,10) << " is not in the ToBeCommitted set." << std::endl;
-    }
-    assert(iter != g_pbft->txToBeCommitted.end());
-    g_pbft->txToBeCommitted.erase(iter);
-    std::cout << "tx " << tx.GetHash().GetHex().substr(0,10) << " is removed form the ToBeCommitted set." << std::endl;
-    
-    /* TODO: for smart placement
-     * output shard should be the shard of the first input and should be the id
-     * of this shard. 
+    /* TODO: check if we are the output shard by checking the txUndoInfo of this tx.
+     * Remove the txUndo info if we are the output shard
      */
-//    assert(tx.vin[0].shardAffinity == CPbft::shardID);
-//    for (uint i = 0, )
-
+    
     // add outputs
     AddCoins(inputs, tx, nHeight, myShardId);
 }

@@ -89,12 +89,6 @@ public:
 
     std::chrono::milliseconds lastQSizePrintTime;
 
-    /* A set used when check if we should commit a tx in our shard. 
-     * This is only needed by the smart placement b/c we would have spent the 
-     * tx.vin[0] by the time we are asked to committed the tx, so we cannot use
-     * smartPlaceUTXO(tx.vin[0]) to resolve the output shard of the tx. */
-    std::unordered_set<uint256, BlockHasher> txToBeCommitted;
-
     /* total execution time and count for Tx, LockReq, COMMIT, and ABORT reqs.
      * For avg execution time calculation. */
     unsigned long totalExeTime[4]; // in us
