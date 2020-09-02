@@ -90,6 +90,12 @@ public:
      * This map enables us to figure out the tx given a txid. 
      */
     std::unordered_map<uint256, TxBlockInfo, BlockHasher> txInFly;
+    /* The up-to-date size of txInFly. 
+     * This is for memory barrier purpose. The tx-sending thread insert tx into the txInFly map while
+     * the net_processing thread read the map. We use memory barrier to guarantee the net_processing
+     * thread will read the up-to-date txInFly map.
+     */ 
+    std::atomic<int> atomicNumTxSent; 
     ThreadSafeQueue txResendQueue;
 
     std::unordered_map<uint256, TxStat, BlockHasher> mapTxStartTime;

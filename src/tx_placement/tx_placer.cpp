@@ -413,6 +413,7 @@ bool TxPlacer::sendTx(const CTransactionRef tx, const uint idx, const uint32_t b
 	 * We also remove all reply msg for this req for resending aborted tx. */
 	g_pbft->replyMap[hashTx].clear();
 	g_pbft->txInFly.insert(std::make_pair(hashTx, std::move(TxBlockInfo(tx, block_height, idx, shards[0]))));
+	g_pbft->atomicNumTxSent.fetch_add(1, std::memory_order_release);
 	g_pbft->mapTxStartTime.erase(hashTx);
 	struct TxStat stat;
 	if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {

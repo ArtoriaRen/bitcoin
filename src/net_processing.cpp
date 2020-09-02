@@ -1854,6 +1854,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    struct timeval endTime;
 	    gettimeofday(&endTime, NULL);
 	    /* ---- calculate latency ---- */
+	    g_pbft->atomicNumTxSent.load(std::memory_order_acquire);
 	    if (g_pbft->txUnlockReqMap.find(reply.digest) == g_pbft->txUnlockReqMap.end()) {
 		/* single-shard tx */
 		assert(g_pbft->mapTxStartTime.find(reply.digest) != g_pbft->mapTxStartTime.end());
@@ -1907,7 +1908,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	if (!g_pbft->checkReplySig(&reply)) {
 	    std::cout << strCommand << " from " << reply.peerID << " sig verification fail"  << std::endl;
 	} else {
-	    std::cout << strCommand << " sig ok" << std::endl;
+	    std::cout << std::endl;
 	}
 
 	int shardID = reply.peerID/CPbft::groupSize;
@@ -1916,7 +1917,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
 	/* Check if the client has accumulated enough replies from every shard. If so, send a unlock_to_commit req to the output shard. */
 	bool isLeastReplyShard = true;
-        //std::cout << "num of input shards = " << g_pbft->inputShardReplyMap[reply.digest].lockReply.size() << std::endl;
 	for (auto& p: g_pbft->inputShardReplyMap[reply.digest].lockReply) {
 	    std::cout << "shardId = " << p.first << ": number of lock replies = " << p.second.size() << std::endl;
 	    if (p.second.size() < shardReplies.size()) {
@@ -1927,6 +1927,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
 	/* Check if we should send a unlock_to_abort req for the tx */
 	uint reply_threshold = 2 * CPbft::nFaulty + 1;
+	g_pbft->atomicNumTxSent.load(std::memory_order_acquire);
 	if (shardReplies.size() == reply_threshold && reply.reply == 'n') {
 	    std::cout << "tx " << reply.digest.GetHex().substr(0,10) << ", LOCK_NOT_OK, ";
 	    /* assemble a unlock_to_abort req including (2f + 1) replies from this shard */
@@ -1947,9 +1948,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_UNLOCK_ABORT, abortReq));
 	    }
 	} else if (isLeastReplyShard && shardReplies.size() == reply_threshold && reply.reply == 'y') {
-	    if (reply.reply == 'y') {
-		    std::cout << "tx " << reply.digest.GetHex().substr(0,10) << ", LOCK_OK, ";
-	    }  
+	    std::cout << "tx " << reply.digest.GetHex().substr(0,10) << ", LOCK_OK, ";
 	    /* assemble a vector including (2f + 1) replies for every shard */
 	    std::vector<CInputShardReply> vReply;
 	    vReply.reserve(reply_threshold * g_pbft->inputShardReplyMap[reply.digest].lockReply.size());
