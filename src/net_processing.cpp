@@ -1854,10 +1854,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    struct timeval endTime;
 	    gettimeofday(&endTime, NULL);
 	    /* ---- calculate latency ---- */
-	    g_pbft->atomicNumTxSent.load(std::memory_order_acquire);
 	    if (g_pbft->txUnlockReqMap.find(reply.digest) == g_pbft->txUnlockReqMap.end()) {
 		/* single-shard tx */
-		assert(g_pbft->mapTxStartTime.find(reply.digest) != g_pbft->mapTxStartTime.end());
+		assert(g_pbft->mapTxStartTime.exist(reply.digest));
 		TxStat& stat = g_pbft->mapTxStartTime[reply.digest]; 
 		    
 		assert (stat.type == TxType::SINGLE_SHARD); 
@@ -1927,11 +1926,10 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
 	/* Check if we should send a unlock_to_abort req for the tx */
 	uint reply_threshold = 2 * CPbft::nFaulty + 1;
-	g_pbft->atomicNumTxSent.load(std::memory_order_acquire);
 	if (shardReplies.size() == reply_threshold && reply.reply == 'n') {
 	    std::cout << "tx " << reply.digest.GetHex().substr(0,10) << ", LOCK_NOT_OK, ";
 	    /* assemble a unlock_to_abort req including (2f + 1) replies from this shard */
-	    assert(g_pbft->txInFly.find(reply.digest) != g_pbft->txInFly.end());
+	    assert(g_pbft->txInFly.exist(reply.digest));
 	    UnlockToAbortReq abortReq(std::move(CMutableTransaction(*g_pbft->txInFly[reply.digest].tx)), shardReplies);
 
 	    /* mark the tx is final and no further unlock_to_abort or unlock_to_commit should be sent. 'a' stands for abort. */
@@ -1957,7 +1955,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		vReply.insert(vReply.end(), p.second.begin(), p.second.begin() + 3);
 	    }
             
-	    assert(g_pbft->txInFly.find(reply.digest) != g_pbft->txInFly.end());
+	    assert(g_pbft->txInFly.exist(reply.digest));
 	    UnlockToCommitReq commitReq(std::move(CMutableTransaction(*g_pbft->txInFly[reply.digest].tx)), vReply.size(), std::move(vReply));
 
 	    /* mark the tx is final so that we do not need to process future replies for this req. 'c' stands for commit. */

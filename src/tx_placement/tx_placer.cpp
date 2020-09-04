@@ -99,8 +99,6 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
     const struct timespec sleep_length = {0, txSendPeriod * 1000};
     uint32_t cnt = 0;
     for (uint j = 0; j < block.vtx.size(); j++) {
-	CTransactionRef tx = block.vtx[j];
-	const uint256& hashTx = tx->GetHash();
 	sendTx(block.vtx[j], j, block_height);
 	cnt++;
 	nanosleep(&sleep_length, NULL);
@@ -157,10 +155,9 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 
 	/* send tx and collect time info to calculate latency. 
 	 * We also remove all reply msg for this req for resending aborted tx. */
-	g_pbft->replyMap[hashTx].clear();
+	//g_pbft->replyMap[hashTx].clear();
+	//g_pbft->mapTxStartTime.erase(hashTx);
 	g_pbft->txInFly.insert(std::make_pair(hashTx, std::move(TxBlockInfo(tx, block_height, idx))));
-	g_pbft->atomicNumTxSent.fetch_add(1, std::memory_order_release);
-	g_pbft->mapTxStartTime.erase(hashTx);
 	struct TxStat stat;
 	if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
 	    /* this is a single shard tx */
