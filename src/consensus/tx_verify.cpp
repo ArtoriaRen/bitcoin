@@ -279,7 +279,6 @@ bool Consensus::CheckLockReqInputs(const CTransaction& tx, CValidationState& sta
 	    return state.DoS(100, false, REJECT_INVALID, "bad-txns-inputs-missingorspent", false,
 			     strprintf("%s: inputs missing/spent", __func__));
 	}
-	assert(coin.shardAffinity == myShardId);
 	vCoin.push_back(coin);
     }
 
