@@ -68,6 +68,46 @@ private:
     std::condition_variable cond_;
 };
 
+template <typename K, typename V, typename Hasher>
+class ThreadSafeMap {
+public:
+    ThreadSafeMap() { };
+    ~ThreadSafeMap() { };
+
+    V& operator[](const K& key) {
+	std::unique_lock<std::mutex> mlock(mutex_);
+	return map_[key];
+    }
+    
+    bool exist(const K& key) {
+	std::unique_lock<std::mutex> mlock(mutex_);
+	if (map_.find(key) != map_.end())
+	    return true;
+	else
+	    return false;
+    }
+
+    void insert(const std::pair<K, V>&& kvPair) {
+	std::unique_lock<std::mutex> mlock(mutex_);
+	map_.insert(kvPair);
+    }
+
+    void erase(const K& key) {
+	std::unique_lock<std::mutex> mlock(mutex_);
+	map_.erase(key);
+    }
+
+    int size() {
+	std::unique_lock<std::mutex> mlock(mutex_);
+	return map_.size();
+    }
+    
+private:
+    std::unordered_map<K, V, Hasher> map_;
+    std::mutex mutex_;
+    std::condition_variable cond_;
+};
+
 class CPbft{
 public:
     static const uint32_t nFaulty = 1;
@@ -89,16 +129,11 @@ public:
      * This map is used when the input shards reply and we need to assemble a commit req.
      * This map enables us to figure out the tx given a txid. 
      */
-    std::unordered_map<uint256, TxBlockInfo, BlockHasher> txInFly;
-    /* The up-to-date size of txInFly. 
-     * This is for memory barrier purpose. The tx-sending thread insert tx into the txInFly map while
-     * the net_processing thread read the map. We use memory barrier to guarantee the net_processing
-     * thread will read the up-to-date txInFly map.
-     */ 
-    std::atomic<int> atomicNumTxSent; 
+    ThreadSafeMap<uint256, TxBlockInfo, BlockHasher> txInFly;
+    
     ThreadSafeQueue txResendQueue;
 
-    std::unordered_map<uint256, TxStat, BlockHasher> mapTxStartTime;
+    ThreadSafeMap<uint256, TxStat, BlockHasher> mapTxStartTime;
     uint32_t nLastCompletedTx;
     uint32_t nCompletedTx;
     uint32_t nTotalFailedTx;
