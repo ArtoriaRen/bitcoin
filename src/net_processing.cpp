@@ -2957,13 +2957,16 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 }
 
 bool PeerLogicValidation::SendPPMessages(){
-    /* TODO : take client req from the reqQueue when need to process new req. 
-     * Probably we should do this when there are, e.g., 10 reqs in fly. Should 
-     * tune this number to get best thoroughput.
-     * reqQueue is threadsafe, so we do not acquire lock before querying its size.
+    /* Take client req from the reqQueue and assemble a block iff all following 
+     * conditions are true:
+     * 1. this pbft instance is a leader
+     * 2. the req queue has more-than-maxBlockSize tx; or the req queue is not 
+     *    empty and we have timed out waiting for more tx.
+     *  
      */ 
-
-    if (pbft->isLeader() && pbft->reqQueue.size() > 0) {
+    if (pbft->isLeader() && 
+	    (pbft->reqQueue.size() >= maxBlockSize || 
+	    (pbft->reqQueue.size() > 0 && pbft->timeoutWaitReq()))) {
 	pbft->printQueueSize(); // only log queue size here cuz it will not change anywhere else
 	CPbftBlock pbftblock(pbft->reqQueue.get_upto(static_cast<uint32_t>(maxBlockSize)));
 	pbftblock.ComputeHash();
@@ -2981,6 +2984,8 @@ bool PeerLogicValidation::SendPPMessages(){
 	for (uint32_t i = start_peerID; i < end_peerID; i++) {
 	    connman->PushMessage(pbft->peers[i], msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
 	}
+    } else if (pbft->reqQueue.size() == 0) {
+	pbft->setReqWaitTimer();
     }
     return true;
 }

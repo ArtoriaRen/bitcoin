@@ -829,7 +829,7 @@ void InitParameterInteraction()
         nMaxReqInFly = gArgs.GetArg("-maxreqinfly", 100);
     }
     if (gArgs.IsArgSet("-qsizeprintperiod")) {
-        QSizePrintPeriod = gArgs.GetArg("-qsizeprintperiod", 1000); // in ms
+        reqWaitTimeout = gArgs.GetArg("-qsizeprintperiod", 1000); // in ms
     }
 }
 

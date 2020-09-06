@@ -27,7 +27,7 @@
 
 extern int32_t pbftID;
 extern int32_t nMaxReqInFly; 
-extern int32_t QSizePrintPeriod;
+extern int32_t reqWaitTimeout;
 extern int32_t maxBlockSize; 
 
 
@@ -86,7 +86,7 @@ public:
      * reply back the client as soon as possible. */
     CConnman* clientConnMan;
 
-    std::chrono::milliseconds lastQSizePrintTime;
+    std::chrono::milliseconds reqQEmptyStartTime;
 
     /* total execution time and count for Tx, LockReq, COMMIT, and ABORT reqs.
      * For avg execution time calculation. */
@@ -112,12 +112,25 @@ public:
     int executeLog(const int seq, CConnman* connman);
 
     inline void printQueueSize(){
-	    /* log queue size if we have reached the period. */
-	    std::chrono::milliseconds current = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
-	    if (current - lastQSizePrintTime > std::chrono::milliseconds(QSizePrintPeriod)) {
-		std::cout << "queue size log, " << current.count() << "," << reqQueue.size() << std::endl; // time stamp is in milliseconds. TODO: change is to seconds for a long throughput test.
-		lastQSizePrintTime = current;
-	    }
+	std::chrono::milliseconds current = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
+	std::cout << "queue size log, " << current.count() << "," << reqQueue.size() << std::endl; // time stamp is in milliseconds. TODO: change is to seconds for a long throughput test.
+    }
+
+    inline bool timeoutWaitReq(){
+	/* log queue size if we have reached the period. */
+	std::chrono::milliseconds current = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
+	if (current - reqQEmptyStartTime > std::chrono::milliseconds(reqWaitTimeout)) {
+	    reqQEmptyStartTime = std::chrono::milliseconds::zero();
+	    return true;
+	} else { 
+	    return false;
+	}
+    }
+
+    inline void setReqWaitTimer(){
+	if (reqQEmptyStartTime == std::chrono::milliseconds::zero()) {
+	    reqQEmptyStartTime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
+	}
     }
 
     inline bool isLeader(){
