@@ -89,6 +89,8 @@ public:
 
     std::chrono::milliseconds notEnoughReqStartTime;
 
+    uint32_t startBlkHeight;
+
     /* total execution time and count for Tx, LockReq, COMMIT, and ABORT reqs.
      * For avg execution time calculation. */
     unsigned long totalExeTime[4]; // in us
@@ -138,6 +140,11 @@ public:
     inline bool isLeader(){
 	return pbftID % groupSize == 0;
     }
+
+    inline uint32_t getBlockHeight(uint32_t seq) {
+	return startBlkHeight + seq;
+    }
+
 
 private:
     // private ECDSA key used to sign messages

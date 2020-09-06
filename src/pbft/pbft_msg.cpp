@@ -112,7 +112,7 @@ char TxReq::Execute(const int seq, CCoinsViewCache& view) const {
 	}
     }
 
-    UpdateCoins(tx, view, seq);
+    UpdateCoins(tx, view, g_pbft->getBlockHeight(seq));
     /* -------------logic from Bitcoin code for tx processing--------- */
 
     std::cout << __func__ << ": excuted tx " << tx.GetHash().ToString()
@@ -179,7 +179,7 @@ char LockReq::Execute(const int seq, CCoinsViewCache& view) const {
     /* Step 4: spent the input coins in our shard and store them in the global map 
      * for possibly future UnlockToAbort processing. */
     TxUndoInfo undoInfo;
-    UpdateLockCoins(tx, vInputUtxoIdxToLock, view, undoInfo, seq);
+    UpdateLockCoins(tx, vInputUtxoIdxToLock, view, undoInfo, g_pbft->getBlockHeight(seq));
     mapTxUndo.insert(std::make_pair(tx.GetHash(), undoInfo));
     /* -------------logic from Bitcoin code for tx processing--------- */
     std::cout << __func__ << ": locked input UTXOs for tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << std::endl;
@@ -278,7 +278,7 @@ char UnlockToCommitReq::Execute(const int seq, CCoinsViewCache& view) const {
      * for possibly future UnlockToAbort processing. 
      * 2) In output shard: add output coins to coinsview.
      */
-    UpdateUnlockCommitCoins(tx, view, seq);
+    UpdateUnlockCommitCoins(tx, view, g_pbft->getBlockHeight(seq));
     /* -------------logic from Bitcoin code for tx processing--------- */
     std::cout << __func__ << ":  commit tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << std::endl;
     return 'y';
