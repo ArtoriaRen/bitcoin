@@ -405,16 +405,16 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman) const {
     assert(flushed);
     std::cout << "Average execution time: ";
     if (g_pbft->totalExeCount[0] != 0) {
-	std::cout << "TX = " << g_pbft->totalExeTime[0]/g_pbft->totalExeCount[0] << " us/req, ";
+	std::cout << "TX = " << g_pbft->totalExeTime[0]/g_pbft->totalExeCount[0] << " us/req, " << " TX_cnt = " << g_pbft->totalExeCount[0] << ", ";
     }
     if (g_pbft->totalExeCount[1] != 0) {
-	std::cout << "LOCK = " << g_pbft->totalExeTime[1]/g_pbft->totalExeCount[1] << " us/req, ";
+	std::cout << "LOCK = " << g_pbft->totalExeTime[1]/g_pbft->totalExeCount[1] << " us/req, " << " LOCK_cnt = " << g_pbft->totalExeCount[1] << ", ";
     }
     if (g_pbft->totalExeCount[2] != 0) {
-	std::cout << "COMMIT = " << g_pbft->totalExeTime[2]/g_pbft->totalExeCount[2] << " us/req, ";
+	std::cout << "COMMIT = " << g_pbft->totalExeTime[2]/g_pbft->totalExeCount[2] << " us/req, " << " COMMIT_cnt = " << g_pbft->totalExeCount[2] << ", ";
     }
     if (g_pbft->totalExeCount[3] != 0) {
-	std::cout << "ABORT = " << g_pbft->totalExeTime[3]/g_pbft->totalExeCount[3] << " us/req, ";
+	std::cout << "ABORT = " << g_pbft->totalExeTime[3]/g_pbft->totalExeCount[3] << " us/req, " << " ABORT_cnt = " << g_pbft->totalExeCount[3] << ", ";
     }
 
     return txCnt;
