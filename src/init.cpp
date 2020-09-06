@@ -1708,6 +1708,7 @@ bool AppInitMain()
         chain_active_height = chainActive.Height();
     }
     LogPrintf("nBestHeight = %d\n", chain_active_height);
+    g_pbft->startBlkHeight = chain_active_height;
 
     if (gArgs.GetBoolArg("-listenonion", DEFAULT_LISTEN_ONION))
         StartTorControl(threadGroup, scheduler);
