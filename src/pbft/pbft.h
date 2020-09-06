@@ -87,7 +87,7 @@ public:
      * reply back the client as soon as possible. */
     CConnman* clientConnMan;
 
-    std::chrono::milliseconds reqQEmptyStartTime;
+    std::chrono::milliseconds notEnoughReqStartTime;
 
     /* total execution time and count for Tx, LockReq, COMMIT, and ABORT reqs.
      * For avg execution time calculation. */
@@ -120,8 +120,9 @@ public:
     inline bool timeoutWaitReq(){
 	/* log queue size if we have reached the period. */
 	std::chrono::milliseconds current = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
-	if (current - reqQEmptyStartTime > std::chrono::milliseconds(reqWaitTimeout)) {
-	    reqQEmptyStartTime = std::chrono::milliseconds::zero();
+	//std::cout << "notEnoughReqStartTime  =  " << notEnoughReqStartTime.count() << ", current = " << current.count() << ", reqWaitTimeout = " << reqWaitTimeout << std::endl; 
+	if (notEnoughReqStartTime != std::chrono::milliseconds::zero() && current - notEnoughReqStartTime > std::chrono::milliseconds(reqWaitTimeout)) {
+	    notEnoughReqStartTime = std::chrono::milliseconds::zero();
 	    return true;
 	} else { 
 	    return false;
@@ -129,8 +130,8 @@ public:
     }
 
     inline void setReqWaitTimer(){
-	if (reqQEmptyStartTime == std::chrono::milliseconds::zero()) {
-	    reqQEmptyStartTime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
+	if (notEnoughReqStartTime == std::chrono::milliseconds::zero()) {
+	    notEnoughReqStartTime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
 	}
     }
 

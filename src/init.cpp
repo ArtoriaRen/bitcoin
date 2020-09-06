@@ -828,8 +828,8 @@ void InitParameterInteraction()
     if (gArgs.IsArgSet("-maxreqinfly")) {
         nMaxReqInFly = gArgs.GetArg("-maxreqinfly", 100);
     }
-    if (gArgs.IsArgSet("-qsizeprintperiod")) {
-        reqWaitTimeout = gArgs.GetArg("-qsizeprintperiod", 1000); // in ms
+    if (gArgs.IsArgSet("-reqwaittimeout")) {
+        reqWaitTimeout = gArgs.GetArg("-reqwaittimeout", 1000); // in ms
     }
 }
 
