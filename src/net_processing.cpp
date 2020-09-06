@@ -2964,28 +2964,30 @@ bool PeerLogicValidation::SendPPMessages(){
      *    empty and we have timed out waiting for more tx.
      *  
      */ 
-    if (pbft->isLeader() && 
-	    (pbft->reqQueue.size() >= maxBlockSize || 
-	    (pbft->reqQueue.size() > 0 && pbft->timeoutWaitReq()))) {
-	pbft->printQueueSize(); // only log queue size here cuz it will not change anywhere else
-	CPbftBlock pbftblock(pbft->reqQueue.get_upto(static_cast<uint32_t>(maxBlockSize)));
-	pbftblock.ComputeHash();
-	std::cout << __func__ << ": block size = " << pbftblock.vReq.size() << " client reqs" << std::endl;
-	CPre_prepare ppMsg = pbft->assemblePPMsg(pbftblock);
-	pbft->log[ppMsg.seq].ppMsg = ppMsg;
-	pbft->log[ppMsg.seq].phase = PbftPhase::prepare;
-	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-	std::cout << __func__ << ": log slot "<< ppMsg.seq << " for pbftblock = "
-		<< pbft->log[ppMsg.seq].ppMsg.pbft_block.hash.GetHex().substr(0, 10)
-		<< ", block size = " << pbft->log[ppMsg.seq].ppMsg.pbft_block.vReq.size()
-		<< " reqs." << std::endl;
-	uint32_t start_peerID = pbftID + 1; // skip the leader id b/c it is myself
-	uint32_t end_peerID = start_peerID + CPbft::groupSize - 1;
-	for (uint32_t i = start_peerID; i < end_peerID; i++) {
-	    connman->PushMessage(pbft->peers[i], msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
+    if (pbft->isLeader()) {
+	if (pbft->reqQueue.size() >= maxBlockSize || 
+	    (pbft->reqQueue.size() > 0 && pbft->timeoutWaitReq())) {
+	    pbft->printQueueSize(); // only log queue size here cuz it will not change anywhere else
+	    CPbftBlock pbftblock(pbft->reqQueue.get_upto(static_cast<uint32_t>(maxBlockSize)));
+	    pbftblock.ComputeHash();
+	    std::cout << __func__ << ": block size = " << pbftblock.vReq.size() << " client reqs" << std::endl;
+	    CPre_prepare ppMsg = pbft->assemblePPMsg(pbftblock);
+	    pbft->log[ppMsg.seq].ppMsg = ppMsg;
+	    pbft->log[ppMsg.seq].phase = PbftPhase::prepare;
+	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+	    std::cout << __func__ << ": log slot "<< ppMsg.seq << " for pbftblock = "
+		    << pbft->log[ppMsg.seq].ppMsg.pbft_block.hash.GetHex().substr(0, 10)
+		    << ", block size = " << pbft->log[ppMsg.seq].ppMsg.pbft_block.vReq.size()
+		    << " reqs." << std::endl;
+	    uint32_t start_peerID = pbftID + 1; // skip the leader id b/c it is myself
+	    uint32_t end_peerID = start_peerID + CPbft::groupSize - 1;
+	    for (uint32_t i = start_peerID; i < end_peerID; i++) {
+		connman->PushMessage(pbft->peers[i], msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
+	    }
+	   
+	} else if (pbft->reqQueue.size() > 0) {
+	    pbft->setReqWaitTimer();
 	}
-    } else if (pbft->reqQueue.size() == 0) {
-	pbft->setReqWaitTimer();
     }
     return true;
 }
