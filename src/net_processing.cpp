@@ -1495,7 +1495,7 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, const std::ve
     return true;
 }
 
-bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman* connman, const std::atomic<bool>& interruptMsgProc)
+bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman* connman, const std::atomic<bool>& interruptMsgProc, uint32_t& nLocalCompletedTxPerInterval, uint32_t& nLocalTotalFailedTxPerInterval, const uint threadIdx)
 {
     std::cout << __func__ << ": " << strCommand << std::endl;
     LogPrint(BCLog::NET, "received: %s (%u bytes) peer=%d\n", SanitizeString(strCommand), vRecv.size(), pfrom->GetId());
@@ -1833,8 +1833,15 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     {
 	std::pair<int32_t, CPubKey> idPubkey;
 	vRecv >> idPubkey;
+	assert(idPubkey.first >= threadIdx * SHARD_PER_THREAD * g_pbft->groupSize &&
+		idPubkey.first < (threadIdx + 1) * SHARD_PER_THREAD * g_pbft->groupSize);
 	g_pbft->pubKeyMap.insert(std::make_pair(idPubkey.first, idPubkey.second));
 	if (idPubkey.first % CPbft::groupSize == 0) {
+	    /* The g_pbft->leaders vector is not protected by a lock because we
+	     * believe different ThreadMessageHandler threads writes to the 
+	     * different part of the vector, and all reads happens after all
+	     * writes finish.
+	     */
 	    g_pbft->leaders[idPubkey.first/CPbft::groupSize] = pfrom;
 	}
     }
@@ -1854,7 +1861,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    struct timeval endTime;
 	    gettimeofday(&endTime, NULL);
 	    /* ---- calculate latency ---- */
-	    if (g_pbft->txUnlockReqMap.find(reply.digest) == g_pbft->txUnlockReqMap.end()) {
+	    if (g_pbft->txUnlockReqMap.exist(reply.digest)) {
 		/* single-shard tx */
 		assert(g_pbft->mapTxStartTime.exist(reply.digest));
 		TxStat& stat = g_pbft->mapTxStartTime[reply.digest]; 
@@ -1864,11 +1871,11 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		if (reply.reply == 'y') {
 			std::cout << ", SUCCEED, ";
 			g_pbft->txInFly.erase(reply.digest);
-			g_pbft->nCompletedTx++;
+			nLocalCompletedTxPerInterval++;
 		} else if (reply.reply == 'n') {
 			std::cout << ", FAIL, ";
 			g_pbft->txResendQueue.push_back(g_pbft->txInFly[reply.digest]);
-			g_pbft->nTotalFailedTx++;
+			nLocalTotalFailedTxPerInterval++;
 		} 
 		std::cout << "single-shard, result received at " << endTime.tv_sec << "." << endTime.tv_usec << " s , latency = " << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << " ms" << std::endl;
 	    } else {
@@ -1878,13 +1885,19 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		TxStat& stat = g_pbft->mapTxStartTime[txid]; 
 		std::cout << "tx " << txid.GetHex().substr(0,10);
 		if (reply.reply == 'y' && inputShardRplMap[txid].decision == 'c') {
-			/* only the output shard send committed reply, so no risk of printing info more than once for a tx. */
+			/* only the output shard send committed reply, so no risk of 
+			 * printing info more than once for a tx. 
+			 */
 			std::cout << ", COMMITTED, ";
 			g_pbft->txInFly.erase(txid);
-			g_pbft->nCompletedTx++;
+			nLocalCompletedTxPerInterval++;
 		} else if (reply.reply == 'y' && inputShardRplMap[txid].decision == 'a') {
-		  
-		        /* This info is printed only once for an aborted tx b/c  it is only printed when the number of replies equals (2f+1). Strictly speaking, this is not correct, we should wait for reply for every input shard that have locked some UTXOs. */
+		        /* This info is printed only once for an aborted tx b/c  it is only 
+			 * printed when the number of replies equals (2f+1).  
+			 * Strictly speaking, this is not correct, we should wait for reply 
+			 * for every input shard that have locked some UTXOs. However, we do
+			 * not count the latency of aborted tx in our statistics anyway.
+			 */
 			std::cout << ", ABORTED, ";
 			g_pbft->txResendQueue.push_back(g_pbft->txInFly[reply.digest]);
 			g_pbft->nTotalFailedTx++;
@@ -2621,7 +2634,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         } // cs_main
 
         if (fProcessBLOCKTXN)
-            return ProcessMessage(pfrom, NetMsgType::BLOCKTXN, blockTxnMsg, nTimeReceived, chainparams, connman, interruptMsgProc);
+            return ProcessMessage(pfrom, NetMsgType::BLOCKTXN, blockTxnMsg, nTimeReceived, chainparams, connman, interruptMsgProc, nLocalCompletedTxPerInterval, nLocalTotalFailedTxPerInterval, threadIdx);
 
         if (fRevertToHeaderProcessing) {
             // Headers received from HB compact block peers are permitted to be
@@ -3038,7 +3051,7 @@ static bool SendRejectsAndCheckIfBanned(CNode* pnode, CConnman* connman)
     return false;
 }
 
-bool PeerLogicValidation::ProcessMessages(CNode* pfrom, std::atomic<bool>& interruptMsgProc)
+bool PeerLogicValidation::ProcessMessages(CNode* pfrom, std::atomic<bool>& interruptMsgProc, uint32_t& nLocalCompletedTxPerInterval, uint32_t& nLocalTotalFailedTxPerInterval, const uint threadIdx)
 {
     const CChainParams& chainparams = Params();
     //
@@ -3113,7 +3126,7 @@ bool PeerLogicValidation::ProcessMessages(CNode* pfrom, std::atomic<bool>& inter
     bool fRet = false;
     try
     {
-        fRet = ProcessMessage(pfrom, strCommand, vRecv, msg.nTime, chainparams, connman, interruptMsgProc);
+        fRet = ProcessMessage(pfrom, strCommand, vRecv, msg.nTime, chainparams, connman, interruptMsgProc, nLocalCompletedTxPerInterval, nLocalTotalFailedTxPerInterval, threadIdx);
         if (interruptMsgProc)
             return false;
         if (!pfrom->vRecvGetData.empty())

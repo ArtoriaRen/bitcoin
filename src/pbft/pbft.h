@@ -117,26 +117,49 @@ public:
 //    CPubKey myPubKey;
     std::unordered_map<int32_t, CPubKey> pubKeyMap;
 
-    std::unordered_map<uint256, std::unordered_set<std::string>, BlockHasher> replyMap; // key is txid, value is a set of senders' addressName
+    /* <single-shard txid or cross-shard commit or abort req disgest,
+     *  set_of_reply-sender_addressName>
+     * Used to decide if a tx has recive enough reply that the client can deduce
+     * the tx has been committed or aborted by servers.
+     * This map includes both single-shard and cross-shard tx.
+     */
+    ThreadSafeMap<uint256, std::unordered_set<std::string>, BlockHasher> replyMap; 
 
-    //std::vector<CInputShardReply> vInputShardReplies;
-    std::unordered_map<uint256, LockReply, BlockHasher> inputShardReplyMap; 
+    /* <txid, <shardId, vector_of_reply_from_the_shard>
+     * When we receive a lock reply, we add it to this map so that we know when
+     * we have accumulate enough lock reply to decide a commit or abort req should
+     * be sent. The lock replies of a tx also serves as proofs of future commit 
+     * or abort req.
+     * This map only includes cross-shard tx.
+     */
+    ThreadSafeMap<uint256, LockReply, BlockHasher> inputShardReplyMap; 
 
-    std::unordered_map<uint256, uint256, BlockHasher> txUnlockReqMap; //  key is the digest of a unlock to commit or unlock to abort req, value is txid
+    /* <digest_of_commit_or_abort_req, txid> 
+     * When a reply of an commit or abort req reply is received, this map helps us to 
+     * figure out the corresponding txid so that we can search the start time of
+     * this tx in the mapTxStartTime.
+     * This map only includes cross-shard tx.
+     */
+    ThreadSafeMap<uint256, uint256, BlockHasher> txUnlockReqMap; 
 
     /* <txid, shard_ptr(tx)>
      * Every time we send a cross-shard tx to its input shards, we add an element to this map. 
-     * This map is used when the input shards reply and we need to assemble a commit req.
      * This map enables us to figure out the tx given a txid. 
+     * We need the tx when we assemble a commit or abort req, or want to resend 
+     * the tx.
+     * This map only includes cross-shard tx.
      */
     ThreadSafeMap<uint256, TxBlockInfo, BlockHasher> txInFly;
     
     ThreadSafeQueue txResendQueue;
 
+    /* <txid, tx_start_time>
+     * This map includes both single-shard and cross-shard tx.
+     */
     ThreadSafeMap<uint256, TxStat, BlockHasher> mapTxStartTime;
     uint32_t nLastCompletedTx;
-    uint32_t nCompletedTx;
-    uint32_t nTotalFailedTx;
+    std::atomic<std::uint32_t> nCompletedTx;
+    std::atomic<uint32_t> nTotalFailedTx;
     uint32_t nTotalSentTx;
     struct timeval testStartTime;
     struct timeval nextLogTime;

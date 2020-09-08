@@ -190,52 +190,52 @@ UniValue getpeerinfo(const JSONRPCRequest& request)
     return ret;
 }
 
-UniValue addnode(const JSONRPCRequest& request)
-{
-    std::string strCommand;
-    if (!request.params[1].isNull())
-        strCommand = request.params[1].get_str();
-    if (request.fHelp || request.params.size() != 2 ||
-        (strCommand != "onetry" && strCommand != "add" && strCommand != "remove"))
-        throw std::runtime_error(
-            "addnode \"node\" \"add|remove|onetry\"\n"
-            "\nAttempts to add or remove a node from the addnode list.\n"
-            "Or try a connection to a node once.\n"
-            "Nodes added using addnode (or -connect) are protected from DoS disconnection and are not required to be\n"
-            "full nodes/support SegWit as other outbound peers are (though such peers will not be synced from).\n"
-            "\nArguments:\n"
-            "1. \"node\"     (string, required) The node (see getpeerinfo for nodes)\n"
-            "2. \"command\"  (string, required) 'add' to add a node to the list, 'remove' to remove a node from the list, 'onetry' to try a connection to the node once\n"
-            "\nExamples:\n"
-            + HelpExampleCli("addnode", "\"192.168.0.6:8333\" \"onetry\"")
-            + HelpExampleRpc("addnode", "\"192.168.0.6:8333\", \"onetry\"")
-        );
-
-    if(!g_connman)
-        throw JSONRPCError(RPC_CLIENT_P2P_DISABLED, "Error: Peer-to-peer functionality missing or disabled");
-
-    std::string strNode = request.params[0].get_str();
-
-    if (strCommand == "onetry")
-    {
-        CAddress addr;
-        g_connman->OpenNetworkConnection(addr, false, nullptr, strNode.c_str(), false, false, true);
-        return NullUniValue;
-    }
-
-    if (strCommand == "add")
-    {
-        if(!g_connman->AddNode(strNode))
-            throw JSONRPCError(RPC_CLIENT_NODE_ALREADY_ADDED, "Error: Node already added");
-    }
-    else if(strCommand == "remove")
-    {
-        if(!g_connman->RemoveAddedNode(strNode))
-            throw JSONRPCError(RPC_CLIENT_NODE_NOT_ADDED, "Error: Node has not been added.");
-    }
-
-    return NullUniValue;
-}
+//UniValue addnode(const JSONRPCRequest& request)
+//{
+//    std::string strCommand;
+//    if (!request.params[1].isNull())
+//        strCommand = request.params[1].get_str();
+//    if (request.fHelp || request.params.size() != 2 ||
+//        (strCommand != "onetry" && strCommand != "add" && strCommand != "remove"))
+//        throw std::runtime_error(
+//            "addnode \"node\" \"add|remove|onetry\"\n"
+//            "\nAttempts to add or remove a node from the addnode list.\n"
+//            "Or try a connection to a node once.\n"
+//            "Nodes added using addnode (or -connect) are protected from DoS disconnection and are not required to be\n"
+//            "full nodes/support SegWit as other outbound peers are (though such peers will not be synced from).\n"
+//            "\nArguments:\n"
+//            "1. \"node\"     (string, required) The node (see getpeerinfo for nodes)\n"
+//            "2. \"command\"  (string, required) 'add' to add a node to the list, 'remove' to remove a node from the list, 'onetry' to try a connection to the node once\n"
+//            "\nExamples:\n"
+//            + HelpExampleCli("addnode", "\"192.168.0.6:8333\" \"onetry\"")
+//            + HelpExampleRpc("addnode", "\"192.168.0.6:8333\", \"onetry\"")
+//        );
+//
+//    if(!g_connman)
+//        throw JSONRPCError(RPC_CLIENT_P2P_DISABLED, "Error: Peer-to-peer functionality missing or disabled");
+//
+//    std::string strNode = request.params[0].get_str();
+//
+//    if (strCommand == "onetry")
+//    {
+//        CAddress addr;
+//        g_connman->OpenNetworkConnection(addr, false, nullptr, strNode.c_str(), false, false, true);
+//        return NullUniValue;
+//    }
+//
+//    if (strCommand == "add")
+//    {
+//        if(!g_connman->AddNode(strNode))
+//            throw JSONRPCError(RPC_CLIENT_NODE_ALREADY_ADDED, "Error: Node already added");
+//    }
+//    else if(strCommand == "remove")
+//    {
+//        if(!g_connman->RemoveAddedNode(strNode))
+//            throw JSONRPCError(RPC_CLIENT_NODE_NOT_ADDED, "Error: Node has not been added.");
+//    }
+//
+//    return NullUniValue;
+//}
 
 UniValue disconnectnode(const JSONRPCRequest& request)
 {
@@ -630,7 +630,7 @@ static const CRPCCommand commands[] =
     { "network",            "getconnectioncount",     &getconnectioncount,     {} },
     { "network",            "ping",                   &ping,                   {} },
     { "network",            "getpeerinfo",            &getpeerinfo,            {} },
-    { "network",            "addnode",                &addnode,                {"node","command"} },
+//    { "network",            "addnode",                &addnode,                {"node","command"} },
     { "network",            "disconnectnode",         &disconnectnode,         {"address", "nodeid"} },
     { "network",            "getaddednodeinfo",       &getaddednodeinfo,       {"node"} },
     { "network",            "getnettotals",           &getnettotals,           {} },
