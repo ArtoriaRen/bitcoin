@@ -22,6 +22,7 @@
 #include <boost/thread.hpp>
 
 #include <stdio.h>
+#include <pbft/pbft.h>
 
 /* Introduction text for doxygen: */
 
@@ -46,6 +47,19 @@ void WaitForShutdown()
     while (!fShutdown)
     {
         MilliSleep(200);
+
+	/* print throughput */
+	/* log throughput if enough long time has elapsed. */
+	CPbft& pbft = *g_pbft;
+	bool testIsRunning = pbft.nTotalSentTx > 0  // test has started
+		&& pbft.nCompletedTx + pbft.nTotalFailedTx < pbft.nTotalSentTx; // test has not yet finished
+	struct timeval currentTime;
+	gettimeofday(&currentTime, NULL);
+	long time_elapsed = (currentTime.tv_sec - pbft.nextLogTime.tv_sec) * 1000000 + (currentTime.tv_usec - pbft.nextLogTime.tv_usec); 
+	if (testIsRunning && time_elapsed >= thruInterval) {
+	    pbft.logThruput(currentTime);
+	}
+
         fShutdown = ShutdownRequested();
     }
     Interrupt();
