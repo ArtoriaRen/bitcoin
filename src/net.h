@@ -441,6 +441,8 @@ private:
     std::atomic_bool m_try_another_outbound_peer;
 
     friend struct CConnmanTest;
+    std::vector<CNode*> GetNodesInThread(uint threadIdx);
+    bool NodeIsInThread(const CNode* pnode, uint threadIdx);
 };
 extern std::unique_ptr<CConnman> g_connman;
 void Discover(boost::thread_group& threadGroup);
@@ -663,6 +665,7 @@ public:
     const uint64_t nKeyedNetGroup;
     std::atomic_bool fPauseRecv;
     std::atomic_bool fPauseSend;
+    uint connectListIdx;
 protected:
 
     mapMsgCmdSize mapSendBytesPerMsgCmd;

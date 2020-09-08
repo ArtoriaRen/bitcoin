@@ -313,10 +313,13 @@ void RenameThread(const char* name);
 /**
  * .. and a wrapper that just calls func once
  */
-template <typename Callable> void TraceThread(const char* name,  Callable func)
+template <typename Callable> void TraceThread(std::string name_str,  Callable func)
 {
+    const char* name = name_str.c_str();
+
     std::string s = strprintf("bitcoin-%s", name);
     RenameThread(s.c_str());
+    std::cout << "thread name = " << s << std::endl;
     try
     {
         LogPrintf("%s thread start\n", name);
