@@ -72,6 +72,7 @@ enum BindFlags {
 };
 
 const uint SHARD_PER_THREAD = 2;
+const uint NODES_PER_THREAD = SHARD_PER_THREAD * g_pbft->groupSize;
 const static std::string NET_MESSAGE_COMMAND_OTHER = "*other*";
 
 static const uint64_t RANDOMIZER_ID_NETGROUP = 0x6c0edd8036ef4036ULL; // SHA256("netgroup")[0:8]
@@ -1155,16 +1156,11 @@ void CConnman::ThreadSocketHandler(uint threadIdx)
     unsigned int nPrevNodeCount = 0;
     while (!interruptNet)
     {
-	/* every thead handles only nodes in two shards*/
-	uint startNodeIndex = threadIdx * 2 * g_pbft->groupSize;
-	uint endNodeIndex = startNodeIndex + 2 * g_pbft->groupSize;
-        //
         // Disconnect nodes
-        //
         {
             LOCK(cs_vNodes);
             // Disconnect unused nodes
-            std::vector<CNode*> vNodesCopy(vNodes.begin() + startNodeIndex, vNodes.begin() + endNodeIndex);
+            std::vector<CNode*> vNodesCopy = GetNodesInThread(threadIdx);
             for (CNode* pnode : vNodesCopy)
             {
                 if (pnode->fDisconnect)
@@ -1189,6 +1185,8 @@ void CConnman::ThreadSocketHandler(uint threadIdx)
             std::list<CNode*> vNodesDisconnectedCopy = vNodesDisconnected;
             for (CNode* pnode : vNodesDisconnectedCopy)
             {
+		if (!NodeIsInThread(pnode, threadIdx))
+		    continue;
                 // wait until threads are done using it
                 if (pnode->GetRefCount() <= 0) {
                     bool fDelete = false;
@@ -1208,16 +1206,16 @@ void CConnman::ThreadSocketHandler(uint threadIdx)
                 }
             }
         }
-        size_t vNodesSize;
-        {
-            LOCK(cs_vNodes);
-            vNodesSize = vNodes.size();
-        }
-        if(vNodesSize != nPrevNodeCount) {
-            nPrevNodeCount = vNodesSize;
-            if(clientInterface)
-                clientInterface->NotifyNumConnectionsChanged(nPrevNodeCount);
-        }
+        //size_t vNodesSize;
+        //{
+        //    LOCK(cs_vNodes);
+        //    vNodesSize = vNodes.size();
+        //}
+        //if(vNodesSize != nPrevNodeCount) {
+        //    nPrevNodeCount = vNodesSize;
+        //    if(clientInterface)
+        //        clientInterface->NotifyNumConnectionsChanged(nPrevNodeCount);
+        //}
 
         //
         // Find which sockets have data to receive
@@ -1235,11 +1233,11 @@ void CConnman::ThreadSocketHandler(uint threadIdx)
         SOCKET hSocketMax = 0;
         bool have_fds = false;
 
-        for (const ListenSocket& hListenSocket : vhListenSocket) {
-            FD_SET(hListenSocket.socket, &fdsetRecv);
-            hSocketMax = std::max(hSocketMax, hListenSocket.socket);
-            have_fds = true;
-        }
+        //for (const ListenSocket& hListenSocket : vhListenSocket) {
+        //    FD_SET(hListenSocket.socket, &fdsetRecv);
+        //    hSocketMax = std::max(hSocketMax, hListenSocket.socket);
+        //    have_fds = true;
+        //}
 
         {
             LOCK(cs_vNodes);
@@ -1255,6 +1253,8 @@ void CConnman::ThreadSocketHandler(uint threadIdx)
                 //   receiving data.
                 // * Hand off all complete messages to the processor, to be handled without
                 //   blocking here.
+		if (!NodeIsInThread(pnode, threadIdx))
+		    continue;
 
                 bool select_recv = !pnode->fPauseRecv;
                 bool select_send;
@@ -1304,13 +1304,13 @@ void CConnman::ThreadSocketHandler(uint threadIdx)
         //
         // Accept new connections
         //
-        for (const ListenSocket& hListenSocket : vhListenSocket)
-        {
-            if (hListenSocket.socket != INVALID_SOCKET && FD_ISSET(hListenSocket.socket, &fdsetRecv))
-            {
-                AcceptConnection(hListenSocket);
-            }
-        }
+        //for (const ListenSocket& hListenSocket : vhListenSocket)
+        //{
+        //    if (hListenSocket.socket != INVALID_SOCKET && FD_ISSET(hListenSocket.socket, &fdsetRecv))
+        //    {
+        //        AcceptConnection(hListenSocket);
+        //    }
+        //}
 
         //
         // Service each socket
@@ -1318,7 +1318,7 @@ void CConnman::ThreadSocketHandler(uint threadIdx)
         std::vector<CNode*> vNodesCopy;
         {
             LOCK(cs_vNodes);
-            vNodesCopy = std::vector<CNode*>(vNodes.begin() + startNodeIndex, vNodes.begin() + endNodeIndex);
+            vNodesCopy = GetNodesInThread(threadIdx);
             for (CNode* pnode : vNodesCopy)
                 pnode->AddRef();
         }
@@ -1724,7 +1724,6 @@ int CConnman::GetExtraOutboundCount()
 
 void CConnman::ThreadOpenConnections(const std::vector<std::string> connect)
 {
-    vNodes.resize(num_committees * 4, nullptr);
     // Connect to specific addresses
     if (!connect.empty())
     {
@@ -1992,18 +1991,16 @@ void CConnman::OpenNetworkConnection(const CAddress& addrConnect, uint32_t index
         pnode->m_manual_connection = true;
 
     m_msgproc->InitializeNode(pnode);
+    pnode->connectListIdx = index;
     {
         LOCK(cs_vNodes);
-        vNodes[index] = pnode;
+        vNodes.push_back(pnode);
     }
 }
 
 void CConnman::ThreadMessageHandler(uint threadIdx)
 {
     CPbft& pbft = *g_pbft;
-    /* every thead handles only nodes in two shards*/
-    uint startNodeIndex = threadIdx * SHARD_PER_THREAD * g_pbft->groupSize;
-    uint endNodeIndex = startNodeIndex + SHARD_PER_THREAD * g_pbft->groupSize;
     struct timeval lastGlobalStateUpdateTime;
     gettimeofday(&lastGlobalStateUpdateTime, NULL);
     uint32_t nLocalCompletedTxPerInterval = 0, nLocalTotalFailedTxPerInterval = 0;
@@ -2012,7 +2009,7 @@ void CConnman::ThreadMessageHandler(uint threadIdx)
         std::vector<CNode*> vNodesCopy;
         {
             LOCK(cs_vNodes);
-            vNodesCopy = std::vector<CNode*>(vNodes.begin() + startNodeIndex, vNodes.begin() + endNodeIndex);
+            vNodesCopy = GetNodesInThread(threadIdx);
             for (CNode* pnode : vNodesCopy) {
                 pnode->AddRef();
             }
@@ -2357,10 +2354,8 @@ bool CConnman::Start(CScheduler& scheduler, const Options& connOptions)
         fMsgProcWake = false;
     }
 
-    // Send and receive from sockets, accept connections
-    threadSocketHandler.resize(num_committees);
-    for (uint32_t i = 0; i < num_committees; i++) {
-	threadSocketHandler[i] = std::thread(&TraceThread<std::function<void()> >, "net", std::function<void()>(std::bind(&CConnman::ThreadSocketHandler, this, i)));
+    for (uint32_t i = 0; i < (num_committees / SHARD_PER_THREAD); i++) {
+	threadSocketHandler.push_back(std::thread(&TraceThread<std::function<void()> >, "net" + std::to_string(0), std::function<void()>(std::bind(&CConnman::ThreadSocketHandler, this, i))));
     }
 
     if (!gArgs.GetBoolArg("-dnsseed", true))
@@ -2383,9 +2378,8 @@ bool CConnman::Start(CScheduler& scheduler, const Options& connOptions)
         threadOpenConnections = std::thread(&TraceThread<std::function<void()> >, "opencon", std::function<void()>(std::bind(&CConnman::ThreadOpenConnections, this, connOptions.m_specified_outgoing)));
 
     // Process messages
-    threadMessageHandler.resize(num_committees);
-    for (uint32_t i = 0; i < num_committees; i++) {
-	threadMessageHandler[i] = std::thread(&TraceThread<std::function<void()> >, "msghand", std::function<void()>(std::bind(&CConnman::ThreadMessageHandler, this, i)));
+    for (uint32_t i = 0; i < (num_committees / SHARD_PER_THREAD); i++) {
+        threadMessageHandler.push_back(std::thread(&TraceThread<std::function<void()> >,  "mghnd" + std::to_string(0), std::function<void()>(std::bind(&CConnman::ThreadMessageHandler, this, i))));
     }
 
     // Dump network addresses
@@ -2435,7 +2429,7 @@ void CConnman::Interrupt()
 
 void CConnman::Stop()
 {
-    for (uint i = 0; i < num_committees; i++) {
+    for (uint i = 0; i < num_committees / SHARD_PER_THREAD; i++) {
 	if (threadMessageHandler[i].joinable())
 	    threadMessageHandler[i].join();
     }
@@ -2445,7 +2439,7 @@ void CConnman::Stop()
         threadOpenAddedConnections.join();
     if (threadDNSAddressSeed.joinable())
         threadDNSAddressSeed.join();
-    for (uint i = 0; i < num_committees; i++) {
+    for (uint i = 0; i < num_committees / SHARD_PER_THREAD; i++) {
 	if (threadSocketHandler[i].joinable())
 	    threadSocketHandler[i].join();
     }
@@ -2884,6 +2878,26 @@ bool CConnman::ForNode(NodeId id, std::function<bool(CNode* pnode)> func)
     return found != nullptr && NodeFullyConnected(found) && func(found);
 }
 
+std::vector<CNode*> CConnman::GetNodesInThread(uint threadIdx) {
+    std::vector<CNode*> ret;
+    LOCK(cs_vNodes);
+    for (auto& pnode : vNodes) {
+        if (pnode->connectListIdx >= SHARD_PER_THREAD * threadIdx && pnode->connectListIdx < SHARD_PER_THREAD * (threadIdx + 1)) {
+	    ret.push_back(pnode);
+	    if (ret.size() == NODES_PER_THREAD)
+		break;
+        }
+    }
+    return ret;
+}
+
+bool CConnman::NodeIsInThread(const CNode* pnode, uint threadIdx) {
+    if (pnode->connectListIdx >= SHARD_PER_THREAD * threadIdx && pnode->connectListIdx < SHARD_PER_THREAD * (threadIdx + 1)) 
+	return true;
+    else 
+	return false;
+}
+
 int64_t PoissonNextSend(int64_t nNow, int average_interval_seconds) {
     return nNow + (int64_t)(log1p(GetRand(1ULL << 48) * -0.0000000000000035527136788 /* -1/2^48 */) * average_interval_seconds * -1000000.0 + 0.5);
 }
@@ -2899,3 +2913,5 @@ uint64_t CConnman::CalculateKeyedNetGroup(const CAddress& ad) const
 
     return GetDeterministicRandomizer(RANDOMIZER_ID_NETGROUP).Write(vchNetGroup.data(), vchNetGroup.size()).Finalize();
 }
+
+
