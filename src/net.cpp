@@ -71,6 +71,7 @@ enum BindFlags {
     BF_WHITELIST    = (1U << 2),
 };
 
+const uint SHARD_PER_THREAD = 2;
 const static std::string NET_MESSAGE_COMMAND_OTHER = "*other*";
 
 static const uint64_t RANDOMIZER_ID_NETGROUP = 0x6c0edd8036ef4036ULL; // SHA256("netgroup")[0:8]
@@ -1149,18 +1150,21 @@ void CConnman::AcceptConnection(const ListenSocket& hListenSocket) {
     }
 }
 
-void CConnman::ThreadSocketHandler()
+void CConnman::ThreadSocketHandler(uint threadIdx)
 {
     unsigned int nPrevNodeCount = 0;
     while (!interruptNet)
     {
+	/* every thead handles only nodes in two shards*/
+	uint startNodeIndex = threadIdx * 2 * g_pbft->groupSize;
+	uint endNodeIndex = startNodeIndex + 2 * g_pbft->groupSize;
         //
         // Disconnect nodes
         //
         {
             LOCK(cs_vNodes);
             // Disconnect unused nodes
-            std::vector<CNode*> vNodesCopy = vNodes;
+            std::vector<CNode*> vNodesCopy(vNodes.begin() + startNodeIndex, vNodes.begin() + endNodeIndex);
             for (CNode* pnode : vNodesCopy)
             {
                 if (pnode->fDisconnect)
@@ -1314,7 +1318,7 @@ void CConnman::ThreadSocketHandler()
         std::vector<CNode*> vNodesCopy;
         {
             LOCK(cs_vNodes);
-            vNodesCopy = vNodes;
+            vNodesCopy = std::vector<CNode*>(vNodes.begin() + startNodeIndex, vNodes.begin() + endNodeIndex);
             for (CNode* pnode : vNodesCopy)
                 pnode->AddRef();
         }
@@ -1670,22 +1674,22 @@ void CConnman::DumpData()
     DumpBanlist();
 }
 
-void CConnman::ProcessOneShot()
-{
-    std::string strDest;
-    {
-        LOCK(cs_vOneShots);
-        if (vOneShots.empty())
-            return;
-        strDest = vOneShots.front();
-        vOneShots.pop_front();
-    }
-    CAddress addr;
-    CSemaphoreGrant grant(*semOutbound, true);
-    if (grant) {
-        OpenNetworkConnection(addr, false, &grant, strDest.c_str(), true);
-    }
-}
+//void CConnman::ProcessOneShot()
+//{
+//    std::string strDest;
+//    {
+//        LOCK(cs_vOneShots);
+//        if (vOneShots.empty())
+//            return;
+//        strDest = vOneShots.front();
+//        vOneShots.pop_front();
+//    }
+//    CAddress addr;
+//    CSemaphoreGrant grant(*semOutbound, true);
+//    if (grant) {
+//        OpenNetworkConnection(addr, false, &grant, strDest.c_str(), true);
+//    }
+//}
 
 bool CConnman::GetTryNewOutboundPeer()
 {
@@ -1720,16 +1724,18 @@ int CConnman::GetExtraOutboundCount()
 
 void CConnman::ThreadOpenConnections(const std::vector<std::string> connect)
 {
+    vNodes.resize(num_committees * 4, nullptr);
     // Connect to specific addresses
     if (!connect.empty())
     {
         for (int64_t nLoop = 0;; nLoop++)
         {
-            ProcessOneShot();
-            for (const std::string& strAddr : connect)
+//            ProcessOneShot();
+            for (uint32_t i = 0; i < connect.size(); i++)
             {
+		const std::string& strAddr = connect[i];
                 CAddress addr(CService(), NODE_NONE);
-                OpenNetworkConnection(addr, false, nullptr, strAddr.c_str(), false, false, true);
+                OpenNetworkConnection(addr, i, false, nullptr, strAddr.c_str(), false, false, true);
                 for (int i = 0; i < 10 && i < nLoop; i++)
                 {
                     if (!interruptNet.sleep_for(std::chrono::milliseconds(500)))
@@ -1741,136 +1747,136 @@ void CConnman::ThreadOpenConnections(const std::vector<std::string> connect)
         }
     }
 
-    // Initiate network connections
-    int64_t nStart = GetTime();
-
-    // Minimum time before next feeler connection (in microseconds).
-    int64_t nNextFeeler = PoissonNextSend(nStart*1000*1000, FEELER_INTERVAL);
-    while (!interruptNet)
-    {
-        ProcessOneShot();
-
-        if (!interruptNet.sleep_for(std::chrono::milliseconds(500)))
-            return;
-
-        CSemaphoreGrant grant(*semOutbound);
-        if (interruptNet)
-            return;
-
-        // Add seed nodes if DNS seeds are all down (an infrastructure attack?).
-        if (addrman.size() == 0 && (GetTime() - nStart > 60)) {
-            static bool done = false;
-            if (!done) {
-                LogPrintf("Adding fixed seed nodes as DNS doesn't seem to be available.\n");
-                CNetAddr local;
-                local.SetInternal("fixedseeds");
-                addrman.Add(convertSeed6(Params().FixedSeeds()), local);
-                done = true;
-            }
-        }
-
-        //
-        // Choose an address to connect to based on most recently seen
-        //
-        CAddress addrConnect;
-
-        // Only connect out to one peer per network group (/16 for IPv4).
-        // Do this here so we don't have to critsect vNodes inside mapAddresses critsect.
-        int nOutbound = 0;
-        std::set<std::vector<unsigned char> > setConnected;
-        {
-            LOCK(cs_vNodes);
-            for (CNode* pnode : vNodes) {
-                if (!pnode->fInbound && !pnode->m_manual_connection) {
-                    // Netgroups for inbound and addnode peers are not excluded because our goal here
-                    // is to not use multiple of our limited outbound slots on a single netgroup
-                    // but inbound and addnode peers do not use our outbound slots.  Inbound peers
-                    // also have the added issue that they're attacker controlled and could be used
-                    // to prevent us from connecting to particular hosts if we used them here.
-                    setConnected.insert(pnode->addr.GetGroup());
-                    nOutbound++;
-                }
-            }
-        }
-
-        // Feeler Connections
-        //
-        // Design goals:
-        //  * Increase the number of connectable addresses in the tried table.
-        //
-        // Method:
-        //  * Choose a random address from new and attempt to connect to it if we can connect
-        //    successfully it is added to tried.
-        //  * Start attempting feeler connections only after node finishes making outbound
-        //    connections.
-        //  * Only make a feeler connection once every few minutes.
-        //
-        bool fFeeler = false;
-
-        if (nOutbound >= nMaxOutbound && !GetTryNewOutboundPeer()) {
-            int64_t nTime = GetTimeMicros(); // The current time right now (in microseconds).
-            if (nTime > nNextFeeler) {
-                nNextFeeler = PoissonNextSend(nTime, FEELER_INTERVAL);
-                fFeeler = true;
-            } else {
-                continue;
-            }
-        }
-
-        int64_t nANow = GetAdjustedTime();
-        int nTries = 0;
-        while (!interruptNet)
-        {
-            CAddrInfo addr = addrman.Select(fFeeler);
-
-            // if we selected an invalid address, restart
-            if (!addr.IsValid() || setConnected.count(addr.GetGroup()) || IsLocal(addr))
-                break;
-
-            // If we didn't find an appropriate destination after trying 100 addresses fetched from addrman,
-            // stop this loop, and let the outer loop run again (which sleeps, adds seed nodes, recalculates
-            // already-connected network ranges, ...) before trying new addrman addresses.
-            nTries++;
-            if (nTries > 100)
-                break;
-
-            if (IsLimited(addr))
-                continue;
-
-            // only consider very recently tried nodes after 30 failed attempts
-            if (nANow - addr.nLastTry < 600 && nTries < 30)
-                continue;
-
-            // for non-feelers, require all the services we'll want,
-            // for feelers, only require they be a full node (only because most
-            // SPV clients don't have a good address DB available)
-            if (!fFeeler && !HasAllDesirableServiceFlags(addr.nServices)) {
-                continue;
-            } else if (fFeeler && !MayHaveUsefulAddressDB(addr.nServices)) {
-                continue;
-            }
-
-            // do not allow non-default ports, unless after 50 invalid addresses selected already
-            if (addr.GetPort() != Params().GetDefaultPort() && nTries < 50)
-                continue;
-
-            addrConnect = addr;
-            break;
-        }
-
-        if (addrConnect.IsValid()) {
-
-            if (fFeeler) {
-                // Add small amount of random noise before connection to avoid synchronization.
-                int randsleep = GetRandInt(FEELER_SLEEP_WINDOW * 1000);
-                if (!interruptNet.sleep_for(std::chrono::milliseconds(randsleep)))
-                    return;
-                LogPrint(BCLog::NET, "Making feeler connection to %s\n", addrConnect.ToString());
-            }
-
-            OpenNetworkConnection(addrConnect, (int)setConnected.size() >= std::min(nMaxConnections - 1, 2), &grant, nullptr, false, fFeeler);
-        }
-    }
+//    // Initiate network connections
+//    int64_t nStart = GetTime();
+//
+//    // Minimum time before next feeler connection (in microseconds).
+//    int64_t nNextFeeler = PoissonNextSend(nStart*1000*1000, FEELER_INTERVAL);
+//    while (!interruptNet)
+//    {
+//        ProcessOneShot();
+//
+//        if (!interruptNet.sleep_for(std::chrono::milliseconds(500)))
+//            return;
+//
+//        CSemaphoreGrant grant(*semOutbound);
+//        if (interruptNet)
+//            return;
+//
+//        // Add seed nodes if DNS seeds are all down (an infrastructure attack?).
+//        if (addrman.size() == 0 && (GetTime() - nStart > 60)) {
+//            static bool done = false;
+//            if (!done) {
+//                LogPrintf("Adding fixed seed nodes as DNS doesn't seem to be available.\n");
+//                CNetAddr local;
+//                local.SetInternal("fixedseeds");
+//                addrman.Add(convertSeed6(Params().FixedSeeds()), local);
+//                done = true;
+//            }
+//        }
+//
+//        //
+//        // Choose an address to connect to based on most recently seen
+//        //
+//        CAddress addrConnect;
+//
+//        // Only connect out to one peer per network group (/16 for IPv4).
+//        // Do this here so we don't have to critsect vNodes inside mapAddresses critsect.
+//        int nOutbound = 0;
+//        std::set<std::vector<unsigned char> > setConnected;
+//        {
+//            LOCK(cs_vNodes);
+//            for (CNode* pnode : vNodes) {
+//                if (!pnode->fInbound && !pnode->m_manual_connection) {
+//                    // Netgroups for inbound and addnode peers are not excluded because our goal here
+//                    // is to not use multiple of our limited outbound slots on a single netgroup
+//                    // but inbound and addnode peers do not use our outbound slots.  Inbound peers
+//                    // also have the added issue that they're attacker controlled and could be used
+//                    // to prevent us from connecting to particular hosts if we used them here.
+//                    setConnected.insert(pnode->addr.GetGroup());
+//                    nOutbound++;
+//                }
+//            }
+//        }
+//
+//        // Feeler Connections
+//        //
+//        // Design goals:
+//        //  * Increase the number of connectable addresses in the tried table.
+//        //
+//        // Method:
+//        //  * Choose a random address from new and attempt to connect to it if we can connect
+//        //    successfully it is added to tried.
+//        //  * Start attempting feeler connections only after node finishes making outbound
+//        //    connections.
+//        //  * Only make a feeler connection once every few minutes.
+//        //
+//        bool fFeeler = false;
+//
+//        if (nOutbound >= nMaxOutbound && !GetTryNewOutboundPeer()) {
+//            int64_t nTime = GetTimeMicros(); // The current time right now (in microseconds).
+//            if (nTime > nNextFeeler) {
+//                nNextFeeler = PoissonNextSend(nTime, FEELER_INTERVAL);
+//                fFeeler = true;
+//            } else {
+//                continue;
+//            }
+//        }
+//
+//        int64_t nANow = GetAdjustedTime();
+//        int nTries = 0;
+//        while (!interruptNet)
+//        {
+//            CAddrInfo addr = addrman.Select(fFeeler);
+//
+//            // if we selected an invalid address, restart
+//            if (!addr.IsValid() || setConnected.count(addr.GetGroup()) || IsLocal(addr))
+//                break;
+//
+//            // If we didn't find an appropriate destination after trying 100 addresses fetched from addrman,
+//            // stop this loop, and let the outer loop run again (which sleeps, adds seed nodes, recalculates
+//            // already-connected network ranges, ...) before trying new addrman addresses.
+//            nTries++;
+//            if (nTries > 100)
+//                break;
+//
+//            if (IsLimited(addr))
+//                continue;
+//
+//            // only consider very recently tried nodes after 30 failed attempts
+//            if (nANow - addr.nLastTry < 600 && nTries < 30)
+//                continue;
+//
+//            // for non-feelers, require all the services we'll want,
+//            // for feelers, only require they be a full node (only because most
+//            // SPV clients don't have a good address DB available)
+//            if (!fFeeler && !HasAllDesirableServiceFlags(addr.nServices)) {
+//                continue;
+//            } else if (fFeeler && !MayHaveUsefulAddressDB(addr.nServices)) {
+//                continue;
+//            }
+//
+//            // do not allow non-default ports, unless after 50 invalid addresses selected already
+//            if (addr.GetPort() != Params().GetDefaultPort() && nTries < 50)
+//                continue;
+//
+//            addrConnect = addr;
+//            break;
+//        }
+//
+//        if (addrConnect.IsValid()) {
+//
+//            if (fFeeler) {
+//                // Add small amount of random noise before connection to avoid synchronization.
+//                int randsleep = GetRandInt(FEELER_SLEEP_WINDOW * 1000);
+//                if (!interruptNet.sleep_for(std::chrono::milliseconds(randsleep)))
+//                    return;
+//                LogPrint(BCLog::NET, "Making feeler connection to %s\n", addrConnect.ToString());
+//            }
+//
+//            OpenNetworkConnection(addrConnect, (int)setConnected.size() >= std::min(nMaxConnections - 1, 2), &grant, nullptr, false, fFeeler);
+//        }
+//    }
 }
 
 std::vector<AddedNodeInfo> CConnman::GetAddedNodeInfo()
@@ -1925,35 +1931,35 @@ std::vector<AddedNodeInfo> CConnman::GetAddedNodeInfo()
     return ret;
 }
 
-void CConnman::ThreadOpenAddedConnections()
-{
-    while (true)
-    {
-        CSemaphoreGrant grant(*semAddnode);
-        std::vector<AddedNodeInfo> vInfo = GetAddedNodeInfo();
-        bool tried = false;
-        for (const AddedNodeInfo& info : vInfo) {
-            if (!info.fConnected) {
-                if (!grant.TryAcquire()) {
-                    // If we've used up our semaphore and need a new one, lets not wait here since while we are waiting
-                    // the addednodeinfo state might change.
-                    break;
-                }
-                tried = true;
-                CAddress addr(CService(), NODE_NONE);
-                OpenNetworkConnection(addr, false, &grant, info.strAddedNode.c_str(), false, false, true);
-                if (!interruptNet.sleep_for(std::chrono::milliseconds(500)))
-                    return;
-            }
-        }
-        // Retry every 60 seconds if a connection was attempted, otherwise two seconds
-        if (!interruptNet.sleep_for(std::chrono::seconds(tried ? 60 : 2)))
-            return;
-    }
-}
+//void CConnman::ThreadOpenAddedConnections()
+//{
+//    while (true)
+//    {
+//        CSemaphoreGrant grant(*semAddnode);
+//        std::vector<AddedNodeInfo> vInfo = GetAddedNodeInfo();
+//        bool tried = false;
+//        for (const AddedNodeInfo& info : vInfo) {
+//            if (!info.fConnected) {
+//                if (!grant.TryAcquire()) {
+//                    // If we've used up our semaphore and need a new one, lets not wait here since while we are waiting
+//                    // the addednodeinfo state might change.
+//                    break;
+//                }
+//                tried = true;
+//                CAddress addr(CService(), NODE_NONE);
+//                OpenNetworkConnection(addr, false, &grant, info.strAddedNode.c_str(), false, false, true);
+//                if (!interruptNet.sleep_for(std::chrono::milliseconds(500)))
+//                    return;
+//            }
+//        }
+//        // Retry every 60 seconds if a connection was attempted, otherwise two seconds
+//        if (!interruptNet.sleep_for(std::chrono::seconds(tried ? 60 : 2)))
+//            return;
+//    }
+//}
 
 // if successful, this moves the passed grant to the constructed node
-void CConnman::OpenNetworkConnection(const CAddress& addrConnect, bool fCountFailure, CSemaphoreGrant *grantOutbound, const char *pszDest, bool fOneShot, bool fFeeler, bool manual_connection)
+void CConnman::OpenNetworkConnection(const CAddress& addrConnect, uint32_t index, bool fCountFailure, CSemaphoreGrant *grantOutbound, const char *pszDest, bool fOneShot, bool fFeeler, bool manual_connection)
 {
     //
     // Initiate outbound network connection
@@ -1988,19 +1994,25 @@ void CConnman::OpenNetworkConnection(const CAddress& addrConnect, bool fCountFai
     m_msgproc->InitializeNode(pnode);
     {
         LOCK(cs_vNodes);
-        vNodes.push_back(pnode);
+        vNodes[index] = pnode;
     }
 }
 
-void CConnman::ThreadMessageHandler()
+void CConnman::ThreadMessageHandler(uint threadIdx)
 {
     CPbft& pbft = *g_pbft;
+    /* every thead handles only nodes in two shards*/
+    uint startNodeIndex = threadIdx * SHARD_PER_THREAD * g_pbft->groupSize;
+    uint endNodeIndex = startNodeIndex + SHARD_PER_THREAD * g_pbft->groupSize;
+    struct timeval lastGlobalStateUpdateTime;
+    gettimeofday(&lastGlobalStateUpdateTime, NULL);
+    uint32_t nLocalCompletedTxPerInterval = 0, nLocalTotalFailedTxPerInterval = 0;
     while (!flagInterruptMsgProc)
     {
         std::vector<CNode*> vNodesCopy;
         {
             LOCK(cs_vNodes);
-            vNodesCopy = vNodes;
+            vNodesCopy = std::vector<CNode*>(vNodes.begin() + startNodeIndex, vNodes.begin() + endNodeIndex);
             for (CNode* pnode : vNodesCopy) {
                 pnode->AddRef();
             }
@@ -2014,7 +2026,7 @@ void CConnman::ThreadMessageHandler()
                 continue;
 
             // Receive messages
-            bool fMoreNodeWork = m_msgproc->ProcessMessages(pnode, flagInterruptMsgProc);
+            bool fMoreNodeWork = m_msgproc->ProcessMessages(pnode, flagInterruptMsgProc, nLocalCompletedTxPerInterval, nLocalTotalFailedTxPerInterval, threadIdx);
             fMoreWork |= (fMoreNodeWork && !pnode->fPauseSend);
             if (flagInterruptMsgProc)
                 return;
@@ -2034,14 +2046,15 @@ void CConnman::ThreadMessageHandler()
                 pnode->Release();
         }
 
-	/* log throughput if enough long time has elapsed. */
-	bool testIsRunning = pbft.nTotalSentTx > 0  // test has started
-		&& pbft.nCompletedTx + pbft.nTotalFailedTx < pbft.nTotalSentTx; // test has not yet finished
 	struct timeval currentTime;
 	gettimeofday(&currentTime, NULL);
-	long time_elapsed = (currentTime.tv_sec - pbft.nextLogTime.tv_sec) * 1000000 + (currentTime.tv_usec - pbft.nextLogTime.tv_usec); 
-	if (testIsRunning && time_elapsed >= thruInterval) {
-	    pbft.logThruput(currentTime);
+	long time_elapsed = (currentTime.tv_sec - lastGlobalStateUpdateTime.tv_sec) * 1000000 + (currentTime.tv_usec - lastGlobalStateUpdateTime.tv_usec); 
+	if (time_elapsed >= thruInterval) {
+	    /* update global statistics */
+	    pbft.nCompletedTx.fetch_add(nLocalCompletedTxPerInterval); 
+	    pbft.nTotalFailedTx.fetch_add(nLocalTotalFailedTxPerInterval);
+	    nLocalCompletedTxPerInterval = 0;
+	    lastGlobalStateUpdateTime = currentTime; 	
 	}
 
         std::unique_lock<std::mutex> lock(mutexMsgProc);
@@ -2345,7 +2358,10 @@ bool CConnman::Start(CScheduler& scheduler, const Options& connOptions)
     }
 
     // Send and receive from sockets, accept connections
-    threadSocketHandler = std::thread(&TraceThread<std::function<void()> >, "net", std::function<void()>(std::bind(&CConnman::ThreadSocketHandler, this)));
+    threadSocketHandler.resize(num_committees);
+    for (uint32_t i = 0; i < num_committees; i++) {
+	threadSocketHandler[i] = std::thread(&TraceThread<std::function<void()> >, "net", std::function<void()>(std::bind(&CConnman::ThreadSocketHandler, this, i)));
+    }
 
     if (!gArgs.GetBoolArg("-dnsseed", true))
         LogPrintf("DNS seeding disabled\n");
@@ -2353,7 +2369,7 @@ bool CConnman::Start(CScheduler& scheduler, const Options& connOptions)
         threadDNSAddressSeed = std::thread(&TraceThread<std::function<void()> >, "dnsseed", std::function<void()>(std::bind(&CConnman::ThreadDNSAddressSeed, this)));
 
     // Initiate outbound connections from -addnode
-    threadOpenAddedConnections = std::thread(&TraceThread<std::function<void()> >, "addcon", std::function<void()>(std::bind(&CConnman::ThreadOpenAddedConnections, this)));
+//    threadOpenAddedConnections = std::thread(&TraceThread<std::function<void()> >, "addcon", std::function<void()>(std::bind(&CConnman::ThreadOpenAddedConnections, this)));
 
     if (connOptions.m_use_addrman_outgoing && !connOptions.m_specified_outgoing.empty()) {
         if (clientInterface) {
@@ -2367,7 +2383,10 @@ bool CConnman::Start(CScheduler& scheduler, const Options& connOptions)
         threadOpenConnections = std::thread(&TraceThread<std::function<void()> >, "opencon", std::function<void()>(std::bind(&CConnman::ThreadOpenConnections, this, connOptions.m_specified_outgoing)));
 
     // Process messages
-    threadMessageHandler = std::thread(&TraceThread<std::function<void()> >, "msghand", std::function<void()>(std::bind(&CConnman::ThreadMessageHandler, this)));
+    threadMessageHandler.resize(num_committees);
+    for (uint32_t i = 0; i < num_committees; i++) {
+	threadMessageHandler[i] = std::thread(&TraceThread<std::function<void()> >, "msghand", std::function<void()>(std::bind(&CConnman::ThreadMessageHandler, this, i)));
+    }
 
     // Dump network addresses
     scheduler.scheduleEvery(std::bind(&CConnman::DumpData, this), DUMP_ADDRESSES_INTERVAL * 1000);
@@ -2416,16 +2435,20 @@ void CConnman::Interrupt()
 
 void CConnman::Stop()
 {
-    if (threadMessageHandler.joinable())
-        threadMessageHandler.join();
+    for (uint i = 0; i < num_committees; i++) {
+	if (threadMessageHandler[i].joinable())
+	    threadMessageHandler[i].join();
+    }
     if (threadOpenConnections.joinable())
         threadOpenConnections.join();
     if (threadOpenAddedConnections.joinable())
         threadOpenAddedConnections.join();
     if (threadDNSAddressSeed.joinable())
         threadDNSAddressSeed.join();
-    if (threadSocketHandler.joinable())
-        threadSocketHandler.join();
+    for (uint i = 0; i < num_committees; i++) {
+	if (threadSocketHandler[i].joinable())
+	    threadSocketHandler[i].join();
+    }
 
     if (fAddressesInitialized)
     {

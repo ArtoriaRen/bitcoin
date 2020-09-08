@@ -33,6 +33,8 @@
 #include <arpa/inet.h>
 #endif
 
+extern uint32_t num_committees;
+extern const uint SHARD_PER_THREAD;
 
 class CScheduler;
 class CNode;
@@ -177,7 +179,7 @@ public:
     void Interrupt();
     bool GetNetworkActive() const { return fNetworkActive; };
     void SetNetworkActive(bool active);
-    void OpenNetworkConnection(const CAddress& addrConnect, bool fCountFailure, CSemaphoreGrant *grantOutbound = nullptr, const char *strDest = nullptr, bool fOneShot = false, bool fFeeler = false, bool manual_connection = false);
+    void OpenNetworkConnection(const CAddress& addrConnect, uint32_t index, bool fCountFailure, CSemaphoreGrant *grantOutbound = nullptr, const char *strDest = nullptr, bool fOneShot = false, bool fFeeler = false, bool manual_connection = false);
     bool CheckIncomingNonce(uint64_t nonce);
 
     bool ForNode(NodeId id, std::function<bool(CNode* pnode)> func);
@@ -325,13 +327,13 @@ private:
     bool BindListenPort(const CService &bindAddr, std::string& strError, bool fWhitelisted = false);
     bool Bind(const CService &addr, unsigned int flags);
     bool InitBinds(const std::vector<CService>& binds, const std::vector<CService>& whiteBinds);
-    void ThreadOpenAddedConnections();
+//    void ThreadOpenAddedConnections();
     void AddOneShot(const std::string& strDest);
-    void ProcessOneShot();
+//    void ProcessOneShot();
     void ThreadOpenConnections(std::vector<std::string> connect);
-    void ThreadMessageHandler();
+    void ThreadMessageHandler(uint threadIdx);
     void AcceptConnection(const ListenSocket& hListenSocket);
-    void ThreadSocketHandler();
+    void ThreadSocketHandler(uint threadIdx);
     void ThreadDNSAddressSeed();
 
     uint64_t CalculateKeyedNetGroup(const CAddress& ad) const;
@@ -428,10 +430,10 @@ private:
     CThreadInterrupt interruptNet;
 
     std::thread threadDNSAddressSeed;
-    std::thread threadSocketHandler;
+    std::vector<std::thread> threadSocketHandler;
     std::thread threadOpenAddedConnections;
     std::thread threadOpenConnections;
-    std::thread threadMessageHandler;
+    std::vector<std::thread> threadMessageHandler;
 
     /** flag for deciding to connect to an extra outbound peer,
      *  in excess of nMaxOutbound
@@ -467,7 +469,7 @@ struct CombinerAll
 class NetEventsInterface
 {
 public:
-    virtual bool ProcessMessages(CNode* pnode, std::atomic<bool>& interrupt) = 0;
+    virtual bool ProcessMessages(CNode* pnode, std::atomic<bool>& interrupt, uint32_t& nLocalCompletedTxPerInterval, uint32_t& nLocalTotalFailedTxPerInterval, const uint threadIdx) = 0;
     virtual bool SendMessages(CNode* pnode, std::atomic<bool>& interrupt) = 0;
     virtual void InitializeNode(CNode* pnode) = 0;
     virtual void FinalizeNode(NodeId id, bool& update_connection_time) = 0;
