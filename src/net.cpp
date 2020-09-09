@@ -1416,7 +1416,7 @@ void CConnman::ThreadSocketHandler(uint threadIdx)
             {
                 if (pnode->nLastRecv == 0 || pnode->nLastSend == 0)
                 {
-                    LogPrint(BCLog::NET, "socket no message in first 60 seconds, %d %d from %d\n", pnode->nLastRecv != 0, pnode->nLastSend != 0, pnode->GetId());
+                    LogPrint(BCLog::NET, "socket no message in first 60 seconds, %d %d from %d, threadIdx = %d, connectListIdx = %d\n", pnode->nLastRecv != 0, pnode->nLastSend != 0, pnode->GetId(), threadIdx, pnode->connectListIdx);
                     pnode->fDisconnect = true;
                 }
                 else if (nTime - pnode->nLastSend > TIMEOUT_INTERVAL)
@@ -2355,7 +2355,7 @@ bool CConnman::Start(CScheduler& scheduler, const Options& connOptions)
     }
 
     for (uint32_t i = 0; i < (num_committees / SHARD_PER_THREAD); i++) {
-	threadSocketHandler.push_back(std::thread(&TraceThread<std::function<void()> >, "net" + std::to_string(0), std::function<void()>(std::bind(&CConnman::ThreadSocketHandler, this, i))));
+	threadSocketHandler.push_back(std::thread(&TraceThread<std::function<void()> >, "net" + std::to_string(i), std::function<void()>(std::bind(&CConnman::ThreadSocketHandler, this, i))));
     }
 
     if (!gArgs.GetBoolArg("-dnsseed", true))
@@ -2379,7 +2379,7 @@ bool CConnman::Start(CScheduler& scheduler, const Options& connOptions)
 
     // Process messages
     for (uint32_t i = 0; i < (num_committees / SHARD_PER_THREAD); i++) {
-        threadMessageHandler.push_back(std::thread(&TraceThread<std::function<void()> >,  "mghnd" + std::to_string(0), std::function<void()>(std::bind(&CConnman::ThreadMessageHandler, this, i))));
+        threadMessageHandler.push_back(std::thread(&TraceThread<std::function<void()> >,  "mghnd" + std::to_string(i), std::function<void()>(std::bind(&CConnman::ThreadMessageHandler, this, i))));
     }
 
     // Dump network addresses
@@ -2882,7 +2882,7 @@ std::vector<CNode*> CConnman::GetNodesInThread(uint threadIdx) {
     std::vector<CNode*> ret;
     LOCK(cs_vNodes);
     for (auto& pnode : vNodes) {
-        if (pnode->connectListIdx >= SHARD_PER_THREAD * threadIdx && pnode->connectListIdx < SHARD_PER_THREAD * (threadIdx + 1)) {
+        if (pnode->connectListIdx >= NODES_PER_THREAD * threadIdx && pnode->connectListIdx < NODES_PER_THREAD * (threadIdx + 1)) {
 	    ret.push_back(pnode);
 	    if (ret.size() == NODES_PER_THREAD)
 		break;
@@ -2892,7 +2892,7 @@ std::vector<CNode*> CConnman::GetNodesInThread(uint threadIdx) {
 }
 
 bool CConnman::NodeIsInThread(const CNode* pnode, uint threadIdx) {
-    if (pnode->connectListIdx >= SHARD_PER_THREAD * threadIdx && pnode->connectListIdx < SHARD_PER_THREAD * (threadIdx + 1)) 
+    if (pnode->connectListIdx >= NODES_PER_THREAD * threadIdx && pnode->connectListIdx < NODES_PER_THREAD * (threadIdx + 1)) 
 	return true;
     else 
 	return false;
