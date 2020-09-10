@@ -93,12 +93,13 @@ void CPbft::logThruput(struct timeval& endTime) {
 	nextLogTime.tv_usec = endTime.tv_usec;
 	return;
     }
-    double thruput = (nCompletedTx - nLastCompletedTx) / ((endTime.tv_sec - nextLogTime.tv_sec + thruInterval) + (endTime.tv_usec - nextLogTime.tv_usec) * 0.000001);
+    uint32_t nCompletedTxCopy = nCompletedTx.load(std::memory_order_relaxed); 
+    double thruput = (nCompletedTxCopy - nLastCompletedTx) / ((endTime.tv_sec - nextLogTime.tv_sec + thruInterval) + (endTime.tv_usec - nextLogTime.tv_usec) * 0.000001);
     /* log when thruInterval seconds has passed by  */
     nextLogTime.tv_sec = endTime.tv_sec + thruInterval;
     nextLogTime.tv_usec = endTime.tv_usec;
-    nLastCompletedTx = nCompletedTx;
-    std::cout << "At time " << endTime.tv_sec << "." << endTime.tv_usec << ", completed " <<  nCompletedTx << " tx" << ": throughput = " << thruput << std::endl;
+    nLastCompletedTx = nCompletedTxCopy;
+    std::cout << "At time " << endTime.tv_sec << "." << endTime.tv_usec << ", completed " <<  nCompletedTxCopy << " tx" << ": throughput = " << thruput << std::endl;
 }
 
 
