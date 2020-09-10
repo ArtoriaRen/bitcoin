@@ -157,7 +157,7 @@ public:
      */
     ThreadSafeMap<uint256, TxStat, BlockHasher> mapTxStartTime;
     uint32_t nLastCompletedTx;
-    std::atomic<std::uint32_t> nCompletedTx;
+    std::atomic<uint32_t> nCompletedTx;
     std::atomic<uint32_t> nTotalFailedTx;
     uint32_t nTotalSentTx;
     struct timeval testStartTime;

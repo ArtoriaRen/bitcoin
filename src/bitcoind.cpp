@@ -52,7 +52,7 @@ void WaitForShutdown()
 	/* log throughput if enough long time has elapsed. */
 	CPbft& pbft = *g_pbft;
 	bool testIsRunning = pbft.nTotalSentTx > 0  // test has started
-		&& pbft.nCompletedTx + pbft.nTotalFailedTx < pbft.nTotalSentTx; // test has not yet finished
+		&& pbft.nCompletedTx.load(std::memory_order_relaxed) + pbft.nTotalFailedTx.load(std::memory_order_relaxed) < pbft.nTotalSentTx; // test has not yet finished
 	struct timeval currentTime;
 	gettimeofday(&currentTime, NULL);
 	long time_elapsed = (currentTime.tv_sec - pbft.nextLogTime.tv_sec) * 1000000 + (currentTime.tv_usec - pbft.nextLogTime.tv_usec); 

@@ -2048,9 +2048,10 @@ void CConnman::ThreadMessageHandler(uint threadIdx)
 	long time_elapsed = (currentTime.tv_sec - lastGlobalStateUpdateTime.tv_sec) * 1000000 + (currentTime.tv_usec - lastGlobalStateUpdateTime.tv_usec); 
 	if (time_elapsed >= thruInterval) {
 	    /* update global statistics */
-	    pbft.nCompletedTx.fetch_add(nLocalCompletedTxPerInterval); 
-	    pbft.nTotalFailedTx.fetch_add(nLocalTotalFailedTxPerInterval);
+	    pbft.nCompletedTx.fetch_add(nLocalCompletedTxPerInterval, std::memory_order_relaxed); 
+	    pbft.nTotalFailedTx.fetch_add(nLocalTotalFailedTxPerInterval, std::memory_order_relaxed);
 	    nLocalCompletedTxPerInterval = 0;
+	    nLocalTotalFailedTxPerInterval = 0;
 	    lastGlobalStateUpdateTime = currentTime; 	
 	}
 
