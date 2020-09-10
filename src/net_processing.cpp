@@ -1861,8 +1861,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    struct timeval endTime;
 	    gettimeofday(&endTime, NULL);
 	    /* ---- calculate latency ---- */
-	    if (g_pbft->txUnlockReqMap.exist(reply.digest)) {
+	    if (!g_pbft->txUnlockReqMap.exist(reply.digest)) {
 		/* single-shard tx */
+		//std::cout << "txid = " << reply.digest.GetHex().substr(0, 10) << ", single-shard, mapTxStartTime.size = " << g_pbft->mapTxStartTime.size() << std::endl;
 		assert(g_pbft->mapTxStartTime.exist(reply.digest));
 		TxStat& stat = g_pbft->mapTxStartTime[reply.digest]; 
 		    
@@ -1882,6 +1883,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		/* cross-shard tx */
 		auto& inputShardRplMap = g_pbft->inputShardReplyMap;
 		uint256& txid = g_pbft->txUnlockReqMap[reply.digest];
+		//std::cout << "txid = " << txid.GetHex().substr(0, 10) << ", mapTxStartTime.size = " << g_pbft->mapTxStartTime.size() << std::endl;
+		assert(g_pbft->mapTxStartTime.exist(txid));
 		TxStat& stat = g_pbft->mapTxStartTime[txid]; 
 		std::cout << "tx " << txid.GetHex().substr(0,10);
 		if (reply.reply == 'y' && inputShardRplMap[txid].decision == 'c') {
