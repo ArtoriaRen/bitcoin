@@ -28,7 +28,7 @@ extern uint32_t thruInterval;
 
 struct LockReply{
     std::map<int32_t, std::vector<CInputShardReply>> lockReply;
-    char decision;
+    std::atomic<char> decision;
 };
 
 enum TxType {SINGLE_SHARD, CROSS_SHARD};
