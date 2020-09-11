@@ -18,6 +18,7 @@
 #include <primitives/block.h>
 #include <coins.h>
 #include "validation.h"
+#include <future>
 
 extern uint32_t num_committees;
 extern int lastAssignedAffinity;
@@ -98,7 +99,7 @@ public:
     uint32_t sendAllTailTx(int txSendPeriod);
 
     /* return true if the tx is sent, false if the tx is queued. */
-    bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height);
+    bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height) const;
 
 };
 
@@ -136,6 +137,9 @@ void smartPlaceTxInBlock(const std::shared_ptr<const CBlock> pblock);
 inline std::string getShardInfoFilename(int block_height) {
     return "/home/l27ren/shard_info_files/" + std::to_string(num_committees) + "committees/"+ std::to_string(block_height) + "_shardinfo.out";
 }
+void sendTxOfThread(const std::vector<CBlock>& vBlocksToSend, int startBlock, uint32_t thread_idx, uint32_t num_threads, int txSendPeriod, std::promise<int>&& cnt);
+uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, int txSendPeriod);
+uint32_t sendAllTailTx(int txSendPeriod);
 
 extern TxPlacer g_txplacer;
 
