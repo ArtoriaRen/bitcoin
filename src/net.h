@@ -35,6 +35,7 @@
 
 extern uint32_t num_committees;
 extern const uint SHARD_PER_THREAD;
+extern const uint NODES_PER_THREAD; 
 
 class CScheduler;
 class CNode;

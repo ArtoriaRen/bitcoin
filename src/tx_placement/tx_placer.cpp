@@ -447,7 +447,7 @@ bool TxPlacer::sendTx(const CTransactionRef tx, const uint idx, const uint32_t b
 	    g_pbft->mapTxStartTime.insert(std::make_pair(hashTx, stat));
 	    for (uint i = 1; i < shards.size(); i++) {
 		g_pbft->inputShardReplyMap[hashTx].lockReply.insert(std::make_pair(shards[i], std::vector<CInputShardReply>()));
-		g_pbft->inputShardReplyMap[hashTx].decision = '\0';
+		g_pbft->inputShardReplyMap[hashTx].decision.store('\0', std::memory_order_relaxed);
 		LockReq lockReq(*tx, vShardUtxoIdxToLock[i - 1]);
 		g_connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_LOCK, lockReq));
 	    }
