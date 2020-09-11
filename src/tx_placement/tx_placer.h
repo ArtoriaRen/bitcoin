@@ -42,7 +42,7 @@ public:
     void printPlaceResult();
 };
 
-void sendTxOfThread(const std::vector<CBlock>& vBlocksToSend, int startBlock, uint32_t thread_idx, uint32_t num_threads, int txSendPeriod, std::promise<int>&& cnt);
+void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thread_idx, const uint32_t num_threads, const int txSendPeriod);
 uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, int txSendPeriod);
 uint32_t sendAllTailTx(int txSendPeriod);
 
