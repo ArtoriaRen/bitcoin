@@ -38,6 +38,7 @@
 #include "tx_placement/tx_placer.h"
 #include <sys/time.h>
 #include "pbft/pbft.h"
+#include <future>
 
 struct CUpdatedBlock
 {
@@ -1462,15 +1463,46 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
     int txStartBlock = request.params[0].get_int();
     int txEndBlock = request.params[1].get_int();
     int txSendRate = request.params[2].get_int();
+    uint num_threads = num_committees << 1; 
+    assert (num_threads >= 1);
+    std::vector<std::thread> vThread;
+    std::vector<std::promise<int>> counter(num_threads); // collect thread return value
+    std::vector<std::future<int>> fut(num_threads);
+    for (size_t i = 0; i < num_committees; i++) {
+	fut[i] = counter[i].get_future();
+    }
+
+
+    std::vector<CBlock> vBlocksToSend(txEndBlock - txStartBlock);
+    for (int i = txStartBlock; i < txEndBlock; i++) {
+	CBlockIndex* pblockindex = chainActive[i];
+	if (!ReadBlockFromDisk(vBlocksToSend[i], pblockindex, Params().GetConsensus())) {
+	    std::cerr << "Block not found on disk" << std::endl;
+	}
+    }
+
     int txSendPeriod = 1000000 / txSendRate; // in us
     struct timeval startTime, tailStartTime, tailEndTime;
     uint32_t txCnt = 0, nonTailCnt = 0;
     gettimeofday(&startTime, NULL); 
     g_pbft->logThruput(startTime);
-    for (int i = txStartBlock; i < txEndBlock; i++) {
-	txCnt += sendTxInBlock(i, txSendPeriod);
-	std::cout << txCnt << " tx upto block " << i << " are sent. " << std::endl;
+
+    /* creat threads to send tx.*/
+    for (int i = 0; i < num_threads; i++) {
+	vThread.emplace_back(sendTxOfThread, vBlocksToSend, txStartBlock, i, num_threads, txSendPeriod, std::move(counter[i]));
     }
+
+    for (int i = 0; i < num_threads; i++) {
+	if (vThread[i].joinable())
+	    vThread[i].join();
+    }
+
+    uint32_t totalCnt = 0;
+    for (int i = 0; i < num_threads; i++) {
+	totalCnt += fut[i].get();
+    }
+
+    std::cout << totalCnt << " tx are sent. " << std::endl;
     nonTailCnt = txCnt;
     gettimeofday(&tailStartTime, NULL);
     //txCnt += sendAllTailTx(txSendPeriod);
