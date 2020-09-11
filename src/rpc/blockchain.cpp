@@ -1446,7 +1446,7 @@ UniValue preciousblock(const JSONRPCRequest& request)
 
 UniValue sendtxinblocks(const JSONRPCRequest& request)
 {
-    if (request.fHelp || request.params.size() != 3)
+    if (request.fHelp || request.params.size() != 4)
         throw std::runtime_error(
             "sendtxinblocks \"startblockheight\" \"endblockheight\" \"sendrate\"\n"
             "\nSend all transactions in blocks from startblockheight to endblockheight.\n"
@@ -1454,32 +1454,24 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
             "1. \"startblockheight\"   (numerical, required) the block height of the first block\n"
             "2. \"endblockheight\"   (numerical, required) the block height of the last block + 1\n"
             "3. \"sendrate\"   (numerical, required) the frequency at which tx are sent\n"
+            "4. \"nthreads\"   (numerical, required) use how many threads to send tx\n"
             "\nResult:\n"
             "\nExamples:\n"
             + HelpExampleCli("sendtxinblocks", "\"startblockheight\" \"endblockheight\" \"sendrate\"")
             + HelpExampleRpc("sendtxinblocks", "\"startblockheight\" \"endblockheight\" \"sendrate\"")
         );
 
-    int txStartBlock = request.params[0].get_int();
-    int txEndBlock = request.params[1].get_int();
-    int txSendRate = request.params[2].get_int();
-    uint num_threads = num_committees << 1; 
-    assert (num_threads >= 1);
+    const int txStartBlock = request.params[0].get_int();
+    const int txEndBlock = request.params[1].get_int();
+    const int txSendRate = request.params[2].get_int();
+    const uint num_threads = request.params[3].get_int();
+    assert(num_threads >= 1);
     std::vector<std::thread> vThread;
-    std::vector<std::promise<int>> counter(num_threads); // collect thread return value
-    std::vector<std::future<int>> fut(num_threads);
-    for (size_t i = 0; i < num_committees; i++) {
-	fut[i] = counter[i].get_future();
-    }
-
-
-    std::vector<CBlock> vBlocksToSend(txEndBlock - txStartBlock);
-    for (int i = txStartBlock; i < txEndBlock; i++) {
-	CBlockIndex* pblockindex = chainActive[i];
-	if (!ReadBlockFromDisk(vBlocksToSend[i], pblockindex, Params().GetConsensus())) {
-	    std::cerr << "Block not found on disk" << std::endl;
-	}
-    }
+    //std::vector<std::promise<int>> counter(num_threads); // collect thread return value
+    //std::vector<std::future<int>> fut(num_threads);
+    //for (size_t i = 0; i < num_committees; i++) {
+    //    fut[i] = counter[i].get_future();
+    //}
 
     int txSendPeriod = 1000000 / txSendRate; // in us
     struct timeval startTime, tailStartTime, tailEndTime;
@@ -1488,21 +1480,27 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
     g_pbft->logThruput(startTime);
 
     /* creat threads to send tx.*/
-    for (int i = 0; i < num_threads; i++) {
-	vThread.emplace_back(sendTxOfThread, vBlocksToSend, txStartBlock, i, num_threads, txSendPeriod, std::move(counter[i]));
+    for (uint i = 0; i < num_threads; i++) {
+	//vThread.emplace_back(sendTxOfThread, vBlocksToSend, txStartBlock, i, num_threads, txSendPeriod, std::move(counter[i]));
+	vThread.emplace_back(sendTxOfThread, txStartBlock, txEndBlock, i, num_threads, txSendPeriod);
     }
 
-    for (int i = 0; i < num_threads; i++) {
+    //uint32_t totalCnt = 0;
+    //for (uint i = 0; i < num_threads; i++) {
+    //    try {
+    //        totalCnt += fut[i].get();
+    //    } catch (const std::future_error& e) {
+    //        std::cout << "Caught a future_error with code \"" << e.code()
+    //    	      << "\"\nMessage: \"" << e.what() << "\"\n";
+    //    }
+    //}
+    //std::cout << totalCnt << " tx are sent. " << std::endl;
+
+    for (uint i = 0; i < num_threads; i++) {
 	if (vThread[i].joinable())
 	    vThread[i].join();
     }
 
-    uint32_t totalCnt = 0;
-    for (int i = 0; i < num_threads; i++) {
-	totalCnt += fut[i].get();
-    }
-
-    std::cout << totalCnt << " tx are sent. " << std::endl;
     nonTailCnt = txCnt;
     gettimeofday(&tailStartTime, NULL);
     //txCnt += sendAllTailTx(txSendPeriod);
@@ -1722,7 +1720,7 @@ static const CRPCCommand commands[] =
 
     { "blockchain",         "preciousblock",          &preciousblock,          {"blockhash"} },
 
-    { "blockchain",         "sendtxinblocks",         &sendtxinblocks,         {"startblockheight","endblockheight","sendrate"} },
+    { "blockchain",         "sendtxinblocks",         &sendtxinblocks,         {"startblockheight","endblockheight","sendrate","nthreads"} },
     /* Not shown in help */
     { "hidden",             "invalidateblock",        &invalidateblock,        {"blockhash"} },
     { "hidden",             "reconsiderblock",        &reconsiderblock,        {"blockhash"} },
