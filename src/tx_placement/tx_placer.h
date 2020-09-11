@@ -17,6 +17,7 @@
 #include <primitives/transaction.h>
 #include <primitives/block.h>
 #include <coins.h>
+#include <future>
 
 extern uint32_t num_committees;
 extern int lastAssignedAffinity;
@@ -41,8 +42,8 @@ public:
     void printPlaceResult();
 };
 
-//uint32_t sendTxInBlock(uint32_t block_height, struct timeval& expected_last_send_time, int txSendPeriod);
-uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod);
+void sendTxOfThread(const std::vector<CBlock>& vBlocksToSend, int startBlock, uint32_t thread_idx, uint32_t num_threads, int txSendPeriod, std::promise<int>&& cnt);
+uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, int txSendPeriod);
 uint32_t sendAllTailTx(int txSendPeriod);
 
 /* return true if the tx is sent, false if the tx is queued. */

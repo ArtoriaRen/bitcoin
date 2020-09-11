@@ -23,6 +23,11 @@ static const uint32_t SEC = 1000000; // 1 sec = 10^6 microsecond
 
 uint32_t num_committees;
 int lastAssignedAffinity = -1;
+/* txChunkSize * numThreads should be less than block size. Otherwise, some thread
+ * has nothing to do. We should consertively set the num of threads less than 20 
+ * given the txChunkSize of 100.
+ */
+size_t txChunkSize = 100; 
 //uint32_t txStartBlock;
 //uint32_t txEndBlock;
 
@@ -87,18 +92,28 @@ void TxPlacer::printPlaceResult(){
     }
 }
 
-//uint32_t sendTxInBlock(uint32_t block_height, struct timeval& expected_last_send_time, int txSendPeriod) {
-uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
-    CBlock block;
-    CBlockIndex* pblockindex = chainActive[block_height];
-    if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
-        std::cerr << "Block not found on disk" << std::endl;
+void sendTxOfThread(const std::vector<CBlock>& vBlocksToSend, int startBlock, uint32_t thread_idx, uint32_t num_threads, int txSendPeriod, std::promise<int>&& count) {
+    uint32_t cnt;
+    const uint32_t jump_length = num_threads * txChunkSize;
+    for (size_t j = 0; j < vBlocksToSend.size(); j++) {
+	const CBlock& block = vBlocksToSend[j];
+	uint block_height = startBlock + j;
+	for (size_t i = thread_idx * txChunkSize; i < block.vtx.size(); i += jump_length){
+	    std::cout << __func__ << ": thread " << thread_idx << " sending No." << i << " tx in block " << block_height << std::endl;
+	    uint32_t actual_chunk_size = sendTxChunk(block, block_height, i, txSendPeriod);
+	    cnt += actual_chunk_size;
+	    std::cout << __func__ << ": thread " << thread_idx << " sent " << actual_chunk_size << " tx in block " << block_height << std::endl;
+	}
     }
-    std::cout << __func__ << ": sending " << block.vtx.size() << " tx in block " << block_height << std::endl;
+    std::cout << __func__ << ": thread " << thread_idx << " sent " << cnt << " tx in total" << std::endl;
+    count.set_value(cnt);
+}
 
+uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, int txSendPeriod) {
     const struct timespec sleep_length = {0, txSendPeriod};
     uint32_t cnt = 0;
-    for (uint j = 0; j < block.vtx.size(); j++) {
+    uint32_t end_tx = std::min(start_tx + txChunkSize, block.vtx.size());
+    for (uint j = start_tx; j < end_tx; j++) {
 	sendTx(block.vtx[j], j, block_height);
 	cnt++;
 	//nanosleep(&sleep_length, NULL);
