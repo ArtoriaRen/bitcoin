@@ -367,14 +367,20 @@ void printShardAffinity(){
 
 static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, int txSendPeriod, const TxPlacer& txplacer);
 
-void sendTxOfThread(const std::vector<CBlock>& vBlocksToSend, int startBlock, uint32_t thread_idx, uint32_t num_threads, int txSendPeriod, std::promise<int>&& count) {
-    uint32_t cnt;
+void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thread_idx, const uint32_t num_threads, const int txSendPeriod) {
+    RenameThread(("sendTx" + std::to_string(thread_idx)).c_str());
+    uint32_t cnt = 0;
     TxPlacer txplacer;
     const uint32_t jump_length = num_threads * txChunkSize;
-    for (size_t j = 0; j < vBlocksToSend.size(); j++) {
-	const CBlock& block = vBlocksToSend[j];
-	uint block_height = startBlock + j;
+    for (int block_height = startBlock; block_height < endBlock; block_height++) {
+	CBlock block;
+	CBlockIndex* pblockindex = chainActive[block_height];
+	if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
+	    std::cerr << "Block not found on disk" << std::endl;
+	}
+	std::cout << " block_height = " << block_height  << ", thread_idx = " << thread_idx << ", block vtx size = " << block.vtx.size() << std::endl;
         txplacer.loadShardInfo(block_height);
+
 	for (size_t i = thread_idx * txChunkSize; i < block.vtx.size(); i += jump_length){
 	    std::cout << __func__ << ": thread " << thread_idx << " sending No." << i << " tx in block " << block_height << std::endl;
 	    uint32_t actual_chunk_size = sendTxChunk(block, block_height, i, txSendPeriod, txplacer);
@@ -383,7 +389,7 @@ void sendTxOfThread(const std::vector<CBlock>& vBlocksToSend, int startBlock, ui
 	}
     }
     std::cout << __func__ << ": thread " << thread_idx << " sent " << cnt << " tx in total" << std::endl;
-    count.set_value(cnt);
+    //count.set_value(cnt);
 }
 
 static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, int txSendPeriod, const TxPlacer& txplacer) {
@@ -393,7 +399,7 @@ static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const 
     for (uint j = start_tx; j < end_tx; j++) {
 	txplacer.sendTx(block.vtx[j], j, block_height);
 	cnt++;
-	//nanosleep(&sleep_length, NULL);
+	nanosleep(&sleep_length, NULL);
 
 	/* send one aborted tx every four tx */
 	if ((j & 0x04) == 0) {
