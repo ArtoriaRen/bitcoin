@@ -1695,6 +1695,30 @@ UniValue gendependgraph(const JSONRPCRequest& request)
     return NullUniValue;
 }
 
+UniValue printdependgraph(const JSONRPCRequest& request) {
+    if (request.fHelp || request.params.size() != 0)
+        throw std::runtime_error(
+            "printdependgraph \n"
+            "\n print dependency graph file. \n"
+            "\nResult:\n"
+            "\nExamples:\n"
+            + HelpExampleCli("printdependgraph", "")
+            + HelpExampleRpc("printdependgraph", "")
+        );
+    std::ifstream dependencyFileStream;
+    dependencyFileStream.open(getDependencyFilename());
+    assert(!dependencyFileStream.fail());
+    DependencyRecord dpRec;
+    dpRec.Unserialize(dependencyFileStream);
+    while (!dependencyFileStream.eof()) {
+	std::cout << dpRec.tx.ToString() << ": " << dpRec.latest_prereq_tx.ToString();
+	dpRec.Unserialize(dependencyFileStream);
+    }
+    dependencyFileStream.close();
+    return NullUniValue;
+}
+
+
 UniValue invalidateblock(const JSONRPCRequest& request)
 {
     if (request.fHelp || request.params.size() != 1)
@@ -1899,6 +1923,8 @@ static const CRPCCommand commands[] =
     { "blockchain",         "genshardinfofile",       &genshardinfofile,       {"startblockheight","endblockheight"} },
     { "blockchain",         "printshardinfo",         &printshardinfo,         {"blockheight"} },
     { "blockchain",         "sendtxinblocks",         &sendtxinblocks,         {"startblockheight","endblockheight","sendrate","nthreads"} },
+    { "blockchain",         "gendependgraph",         &gendependgraph,         {"endblockheight"} },
+    { "blockchain",         "printdependgraph",       &printdependgraph,       {} },
     /* Not shown in help */
     { "hidden",             "invalidateblock",        &invalidateblock,        {"blockhash"} },
     { "hidden",             "reconsiderblock",        &reconsiderblock,        {"blockhash"} },

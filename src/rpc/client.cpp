@@ -56,6 +56,7 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "genshardinfofile", 0, "startblockheight" },
     { "genshardinfofile", 1, "endblockheight" },
     { "printshardinfo", 0, "blockheight" },
+    { "gendependgraph", 0, "endblockheight" },
     { "waitforblockheight", 0, "height" },
     { "waitforblockheight", 1, "timeout" },
     { "waitforblock", 1, "timeout" },
