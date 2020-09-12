@@ -1522,6 +1522,54 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
     return NullUniValue;
 }
 
+UniValue gendependgraph(const JSONRPCRequest& request)
+{
+    if (request.fHelp || request.params.size() != 1)
+        throw std::runtime_error(
+            "sendtxinblocks \"startblockheight\" \"endblockheight\" \"sendrate\"\n"
+            "\nSend all transactions in blocks from startblockheight to endblockheight.\n"
+            "\nArguments:\n"
+            "1. \"endblockheight\"   (numerical, required) the block height of the last block + 1\n"
+            "\nResult:\n"
+            "\nExamples:\n"
+            + HelpExampleCli("gendependgraph", "\"endblockheight\"")
+            + HelpExampleRpc("gendependgraph", "\"endblockheight\"")
+        );
+
+    const uint end_block = request.params[0].get_int();
+    std::ofstream outfile;
+    outfile.open(getDependencyFilename());
+    std::unordered_map<uint256, TxIndexOnChain, BlockHasher> mapTxid2Index;
+    for (uint32_t block_height = 601000; block_height < end_block; block_height++) {
+	CBlock block;
+	CBlockIndex* pblockindex = chainActive[block_height];
+	if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
+	    std::cerr << "Block not found on disk" << std::endl;
+	}
+	for (uint i = 1; i < block.vtx.size(); i++) {
+	    const CTransactionRef pTx = block.vtx[i];
+	    const uint256& txid = pTx->GetHash();
+	    TxIndexOnChain latest_prereq_tx;
+	    for (const CTxIn& txin: pTx->vin) {
+		if (mapTxid2Index.find(txin.prevout.hash) != mapTxid2Index.end()) {
+		    std::cout << "tx (" << block_height << ", " << i << ") depends on "
+			    << mapTxid2Index[txin.prevout.hash].ToString() << std::endl;
+		    latest_prereq_tx = std::max(latest_prereq_tx, mapTxid2Index[txin.prevout.hash]);
+		}
+	    }
+	    std::cout << "latest prereq = " << latest_prereq_tx.ToString() << std::endl;
+
+	    if (!latest_prereq_tx.IsNull()) {
+		DependencyRecord(block_height, i, latest_prereq_tx).Serialize(outfile);
+	    }
+	    
+	    mapTxid2Index.insert(std::make_pair(txid, TxIndexOnChain(block_height, i)));
+	}
+    }
+    outfile.close();
+    return NullUniValue;
+}
+
 UniValue invalidateblock(const JSONRPCRequest& request)
 {
     if (request.fHelp || request.params.size() != 1)
