@@ -53,6 +53,7 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "sendtxinblocks", 1, "endblockheight" },
     { "sendtxinblocks", 2, "sendrate" },
     { "sendtxinblocks", 3, "nthreads" },
+    { "gendependgraph", 0, "endblockheight" },
     { "waitforblockheight", 0, "height" },
     { "waitforblockheight", 1, "timeout" },
     { "waitforblock", 1, "timeout" },

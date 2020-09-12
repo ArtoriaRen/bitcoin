@@ -215,4 +215,5 @@ std::string TxIndexOnChain::ToString() {
     return "(" + std::to_string(block_height) + ", " + std::to_string(offset_in_block) + ")";
 }
 
+DependencyRecord::DependencyRecord(): tx(), latest_prereq_tx() { }
 DependencyRecord::DependencyRecord(const uint32_t block_height, const uint32_t offset_in_block, const TxIndexOnChain& latest_prereq_tx_in): tx(block_height, offset_in_block), latest_prereq_tx(latest_prereq_tx_in) { }
