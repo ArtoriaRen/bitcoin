@@ -543,3 +543,17 @@ void TxPlacer::loadShardInfo(int block_height) {
     shardInfoFile.close();
 }
 
+TxIndexOnChain::TxIndexOnChain(): block_height(0), offset_in_block(0) { }
+
+TxIndexOnChain::TxIndexOnChain(uint32_t block_height_in, uint32_t offset_in_block_in):
+ block_height(block_height_in), offset_in_block(offset_in_block_in) { }
+
+bool TxIndexOnChain::IsNull() {
+    return block_height == 0 && offset_in_block == 0;
+}
+
+std::string TxIndexOnChain::ToString() {
+    return "(" + std::to_string(block_height) + ", " + std::to_string(offset_in_block) + ")";
+}
+
+DependencyRecord::DependencyRecord(const uint32_t block_height, const uint32_t offset_in_block, const TxIndexOnChain& latest_prereq_tx_in): tx(block_height, offset_in_block), latest_prereq_tx(latest_prereq_tx_in) { }
