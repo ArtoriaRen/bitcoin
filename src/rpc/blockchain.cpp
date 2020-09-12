@@ -1539,6 +1539,7 @@ UniValue gendependgraph(const JSONRPCRequest& request)
     const uint end_block = request.params[0].get_int();
     std::ofstream outfile;
     outfile.open(getDependencyFilename());
+    assert(!outfile.fail());
     std::unordered_map<uint256, TxIndexOnChain, BlockHasher> mapTxid2Index;
     for (uint32_t block_height = 601000; block_height < end_block; block_height++) {
 	CBlock block;
@@ -1557,9 +1558,9 @@ UniValue gendependgraph(const JSONRPCRequest& request)
 		    latest_prereq_tx = std::max(latest_prereq_tx, mapTxid2Index[txin.prevout.hash]);
 		}
 	    }
-	    std::cout << "latest prereq = " << latest_prereq_tx.ToString() << std::endl;
 
 	    if (!latest_prereq_tx.IsNull()) {
+		std::cout << "latest prereq = " << latest_prereq_tx.ToString() << std::endl;
 		DependencyRecord(block_height, i, latest_prereq_tx).Serialize(outfile);
 	    }
 	    
@@ -1586,7 +1587,7 @@ UniValue printdependgraph(const JSONRPCRequest& request) {
     DependencyRecord dpRec;
     dpRec.Unserialize(dependencyFileStream);
     while (!dependencyFileStream.eof()) {
-	std::cout << dpRec.tx.ToString() << ": " << dpRec.latest_prereq_tx.ToString();
+	std::cout << dpRec.tx.ToString() << ": " << dpRec.latest_prereq_tx.ToString() << std::endl;
 	dpRec.Unserialize(dependencyFileStream);
     }
     dependencyFileStream.close();
