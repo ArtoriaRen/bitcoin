@@ -41,8 +41,8 @@ public:
 
     template<typename Stream>
     void Unserialize(Stream& s) {
-	s.read(reinterpret_cast<const char*>(&block_height), sizeof(block_height));
-	s.read(reinterpret_cast<const char*>(&offset_in_block), sizeof(offset_in_block));
+	s.read(reinterpret_cast<char*>(&block_height), sizeof(block_height));
+	s.read(reinterpret_cast<char*>(&offset_in_block), sizeof(offset_in_block));
     }
 
     friend bool operator<(TxIndexOnChain a, TxIndexOnChain b)
@@ -59,6 +59,7 @@ public:
     TxIndexOnChain tx;
     TxIndexOnChain latest_prereq_tx;
 
+    DependencyRecord();
     DependencyRecord(const uint32_t block_height, const uint32_t offset_in_block, const TxIndexOnChain& latest_prereq_tx_in);
 
     template<typename Stream>
@@ -100,7 +101,7 @@ uint32_t sendAllTailTx(int txSendPeriod);
 bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height);
 
 inline std::string getDependencyFilename() {
-    return "dependency.out";
+    return "dependency_file/dependency.out";
 }
 
 #endif /* TX_PLACER_H */
