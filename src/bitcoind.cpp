@@ -43,6 +43,8 @@
 void WaitForShutdown()
 {
     bool fShutdown = ShutdownRequested();
+    CPbft& pbft = *g_pbft;
+    size_t lastCommittedTxDequeSize = pbft.committedTxIndex.size();
     // Tell the main threads to shutdown.
     while (!fShutdown)
     {
@@ -50,13 +52,15 @@ void WaitForShutdown()
 
 	/* print throughput */
 	/* log throughput if enough long time has elapsed. */
-	CPbft& pbft = *g_pbft;
 	bool testIsRunning = pbft.nTotalSentTx > 0  // test has started
 		&& pbft.nCompletedTx.load(std::memory_order_relaxed) + pbft.nTotalFailedTx.load(std::memory_order_relaxed) < pbft.nTotalSentTx; // test has not yet finished
 	struct timeval currentTime;
 	gettimeofday(&currentTime, NULL);
 	if (testIsRunning && currentTime >= pbft.nextLogTime) {
 	    pbft.logThruput(currentTime);
+	}
+	if (pbft.committedTxIndex.size() != lastCommittedTxDequeSize) {
+	    lastCommittedTxDequeSize = pbft.committedTxIndex.updateGreatestConsecutive();
 	}
 
         fShutdown = ShutdownRequested();

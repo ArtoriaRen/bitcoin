@@ -40,13 +40,50 @@ struct TxStat{
     struct timeval startTime;
 };
 
+class TxIndexOnChain {
+public:
+    uint32_t block_height;
+    uint32_t offset_in_block;
+
+    TxIndexOnChain();
+    TxIndexOnChain(const uint32_t block_height_in, const uint32_t offset_in_block_in);
+    bool IsNull();
+
+    template<typename Stream>
+    void Serialize(Stream& s) const{
+	s.write(reinterpret_cast<const char*>(&block_height), sizeof(block_height));
+	s.write(reinterpret_cast<const char*>(&offset_in_block), sizeof(offset_in_block));
+    }
+
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+	s.read(reinterpret_cast<char*>(&block_height), sizeof(block_height));
+	s.read(reinterpret_cast<char*>(&offset_in_block), sizeof(offset_in_block));
+    }
+
+    TxIndexOnChain operator+(const unsigned int oprand);
+
+    friend bool operator<(TxIndexOnChain a, TxIndexOnChain b);
+    friend bool operator>(TxIndexOnChain a, TxIndexOnChain b);
+    friend bool operator==(TxIndexOnChain a, TxIndexOnChain b);
+    friend bool operator!=(TxIndexOnChain a, TxIndexOnChain b);
+
+    std::string ToString();
+};
+
 class TxBlockInfo{
 public:
     CTransactionRef tx;
     uint32_t blockHeight;
     uint32_t n;  // n-th tx in the block body
+    TxIndexOnChain latest_prereq_tx;
+    
     TxBlockInfo();
-    TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn);
+    TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn, TxIndexOnChain latest_prereq_tx_in);
+    friend bool operator<(TxBlockInfo a, TxBlockInfo b)
+    {
+        return a.latest_prereq_tx < b.latest_prereq_tx;
+    }
 };
 
 class ThreadSafeQueue {
@@ -109,6 +146,28 @@ private:
     std::condition_variable cond_;
 };
 
+
+class CommittedTxDeque{
+public:
+
+    void insert_back(const std::vector<TxIndexOnChain>& localCommittedTx);
+
+    /* Sort the underlying deque and find the greatest element whose value equals 
+     * its index + latestConsecutiveCommittedTx.
+     * Also remove elements less than the greatest consecutive element. 
+     * Need to know block sizes, which is available through chainActive. 
+     */
+    size_t updateGreatestConsecutive();
+
+    size_t size();
+    bool empty();
+
+private:
+    std::deque<TxIndexOnChain> deque_;
+    std::mutex mutex_;
+    std::condition_variable cond_;
+};
+
 class CPbft{
 public:
     static const uint32_t nFaulty = 1;
@@ -156,6 +215,9 @@ public:
 
     std::ofstream latencyFile;
     std::ofstream thruputFile;
+    std::atomic<TxIndexOnChain> latestConsecutiveCommittedTx;
+    CommittedTxDeque committedTxIndex;
+    
     /* <txid, tx_start_time>
      * This map includes both single-shard and cross-shard tx.
      */

@@ -1495,7 +1495,7 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, const std::ve
     return true;
 }
 
-bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman* connman, const std::atomic<bool>& interruptMsgProc, uint32_t& nLocalCompletedTxPerInterval, uint32_t& nLocalTotalFailedTxPerInterval, const uint threadIdx)
+bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman* connman, const std::atomic<bool>& interruptMsgProc, uint32_t& nLocalCompletedTxPerInterval, uint32_t& nLocalTotalFailedTxPerInterval, const uint threadIdx, std::vector<TxIndexOnChain>& vCommittedTxIndex)
 {
     //std::cout << __func__ << ": " << strCommand << std::endl;
     LogPrint(BCLog::NET, "received: %s (%u bytes) peer=%d\n", SanitizeString(strCommand), vRecv.size(), pfrom->GetId());
@@ -1867,7 +1867,14 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		assert (stat.type == TxType::SINGLE_SHARD); 
 		//std::cout << "tx " << reply.digest.GetHex().substr(0,10);
 		if (reply.reply == 'y') {
-			//std::cout << ", SUCCEED, " << std::endl;
+			std::cout << ", SUCCEED, " << std::endl;
+			const TxIndexOnChain& txIndex = g_pbft->txInFly[reply.digest].latest_prereq_tx;
+			vCommittedTxIndex.emplace_back(txIndex.block_height, txIndex.offset_in_block);
+			if (vCommittedTxIndex.size() == localCommittedTxCapacity) {
+			    /* append to the global data structure */
+			    g_pbft->committedTxIndex.insert_back(vCommittedTxIndex);
+			    vCommittedTxIndex.clear();
+			}
 			g_pbft->txInFly.erase(reply.digest);
 			nLocalCompletedTxPerInterval++;
 		} else if (reply.reply == 'n') {
@@ -1890,6 +1897,13 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 			 * printing info more than once for a tx. 
 			 */
 			std::cout << ", COMMITTED, ";
+			const TxIndexOnChain& txIndex = g_pbft->txInFly[txid].latest_prereq_tx;
+			vCommittedTxIndex.emplace_back(txIndex.block_height, txIndex.offset_in_block);
+			if (vCommittedTxIndex.size() == localCommittedTxCapacity) {
+			    /* append to the global data structure */
+			    g_pbft->committedTxIndex.insert_back(vCommittedTxIndex);
+			    vCommittedTxIndex.clear();
+			}
 			g_pbft->txInFly.erase(txid);
 			nLocalCompletedTxPerInterval++;
 		} else if (reply.reply == 'y' && inputShardRplMap[txid].decision == 'a') {
@@ -2633,7 +2647,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         } // cs_main
 
         if (fProcessBLOCKTXN)
-            return ProcessMessage(pfrom, NetMsgType::BLOCKTXN, blockTxnMsg, nTimeReceived, chainparams, connman, interruptMsgProc, nLocalCompletedTxPerInterval, nLocalTotalFailedTxPerInterval, threadIdx);
+            return ProcessMessage(pfrom, NetMsgType::BLOCKTXN, blockTxnMsg, nTimeReceived, chainparams, connman, interruptMsgProc, nLocalCompletedTxPerInterval, nLocalTotalFailedTxPerInterval, threadIdx, vCommittedTxIndex);
 
         if (fRevertToHeaderProcessing) {
             // Headers received from HB compact block peers are permitted to be
@@ -3050,7 +3064,7 @@ static bool SendRejectsAndCheckIfBanned(CNode* pnode, CConnman* connman)
     return false;
 }
 
-bool PeerLogicValidation::ProcessMessages(CNode* pfrom, std::atomic<bool>& interruptMsgProc, uint32_t& nLocalCompletedTxPerInterval, uint32_t& nLocalTotalFailedTxPerInterval, const uint threadIdx)
+bool PeerLogicValidation::ProcessMessages(CNode* pfrom, std::atomic<bool>& interruptMsgProc, uint32_t& nLocalCompletedTxPerInterval, uint32_t& nLocalTotalFailedTxPerInterval, const uint threadIdx, std::vector<TxIndexOnChain>& vCommittedTxIndex)
 {
     const CChainParams& chainparams = Params();
     //
@@ -3125,7 +3139,7 @@ bool PeerLogicValidation::ProcessMessages(CNode* pfrom, std::atomic<bool>& inter
     bool fRet = false;
     try
     {
-        fRet = ProcessMessage(pfrom, strCommand, vRecv, msg.nTime, chainparams, connman, interruptMsgProc, nLocalCompletedTxPerInterval, nLocalTotalFailedTxPerInterval, threadIdx);
+        fRet = ProcessMessage(pfrom, strCommand, vRecv, msg.nTime, chainparams, connman, interruptMsgProc, nLocalCompletedTxPerInterval, nLocalTotalFailedTxPerInterval, threadIdx, vCommittedTxIndex);
         if (interruptMsgProc)
             return false;
         if (!pfrom->vRecvGetData.empty())
