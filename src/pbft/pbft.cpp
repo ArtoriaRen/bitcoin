@@ -63,14 +63,16 @@ bool ThreadSafeQueue::empty() {
 void CommittedTxDeque::insert_back(const std::vector<TxIndexOnChain>& localCommittedTx) {
     std::unique_lock<std::mutex> mlock(mutex_);
     deque_.insert(deque_.end(), localCommittedTx.begin(), localCommittedTx.end());
+    std::cout << "after inserted, deque_ size = " << deque_.size() << std::endl;
 }
 
 size_t CommittedTxDeque::updateGreatestConsecutive(){
     TxIndexOnChain LCCTx = g_pbft->latestConsecutiveCommittedTx.load(std::memory_order_relaxed);
     std::unique_lock<std::mutex> mlock(mutex_);
     if (deque_.empty())
-	return deque_.size();
+	return 0;
     std::sort(deque_.begin(), deque_.end());
+    std::cout << "after sorting, deque_.front() = "<< deque_.front().ToString() << ", deque_.back()" << deque_.back().ToString() << ", LCCTx = " << LCCTx.ToString() << std::endl;
     if (deque_.front() != LCCTx + 1)
 	return deque_.size();
     if (deque_.back() == LCCTx + deque_.size()) {
@@ -96,7 +98,7 @@ size_t CommittedTxDeque::updateGreatestConsecutive(){
     }
     assert(left + 1 == right && deque_[left] == LCCTx + left + 1 && deque_[right] > LCCTx + right + 1);
     TxIndexOnChain newLCCTx = deque_[left];
-    deque_.erase(deque_.begin(), deque_.begin() + left + 1);
+    deque_.erase(deque_.begin(), deque_.begin() + right);
     size_t ret = deque_.size(); 
     mlock.unlock();
     g_pbft->latestConsecutiveCommittedTx.store(newLCCTx, std::memory_order_relaxed);
@@ -105,7 +107,7 @@ size_t CommittedTxDeque::updateGreatestConsecutive(){
 
 size_t CommittedTxDeque::size() {
     std::unique_lock<std::mutex> mlock(mutex_);
-    int size = deque_.size();
+    size_t size = deque_.size();
     mlock.unlock();
     return size;
 }
@@ -115,7 +117,7 @@ bool CommittedTxDeque::empty() {
     return deque_.empty();
 }
 
-CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), latestConsecutiveCommittedTx(TxIndexOnChain(601000, 0)), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nTotalSentTx(0), privateKey(CKey()) {
+CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), latestConsecutiveCommittedTx(TxIndexOnChain(600999, 2932)), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nTotalSentTx(0), privateKey(CKey()) {
     testStartTime = {0, 0};
     nextLogTime = {0, 0};
     privateKey.MakeNewKey(false);
@@ -161,6 +163,16 @@ void CPbft::logThruput(struct timeval& endTime) {
     nextLogTime = endTime + thruInterval;
     nLastCompletedTx = nCompletedTxCopy;
     thruputFile << endTime.tv_sec << "." << endTime.tv_usec << "," <<  nCompletedTxCopy << "," << thruput << std::endl;
+}
+
+bool operator<(TxBlockInfo a, TxBlockInfo b)
+{
+    return a.latest_prereq_tx < b.latest_prereq_tx;
+}
+
+bool operator>(TxBlockInfo a, TxBlockInfo b)
+{
+    return a.latest_prereq_tx > b.latest_prereq_tx;
 }
 
 
