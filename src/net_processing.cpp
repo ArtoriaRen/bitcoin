@@ -1495,6 +1495,17 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, const std::ve
     return true;
 }
 
+void static addCommittedTxIndex(const uint256& txid, std::vector<TxIndexOnChain>& vCommittedTxIndex){
+    const TxBlockInfo& txInfo = g_pbft->txInFly[txid];
+    vCommittedTxIndex.emplace_back(txInfo.blockHeight, txInfo.n);
+    if (vCommittedTxIndex.size() == localCommittedTxCapacity) {
+	/* append to the global data structure */
+	    std::cout << "single-shard, vCommittedTxIndex size = " << vCommittedTxIndex.size() << std::endl;
+	g_pbft->committedTxIndex.insert_back(vCommittedTxIndex);
+	vCommittedTxIndex.clear();
+    }
+}
+
 bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman* connman, const std::atomic<bool>& interruptMsgProc, uint32_t& nLocalCompletedTxPerInterval, uint32_t& nLocalTotalFailedTxPerInterval, const uint threadIdx, std::vector<TxIndexOnChain>& vCommittedTxIndex)
 {
     std::cout << __func__ << ": " << strCommand << std::endl;
@@ -1871,13 +1882,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		std::cout << "tx " << reply.digest.GetHex().substr(0,10);
 		if (reply.reply == 'y') {
 			std::cout << ", SUCCEED, ";
-			const TxIndexOnChain& txIndex = g_pbft->txInFly[reply.digest].latest_prereq_tx;
-			vCommittedTxIndex.emplace_back(txIndex.block_height, txIndex.offset_in_block);
-			if (vCommittedTxIndex.size() == localCommittedTxCapacity) {
-			    /* append to the global data structure */
-			    g_pbft->committedTxIndex.insert_back(vCommittedTxIndex);
-			    vCommittedTxIndex.clear();
-			}
+			addCommittedTxIndex(reply.digest, vCommittedTxIndex);
 			g_pbft->txInFly.erase(reply.digest);
 			nLocalCompletedTxPerInterval++;
 		} else if (reply.reply == 'n') {
@@ -1899,13 +1904,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 			 * printing info more than once for a tx. 
 			 */
 			std::cout << ", COMMITTED, ";
-			const TxIndexOnChain& txIndex = g_pbft->txInFly[txid].latest_prereq_tx;
-			vCommittedTxIndex.emplace_back(txIndex.block_height, txIndex.offset_in_block);
-			if (vCommittedTxIndex.size() == localCommittedTxCapacity) {
-			    /* append to the global data structure */
-			    g_pbft->committedTxIndex.insert_back(vCommittedTxIndex);
-			    vCommittedTxIndex.clear();
-			}
+			addCommittedTxIndex(txid, vCommittedTxIndex);
 			g_pbft->txInFly.erase(txid);
 			nLocalCompletedTxPerInterval++;
 		} else if (reply.reply == 'y' && inputShardRplMap[txid].decision.load(std::memory_order_relaxed) == 'a') {

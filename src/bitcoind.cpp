@@ -44,7 +44,7 @@ void WaitForShutdown()
 {
     bool fShutdown = ShutdownRequested();
     CPbft& pbft = *g_pbft;
-    size_t lastCommittedTxDequeSize = pbft.committedTxIndex.size();
+    size_t lastCommittedTxDequeSize = 0;
     // Tell the main threads to shutdown.
     while (!fShutdown)
     {

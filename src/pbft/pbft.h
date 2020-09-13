@@ -65,8 +65,9 @@ public:
     friend bool operator>(TxIndexOnChain a, TxIndexOnChain b);
     friend bool operator==(TxIndexOnChain a, TxIndexOnChain b);
     friend bool operator!=(TxIndexOnChain a, TxIndexOnChain b);
+    friend bool operator<=(TxIndexOnChain a, TxIndexOnChain b);
 
-    std::string ToString();
+    std::string ToString() const;
 };
 
 class TxBlockInfo{
@@ -79,10 +80,8 @@ public:
     TxBlockInfo();
     TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn, TxIndexOnChain latest_prereq_tx_in, int32_t outputShardIn = -1);
 
-    friend bool operator<(TxBlockInfo a, TxBlockInfo b)
-    {
-        return a.latest_prereq_tx < b.latest_prereq_tx;
-    }
+    friend bool operator<(TxBlockInfo a, TxBlockInfo b);
+    friend bool operator>(TxBlockInfo a, TxBlockInfo b);
 };
 
 class ThreadSafeQueue {
