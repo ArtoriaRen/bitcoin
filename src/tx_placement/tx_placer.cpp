@@ -12,7 +12,6 @@
 #include "validation.h"
 #include "chainparams.h"
 #include "netmessagemaker.h"
-#include "pbft/pbft.h"
 #include <thread>
 #include <chrono>
 #include <time.h>
@@ -51,9 +50,9 @@ void ShardInfo::print() const {
     }
 }
 
-TxPlacer::TxPlacer():totalTxNum(0), vTxCnt(num_committees, 0){
-}
+TxPlacer::TxPlacer():totalTxNum(0), vTxCnt(num_committees, 0){ }
 
+static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, int txSendPeriod, const TxPlacer& txplacer, std::priority_queue<TxBlockInfo>& pqDependency, const TxIndexOnChain& localLCCTx);
 
 /* all output UTXOs of a tx is stored in one shard. */
 std::vector<int32_t> TxPlacer::randomPlace(const CTransaction& tx){
@@ -194,6 +193,19 @@ void TxPlacer::printPlaceResult(){
 	    std::cout << "\t\t" << p.first << "-shard tx count = " << p.second << std::endl;
 	}
     }
+} 
+
+void TxPlacer::loadDependencyGraph (){
+    std::ifstream dependencyFileStream;
+    dependencyFileStream.open(getDependencyFilename());
+    assert(!dependencyFileStream.fail());
+    DependencyRecord dpRec;
+    dpRec.Unserialize(dependencyFileStream);
+    while (!dependencyFileStream.eof()) {
+	mapDependency.insert(std::make_pair(dpRec.tx, dpRec.latest_prereq_tx));
+	dpRec.Unserialize(dependencyFileStream);
+    }
+    dependencyFileStream.close();
 }
 
 void assignShardAffinity(){
@@ -365,13 +377,16 @@ void printShardAffinity(){
 //    }
 //}
 
-static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, int txSendPeriod, const TxPlacer& txplacer);
 
 void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thread_idx, const uint32_t num_threads, const int txSendPeriod) {
     RenameThread(("sendTx" + std::to_string(thread_idx)).c_str());
     uint32_t cnt = 0;
     TxPlacer txplacer;
     const uint32_t jump_length = num_threads * txChunkSize;
+    std::priority_queue<TxBlockInfo> pqDependency;
+    TxPlacer txPlacer;
+    txPlacer.loadDependencyGraph();
+    TxIndexOnChain locallatestConsecutiveCommittedTx = g_pbft->latestConsecutiveCommittedTx.load(std::memory_order_relaxed);
     for (int block_height = startBlock; block_height < endBlock; block_height++) {
 	CBlock block;
 	CBlockIndex* pblockindex = chainActive[block_height];
@@ -383,20 +398,48 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
 
 	for (size_t i = thread_idx * txChunkSize; i < block.vtx.size(); i += jump_length){
 	    std::cout << __func__ << ": thread " << thread_idx << " sending No." << i << " tx in block " << block_height << std::endl;
-	    uint32_t actual_chunk_size = sendTxChunk(block, block_height, i, txSendPeriod, txplacer);
+	    uint32_t actual_chunk_size = sendTxChunk(block, block_height, i, txSendPeriod, txPlacer, pqDependency, locallatestConsecutiveCommittedTx);
 	    cnt += actual_chunk_size;
 	    std::cout << __func__ << ": thread " << thread_idx << " sent " << actual_chunk_size << " tx in block " << block_height << std::endl;
+	}
+
+	/* check the priority queue.  */
+	locallatestConsecutiveCommittedTx = g_pbft->latestConsecutiveCommittedTx.load(std::memory_order_relaxed);
+	while (!pqDependency.empty() && pqDependency.top().latest_prereq_tx < locallatestConsecutiveCommittedTx) {
+		txPlacer.sendTx(pqDependency.top().tx, pqDependency.top().n, pqDependency.top().blockHeight);
+		pqDependency.pop();
+		cnt++;
+	}
+    }
+    /* send all remaining tx in the queue.  */
+    while (!pqDependency.empty()) {
+	/* sleep for a while to give depended tx enough time to finish. */
+	usleep(100);
+	if (ShutdownRequested())
+		break;
+	locallatestConsecutiveCommittedTx = g_pbft->latestConsecutiveCommittedTx.load(std::memory_order_relaxed);
+	while (!pqDependency.empty() && pqDependency.top().latest_prereq_tx < locallatestConsecutiveCommittedTx) {
+		txPlacer.sendTx(pqDependency.top().tx, pqDependency.top().n, pqDependency.top().blockHeight);
+		pqDependency.pop();
+		cnt++;
 	}
     }
     std::cout << __func__ << ": thread " << thread_idx << " sent " << cnt << " tx in total" << std::endl;
     //count.set_value(cnt);
 }
 
-static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, int txSendPeriod, const TxPlacer& txplacer) {
+static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, int txSendPeriod, const TxPlacer& txplacer, std::priority_queue<TxBlockInfo>& pqDependency, const TxIndexOnChain& localLCCTx) {
     const struct timespec sleep_length = {0, txSendPeriod * 1000};
     uint32_t cnt = 0;
     uint32_t end_tx = std::min(start_tx + txChunkSize, block.vtx.size());
     for (uint j = start_tx; j < end_tx; j++) {
+	TxIndexOnChain txIdx(block_height,j);
+	std::map<TxIndexOnChain, TxIndexOnChain>::const_iterator it =  txplacer.mapDependency.find(txIdx);
+	if (it != txplacer.mapDependency.end() && it->second > localLCCTx) {
+	    /* enqueue and send later */
+	    pqDependency.emplace(block.vtx[j], block_height, j, it->second);
+	    continue;
+	}
 	txplacer.sendTx(block.vtx[j], j, block_height);
 	cnt++;
 	nanosleep(&sleep_length, NULL);
@@ -454,7 +497,12 @@ bool TxPlacer::sendTx(const CTransactionRef tx, const uint idx, const uint32_t b
 	 * We also remove all reply msg for this req for resending aborted tx. */
 	//g_pbft->replyMap[hashTx].clear();
 	//g_pbft->mapTxStartTime.erase(hashTx);
-	g_pbft->txInFly.insert(std::make_pair(hashTx, std::move(TxBlockInfo(tx, block_height, idx, shards[0]))));
+
+	/* In closed loop test, for a tx has been send out, it will be committed and 
+	 * the lastest_prereq_tx info is no longer need, so we can safely put a dummy
+	 * value. 
+	 */
+	g_pbft->txInFly.insert(std::make_pair(hashTx, std::move(TxBlockInfo(tx, block_height, idx, TxIndexOnChain()))));
 	struct TxStat stat;
 	if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
 	    /* this is a single shard tx */
@@ -550,6 +598,41 @@ TxIndexOnChain::TxIndexOnChain(uint32_t block_height_in, uint32_t offset_in_bloc
 
 bool TxIndexOnChain::IsNull() {
     return block_height == 0 && offset_in_block == 0;
+}
+
+TxIndexOnChain TxIndexOnChain::operator+(const unsigned int oprand) {
+    const unsigned int cur_block_size = chainActive[block_height]->nTx;
+    if (offset_in_block + oprand < cur_block_size) {
+	return TxIndexOnChain(block_height, offset_in_block + oprand);
+    } else {
+	uint32_t cur_block = block_height + 1;
+	uint32_t cur_oprand = oprand - (cur_block_size - offset_in_block);
+	while (cur_oprand >= chainActive[cur_block]->nTx) {
+	    cur_block++;
+	    cur_oprand -= chainActive[cur_block]->nTx;
+	}
+	return TxIndexOnChain(cur_block, cur_oprand);
+    }
+}
+
+bool operator<(TxIndexOnChain a, TxIndexOnChain b)
+{
+    return a.block_height < b.block_height || 
+	    (a.block_height == b.block_height && a.offset_in_block < b.offset_in_block);
+}
+
+bool operator>(TxIndexOnChain a, TxIndexOnChain b)
+{
+    return a.block_height > b.block_height || 
+	    (a.block_height == b.block_height && a.offset_in_block > b.offset_in_block);
+}
+
+bool operator==(TxIndexOnChain a, TxIndexOnChain b) {
+    return a.block_height == b.block_height && a.offset_in_block == b.offset_in_block;
+}
+
+bool operator!=(TxIndexOnChain a, TxIndexOnChain b) {
+    return ! (a == b);
 }
 
 std::string TxIndexOnChain::ToString() {

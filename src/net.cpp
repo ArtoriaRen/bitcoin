@@ -73,6 +73,7 @@ enum BindFlags {
 
 const uint SHARD_PER_THREAD = 2;
 const uint NODES_PER_THREAD = SHARD_PER_THREAD * g_pbft->groupSize;
+const uint32_t localCommittedTxCapacity = 100; 
 const static std::string NET_MESSAGE_COMMAND_OTHER = "*other*";
 
 static const uint64_t RANDOMIZER_ID_NETGROUP = 0x6c0edd8036ef4036ULL; // SHA256("netgroup")[0:8]
@@ -2004,6 +2005,8 @@ void CConnman::ThreadMessageHandler(uint threadIdx)
     struct timeval lastGlobalStateUpdateTime;
     gettimeofday(&lastGlobalStateUpdateTime, NULL);
     uint32_t nLocalCompletedTxPerInterval = 0, nLocalTotalFailedTxPerInterval = 0;
+    std::vector<TxIndexOnChain> vCommittedTxIndex;
+    vCommittedTxIndex.reserve(localCommittedTxCapacity);
     while (!flagInterruptMsgProc)
     {
         std::vector<CNode*> vNodesCopy;
@@ -2023,7 +2026,7 @@ void CConnman::ThreadMessageHandler(uint threadIdx)
                 continue;
 
             // Receive messages
-            bool fMoreNodeWork = m_msgproc->ProcessMessages(pnode, flagInterruptMsgProc, nLocalCompletedTxPerInterval, nLocalTotalFailedTxPerInterval, threadIdx);
+            bool fMoreNodeWork = m_msgproc->ProcessMessages(pnode, flagInterruptMsgProc, nLocalCompletedTxPerInterval, nLocalTotalFailedTxPerInterval, threadIdx, vCommittedTxIndex);
             fMoreWork |= (fMoreNodeWork && !pnode->fPauseSend);
             if (flagInterruptMsgProc)
                 return;

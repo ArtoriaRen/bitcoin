@@ -10,7 +10,7 @@ int32_t pbftID;
 uint32_t thruInterval; // calculate throughput once every "thruInterval" seconds
 
 TxBlockInfo::TxBlockInfo(): blockHeight(0), n(0), outputShard(-1) { }
-TxBlockInfo::TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn, int32_t outputShardIn): tx(txIn), blockHeight(blockHeightIn), n(nIn), outputShard(outputShardIn) { }
+TxBlockInfo::TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn, TxIndexOnChain latest_prereq_tx_in, int32_t outputShardIn): tx(txIn), blockHeight(blockHeightIn), n(nIn), latest_prereq_tx(latest_prereq_tx_in), outputShard(outputShardIn) { }
 
 ThreadSafeQueue::ThreadSafeQueue() { }
 
@@ -60,7 +60,62 @@ bool ThreadSafeQueue::empty() {
     return queue_.empty();
 }
 
-CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nTotalSentTx(0), privateKey(CKey()) {
+void CommittedTxDeque::insert_back(const std::vector<TxIndexOnChain>& localCommittedTx) {
+    std::unique_lock<std::mutex> mlock(mutex_);
+    deque_.insert(deque_.end(), localCommittedTx.begin(), localCommittedTx.end());
+}
+
+size_t CommittedTxDeque::updateGreatestConsecutive(){
+    TxIndexOnChain LCCTx = g_pbft->latestConsecutiveCommittedTx.load(std::memory_order_relaxed);
+    std::unique_lock<std::mutex> mlock(mutex_);
+    if (deque_.empty())
+	return deque_.size();
+    std::sort(deque_.begin(), deque_.end());
+    if (deque_.front() != LCCTx + 1)
+	return deque_.size();
+    if (deque_.back() == LCCTx + deque_.size()) {
+	TxIndexOnChain newLCCTx = deque_.back();
+	deque_.clear();
+	size_t ret = deque_.size(); 
+	mlock.unlock();
+	g_pbft->latestConsecutiveCommittedTx.store(newLCCTx, std::memory_order_relaxed);
+	return ret;
+    }
+    /* the first element is below or equal to the new LCCTx, the last element is 
+     * greater than the new LCCTx. Binary search to find the new LCCTx. */
+    unsigned int left = 0; 
+    unsigned int right = deque_.size() - 1;
+    while (left + 1 < right) {
+	unsigned int mid = (left + right) >> 1;
+	if (deque_[mid] == LCCTx + mid + 1){
+	    left = mid;
+	}
+	if (deque_[mid] > LCCTx + mid + 1){
+	    right = mid;
+	}
+    }
+    assert(left + 1 == right && deque_[left] == LCCTx + left + 1 && deque_[right] > LCCTx + right + 1);
+    TxIndexOnChain newLCCTx = deque_[left];
+    deque_.erase(deque_.begin(), deque_.begin() + left + 1);
+    size_t ret = deque_.size(); 
+    mlock.unlock();
+    g_pbft->latestConsecutiveCommittedTx.store(newLCCTx, std::memory_order_relaxed);
+    return ret;
+}
+
+size_t CommittedTxDeque::size() {
+    std::unique_lock<std::mutex> mlock(mutex_);
+    int size = deque_.size();
+    mlock.unlock();
+    return size;
+}
+
+bool CommittedTxDeque::empty() {
+    std::unique_lock<std::mutex> mlock(mutex_);
+    return deque_.empty();
+}
+
+CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), latestConsecutiveCommittedTx(TxIndexOnChain(601000, 0)), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nTotalSentTx(0), privateKey(CKey()) {
     testStartTime = {0, 0};
     nextLogTime = {0, 0};
     privateKey.MakeNewKey(false);
