@@ -418,7 +418,7 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
 	if (ShutdownRequested())
 		break;
 	localLatestConsecutiveCommittedTx = g_pbft->latestConsecutiveCommittedTx.load(std::memory_order_relaxed);
-	std::cout << "tail tx. dependency queue top's prereq tx = " << pqDependency.top().latest_prereq_tx.ToString() << ",  localLatestConsecutiveCommittedTx = " << localLatestConsecutiveCommittedTx.ToString() << std::endl;
+	//std::cout << "tail tx. dependency queue top's prereq tx = " << pqDependency.top().latest_prereq_tx.ToString() << ",  localLatestConsecutiveCommittedTx = " << localLatestConsecutiveCommittedTx.ToString() << std::endl;
 	while (!pqDependency.empty() && pqDependency.top().latest_prereq_tx <= localLatestConsecutiveCommittedTx) {
 		txPlacer.sendTx(pqDependency.top().tx, pqDependency.top().n, pqDependency.top().blockHeight);
 		pqDependency.pop();
@@ -523,7 +523,6 @@ bool TxPlacer::sendTx(const CTransactionRef tx, const uint idx, const uint32_t b
 		g_connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_LOCK, lockReq));
 	    }
 	}
-	g_pbft->nTotalSentTx++;
 	return true;
 }
 
