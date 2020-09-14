@@ -1485,6 +1485,10 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
 	vThread.emplace_back(sendTxOfThread, txStartBlock, txEndBlock, i, num_threads, txSendPeriod);
     }
 
+    for (int i = txStartBlock; i < txEndBlock; i++) {
+	g_pbft->nTotalSentTx += chainActive[i]->nTx;
+    }
+
     //uint32_t totalCnt = 0;
     //for (uint i = 0; i < num_threads; i++) {
     //    try {
