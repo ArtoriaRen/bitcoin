@@ -145,7 +145,7 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
 	if (ShutdownRequested())
 		break;
 	localLatestConsecutiveCommittedTx = g_pbft->latestConsecutiveCommittedTx.load(std::memory_order_relaxed);
-	std::cout << "tail tx. dependency queue top's prereq tx = " << pqDependency.top().latest_prereq_tx.ToString() << ",  localLatestConsecutiveCommittedTx = " << localLatestConsecutiveCommittedTx.ToString() << std::endl;
+	//std::cout << "tail tx. dependency queue top's prereq tx = " << pqDependency.top().latest_prereq_tx.ToString() << ",  localLatestConsecutiveCommittedTx = " << localLatestConsecutiveCommittedTx.ToString() << std::endl;
 	while (!pqDependency.empty() && pqDependency.top().latest_prereq_tx <= localLatestConsecutiveCommittedTx) {
 		sendTx(pqDependency.top().tx, pqDependency.top().n, pqDependency.top().blockHeight);
 		pqDependency.pop();
@@ -238,7 +238,6 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 	    stat.type = TxType::SINGLE_SHARD;
 	    gettimeofday(&stat.startTime, NULL);
 	    g_pbft->mapTxStartTime.insert(std::make_pair(hashTx, stat));
-	    //g_connman->PushMessage(g_pbft->leaders[shards[0]], msgMaker.Make(NetMsgType::PBFT_TX, *tx));
 	    g_connman->PushMessage(g_pbft->leaders[0], msgMaker.Make(NetMsgType::PBFT_TX, *tx));
 //	} else {
 //	    /* this is a cross-shard tx */
@@ -247,11 +246,10 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 //	    g_pbft->mapTxStartTime.insert(std::make_pair(hashTx, stat));
 //	    for (uint i = 1; i < shards.size(); i++) {
 //		g_pbft->inputShardReplyMap[hashTx].lockReply.insert(std::make_pair(shards[i], std::vector<CInputShardReply>()));
-//		g_pbft->inputShardReplyMap[hashTx].decision = '\0';
+//		g_pbft->inputShardReplyMap[hashTx].decision.store('\0', std::memory_order_relaxed);
 //		g_connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_LOCK, *tx));
 //	    }
 //	}
-	g_pbft->nTotalSentTx++;
 	return true;
 }
 

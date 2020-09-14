@@ -72,7 +72,7 @@ size_t CommittedTxDeque::updateGreatestConsecutive(){
     if (deque_.empty())
 	return 0;
     std::sort(deque_.begin(), deque_.end());
-    std::cout << "after sorting, deque_.front() = "<< deque_.front().ToString() << ", deque_.back()" << deque_.back().ToString() << ", LCCTx = " << LCCTx.ToString() << std::endl;
+    //std::cout << "after sorting, deque_.front() = "<< deque_.front().ToString() << ", deque_.back()" << deque_.back().ToString() << ", LCCTx = " << LCCTx.ToString() << std::endl;
     if (deque_.front() != LCCTx + 1)
 	return deque_.size();
     if (deque_.back() == LCCTx + deque_.size()) {

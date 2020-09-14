@@ -45,24 +45,29 @@ void WaitForShutdown()
     bool fShutdown = ShutdownRequested();
     CPbft& pbft = *g_pbft;
     size_t lastCommittedTxDequeSize = 0;
+    bool testStarted = false, testFinished = false;
     // Tell the main threads to shutdown.
     while (!fShutdown)
     {
         MilliSleep(200);
 
-	/* print throughput */
-	/* log throughput if enough long time has elapsed. */
-	bool testIsRunning = pbft.nTotalSentTx > 0  // test has started
-		&& pbft.nCompletedTx.load(std::memory_order_relaxed) + pbft.nTotalFailedTx.load(std::memory_order_relaxed) < pbft.nTotalSentTx; // test has not yet finished
-	struct timeval currentTime;
-	gettimeofday(&currentTime, NULL);
-	if (testIsRunning && currentTime >= pbft.nextLogTime) {
-	    pbft.logThruput(currentTime);
-	}
 	if (pbft.committedTxIndex.size() != lastCommittedTxDequeSize) {
 	    lastCommittedTxDequeSize = pbft.committedTxIndex.updateGreatestConsecutive();
 	}
 
+	/* print throughput */
+	/* log throughput if enough long time has elapsed. */
+	struct timeval currentTime;
+	gettimeofday(&currentTime, NULL);
+	if (testStarted && !testFinished && currentTime >= pbft.nextLogTime) {
+	    pbft.logThruput(currentTime);
+	}
+	if (!testStarted) {
+	    testStarted = pbft.nTotalSentTx > 0;  // test has started
+	}
+	if (testStarted && !testFinished) {
+	    testFinished = pbft.nCompletedTx.load(std::memory_order_relaxed) + pbft.nTotalFailedTx.load(std::memory_order_relaxed) >= pbft.nTotalSentTx; // test has finished
+	}
         fShutdown = ShutdownRequested();
     }
     Interrupt();

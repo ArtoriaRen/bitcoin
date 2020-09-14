@@ -1500,7 +1500,7 @@ void static addCommittedTxIndex(const uint256& txid, std::vector<TxIndexOnChain>
     vCommittedTxIndex.emplace_back(txInfo.blockHeight, txInfo.n);
     if (vCommittedTxIndex.size() == localCommittedTxCapacity) {
 	/* append to the global data structure */
-	    std::cout << "single-shard, vCommittedTxIndex size = " << vCommittedTxIndex.size() << std::endl;
+	    std::cout << __func__ << ": vCommittedTxIndex size = " << vCommittedTxIndex.size() << ", append to global data structure. " << std::endl;
 	g_pbft->committedTxIndex.insert_back(vCommittedTxIndex);
 	vCommittedTxIndex.clear();
     }
