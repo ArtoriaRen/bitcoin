@@ -2805,11 +2805,11 @@ CBlockIndex* CChainState::AddToBlockIndex(const CBlockHeader& block)
 //	    << block.hashMerkleRoot.GetHex() 
 //	    << ", map size = " << mapBlockIndex.size() << std::endl;
     pindexNew->phashBlock = &((*mi).first);
-    if (psnapshot && hash == psnapshot->snapshotBlockHash) {
-        pindexNew->nHeight = psnapshot->headerNheight.height;
+    if (psnapshot && hash == psnapshot->snpMetadata.blockHeader.GetHash()) {
+        pindexNew->nHeight = psnapshot->snpMetadata.height;
         pindexNew->BuildSkip();
-	pindexNew->nTimeMax = psnapshot->headerNheight.timeMax;
-	pindexNew->nChainWork = UintToArith256(psnapshot->headerNheight.chainWork);
+	pindexNew->nTimeMax = psnapshot->snpMetadata.timeMax;
+	pindexNew->nChainWork = UintToArith256(psnapshot->snpMetadata.chainWork);
     } else {
     BlockMap::iterator miPrev = mapBlockIndex.find(block.hashPrevBlock);
 	if (miPrev != mapBlockIndex.end())
@@ -2854,11 +2854,11 @@ bool CChainState::ReceivedBlockTransactions(const CBlock &block, CValidationStat
         while (!queue.empty()) {
             CBlockIndex *pindex = queue.front();
             queue.pop_front();
-	    if (pindex->pprev == nullptr && psnapshot && pindex->nHeight == psnapshot->headerNheight.height) {
+	    if (pindex->pprev == nullptr && psnapshot && pindex->nHeight == psnapshot->snpMetadata.height) {
 		/* We are a new peer and this is the snapshot block, update its chainTx 
 		 * using the field from old peer. 
 		 */
-		pindex->nChainTx = psnapshot->headerNheight.chainTx;
+		pindex->nChainTx = psnapshot->snpMetadata.chainTx;
 		//std::cout << "--- " << __func__ << ": snap shot block nchainTx = " << pindex->nChainTx << std::endl;
 	    } else {
 		pindex->nChainTx = (pindex->pprev ? pindex->pprev->nChainTx : 0) + pindex->nTx;
@@ -4245,18 +4245,20 @@ bool CChainState::LoadSnapshotBlockHeader(const CChainParams& chainparams)
     // mapBlockIndex. Note that we can't use chainActive here, since it is
     // set based on the coins db, not the block index db, which is the only
     // thing loaded at this point.
-    if (mapBlockIndex.count(psnapshot->snapshotBlockHash))
+    SnapshotMetadata &snpMetadata = psnapshot->snpMetadata; 
+    uint256 snapshotBlockHash = snpMetadata.blockHeader.GetHash();
+    if (mapBlockIndex.count(snapshotBlockHash))
         return true;
 
     try {
 	/* create a dummy block from the snapshot block header. */
-	const CBlock block(psnapshot->headerNheight.header);
+	const CBlock block(snpMetadata.blockHeader);
 //    std::cout << "----" << __func__ << ": hash = " << block.GetHash().GetHex() << ", prevhash ="
 //	    << block.hashPrevBlock.GetHex() << ", merkleRoot = "
 //	    << block.hashMerkleRoot.GetHex()
-//	    << ",height = " << psnapshot->headerNheight.height 
+//	    << ",height = " << snpMetadata.height 
 //	    << std::endl;
-        CDiskBlockPos blockPos = SaveBlockToDisk(block, psnapshot->headerNheight.height, chainparams, nullptr);
+        CDiskBlockPos blockPos = SaveBlockToDisk(block, snpMetadata.height, chainparams, nullptr);
         if (blockPos.IsNull())
             return error("%s: writing genesis block to disk failed", __func__);
         CBlockIndex *pindex = AddToBlockIndex(block);
@@ -4449,20 +4451,21 @@ void CChainState::CheckBlockIndex(const Consensus::Params& consensusParams)
      * here.
      */ 
     CBlockIndex* genesisIndex = nullptr;
+    uint256 snapshotBlockHash = psnapshot->snpMetadata.blockHeader.GetHash();
     if (twoNullPprev) {
-	assert(mapBlockIndex.find(psnapshot->snapshotBlockHash) != mapBlockIndex.end());
-	if (rangeGenesis.first->second == mapBlockIndex[psnapshot->snapshotBlockHash]) {
+	assert(mapBlockIndex.find(snapshotBlockHash) != mapBlockIndex.end());
+	if (rangeGenesis.first->second == mapBlockIndex[snapshotBlockHash]) {
             genesisIndex = pindex;
-	    pindex = mapBlockIndex[psnapshot->snapshotBlockHash];
+	    pindex = mapBlockIndex[snapshotBlockHash];
 	} else {
             genesisIndex = rangeGenesis.first->second;
 	}
 
-	assert(pindex == mapBlockIndex[psnapshot->snapshotBlockHash]);
+	assert(pindex == mapBlockIndex[snapshotBlockHash]);
     }
 //    std::cout << "--- distance = " << std::distance(rangeGenesis.first, rangeGenesis.second) 
 //	    << ", rangeGenesis.first->second->height = " << rangeGenesis.first->second->nHeight
-//	    << ", psnapshot->blkinfo.height = " << psnapshot->headerNheight.height
+//	    << ", psnapshot->blkinfo.height = " << psnapshot->snpMetadata.height
 //	    << ", rangeGenesis.first->second = "<< rangeGenesis.first->second 
 //	    << ", pindex->height = " << pindex->nHeight 
 //	    << ", pindex = " << pindex 
@@ -4493,13 +4496,14 @@ void CChainState::CheckBlockIndex(const Consensus::Params& consensusParams)
 	 * do not perform checks for the snapshot block because we do not have the 
 	 * full block on disk. 
 	 */
-	if (twoNullPprev && *pindex->phashBlock == psnapshot->snapshotBlockHash) {
+	uint256 snapshotBlockHash = psnapshot->snpMetadata.blockHeader.GetHash();
+	if (twoNullPprev && *pindex->phashBlock == snapshotBlockHash) {
 	    /* set the height to be the height of snapshot block. */
 	    nHeight = pindex->nHeight;
 	} else {
 	    if (pindexFirstInvalid == nullptr && pindex->nStatus & BLOCK_FAILED_VALID) pindexFirstInvalid = pindex;
 	    if (pindexFirstMissing == nullptr && !(pindex->nStatus & BLOCK_HAVE_DATA)) pindexFirstMissing = pindex;
-	    if (pindexFirstNeverProcessed == nullptr && pindex->nTx == 0 && *pindex->phashBlock != psnapshot->snapshotBlockHash) pindexFirstNeverProcessed = pindex;
+	    if (pindexFirstNeverProcessed == nullptr && pindex->nTx == 0 && *pindex->phashBlock !=snapshotBlockHash) pindexFirstNeverProcessed = pindex;
 	    if (pindex->pprev != nullptr && pindexFirstNotTreeValid == nullptr && (pindex->nStatus & BLOCK_VALID_MASK) < BLOCK_VALID_TREE) pindexFirstNotTreeValid = pindex;
 	    if (pindex->pprev != nullptr && pindexFirstNotTransactionsValid == nullptr && (pindex->nStatus & BLOCK_VALID_MASK) < BLOCK_VALID_TRANSACTIONS) pindexFirstNotTransactionsValid = pindex;
 	    if (pindex->pprev != nullptr && pindexFirstNotChainValid == nullptr && (pindex->nStatus & BLOCK_VALID_MASK) < BLOCK_VALID_CHAIN) pindexFirstNotChainValid = pindex;
@@ -4508,15 +4512,15 @@ void CChainState::CheckBlockIndex(const Consensus::Params& consensusParams)
 	    // Begin: actual consistency checks.
 	    if (pindex->pprev == nullptr) {
 		// Genesis block checks.
-		assert(pindex->GetBlockHash() == consensusParams.hashGenesisBlock || pindex->GetBlockHash() == psnapshot->snapshotBlockHash); // Genesis block's hash must match.
-		assert(pindex == chainActive.Genesis() || (mapBlockIndex.find(psnapshot->snapshotBlockHash) != mapBlockIndex.end() && pindex == mapBlockIndex[psnapshot->snapshotBlockHash])); // The current active chain's genesis block must be this block.
+		assert(pindex->GetBlockHash() == consensusParams.hashGenesisBlock || pindex->GetBlockHash() == snapshotBlockHash); // Genesis block's hash must match.
+		assert(pindex == chainActive.Genesis() || (mapBlockIndex.find(snapshotBlockHash) != mapBlockIndex.end() && pindex == mapBlockIndex[snapshotBlockHash])); // The current active chain's genesis block must be this block.
 	    }
-	    if (pindex->nChainTx == 0) assert(pindex->nSequenceId <= 0 || pindex->GetBlockHash() == psnapshot->snapshotBlockHash);  // nSequenceId can't be set positive for blocks that aren't linked (negative is used for preciousblock)
+	    if (pindex->nChainTx == 0) assert(pindex->nSequenceId <= 0 || pindex->GetBlockHash() == snapshotBlockHash);  // nSequenceId can't be set positive for blocks that aren't linked (negative is used for preciousblock)
 	    // VALID_TRANSACTIONS is equivalent to nTx > 0 for all nodes (whether or not pruning has occurred).
 	    // HAVE_DATA is only equivalent to nTx > 0 (or VALID_TRANSACTIONS) if no pruning has occurred.
 	    if (!fHavePruned) {
 		// If we've never pruned, then HAVE_DATA should be equivalent to nTx > 0
-		assert(!(pindex->nStatus & BLOCK_HAVE_DATA) == (pindex->nTx == 0) || pindex->GetBlockHash() == psnapshot->snapshotBlockHash);
+		assert(!(pindex->nStatus & BLOCK_HAVE_DATA) == (pindex->nTx == 0) || pindex->GetBlockHash() == snapshotBlockHash);
 		assert(pindexFirstMissing == pindexFirstNeverProcessed);
 	    } else {
 		// If we have pruned, then we can only say that HAVE_DATA implies nTx > 0

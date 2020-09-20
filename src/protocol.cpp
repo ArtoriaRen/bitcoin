@@ -39,11 +39,10 @@ const char *SENDCMPCT="sendcmpct";
 const char *CMPCTBLOCK="cmpctblock";
 const char *GETBLOCKTXN="getblocktxn";
 const char *BLOCKTXN="blocktxn";
-const char *GETSNAPSHOT="getsnapshot";
-const char *MORE_SNAPSHOT_CHUNK="morechunk";
-const char *SNAPSHOT="snapshot";
-const char *SNAPSHOT_BLK_HEADER="snapshotHdr";
-const char *SNAPSHOT_COINS="ssCoins";
+const char *GET_SNAPSHOT_INFO="getsnp";
+const char *SNAPSHOT_INFO="snpinfo";
+const char *GET_CHUNK="getchunk";
+const char *CHUNK="chunk";
 } // namespace NetMsgType
 
 /** All known message types. Keep this in the same order as the list of
@@ -76,11 +75,10 @@ const static std::string allNetMessageTypes[] = {
     NetMsgType::CMPCTBLOCK,
     NetMsgType::GETBLOCKTXN,
     NetMsgType::BLOCKTXN,
-    NetMsgType::GETSNAPSHOT,
-    NetMsgType::MORE_SNAPSHOT_CHUNK,
-    NetMsgType::SNAPSHOT,
-    NetMsgType::SNAPSHOT_BLK_HEADER,
-    NetMsgType::SNAPSHOT_COINS
+    NetMsgType::GET_SNAPSHOT_INFO,
+    NetMsgType::SNAPSHOT_INFO,
+    NetMsgType::GET_CHUNK,
+    NetMsgType::CHUNK
 };
 const static std::vector<std::string> allNetMessageTypesVec(allNetMessageTypes, allNetMessageTypes+ARRAYLEN(allNetMessageTypes));
 

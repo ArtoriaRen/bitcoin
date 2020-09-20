@@ -489,7 +489,7 @@ void FindNextBlocksToDownload(NodeId nodeid, unsigned int count, std::vector<con
     /* if pindexLastCommonBlock is the snapshot block, it must be common, so no need
      * to walk back more blocks. 
      */
-    if(*state->pindexLastCommonBlock->phashBlock != psnapshot->snapshotBlockHash) {
+    if(*state->pindexLastCommonBlock->phashBlock != psnapshot->snpMetadata.blockHeader.GetHash()) {
         // If the peer reorganized, our previous pindexLastCommonBlock may not be an ancestor
         // of its current tip anymore. Go back enough to fix that.
         state->pindexLastCommonBlock = LastCommonAncestor(state->pindexLastCommonBlock, state->pindexBestKnownBlock);
@@ -1946,24 +1946,23 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         ProcessGetData(pfrom, chainparams.GetConsensus(), connman, interruptMsgProc);
     }
 
-    else if (strCommand == NetMsgType::GETSNAPSHOT)
+    else if (strCommand == NetMsgType::GET_SNAPSHOT_INFO)
     {
+        psnapshot->snpMetadata.currentChainLength = chainActive.Height();
 	/* send block header of the last snapshot block.*/
-        connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::SNAPSHOT_BLK_HEADER, psnapshot->headerNheight));
-	/* send the first snapshot chunk.*/
-	psnapshot->sendSnapshot(pfrom, msgMaker, connman);
+        connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::SNAPSHOT_INFO, psnapshot->snpMetadata));
     }
     
-    else if (strCommand == NetMsgType::MORE_SNAPSHOT_CHUNK){
-	/* send following snapshot chunks if we have not done it yet.*/
-	if (psnapshot->chunkCnt < psnapshot->headerNheight.numChunks) {
-	    psnapshot->sendSnapshot(pfrom, msgMaker, connman);
-	}
-    }
 
-    else if (strCommand == NetMsgType::SNAPSHOT_BLK_HEADER){
-	vRecv >> psnapshot->headerNheight;
-	psnapshot->snapshotBlockHash = psnapshot->headerNheight.header.GetHash();
+    else if (strCommand == NetMsgType::SNAPSHOT_INFO){
+	vRecv >> psnapshot->snpMetadata;
+	/* TODO: if pessimistic, we should check if the chunk hashes can produce the 
+	 * snapshot hash stored in the snapshot block. 
+	 * However, we cannot really change a historical block to put the snapshot 
+	 * hash in it. We have to assume a value that we got from the header chain. */
+//	if (pessimistic) {
+//	    psnapshot->verifyChunkHashes(psnapshot->snpMetadata.snapshotMerkleRoot);
+//	}
 //	std::cout << "snap shot block hash = " << psnapshot->snapshotBlockHash.GetHex()
 //		<< std::endl;
 
@@ -1974,40 +1973,48 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         //pindexBestHeader = &(psnapshot->blkinfo);
 //	std::cout << "--- pindexBestHeader = " << pindexBestHeader->phashBlock->GetHex() 
 //	<< std::endl;
-	assert(mapBlockIndex.find(psnapshot->snapshotBlockHash) != mapBlockIndex.end());
-	chainActive.SetTipWithoutSync(mapBlockIndex[psnapshot->snapshotBlockHash]);
-//        mapBlockIndex.emplace(*psnapshot->blkinfo.phashBlock, &psnapshot->blkinfo);
+	uint256 snapshotBlockHash = psnapshot->snpMetadata.blockHeader.GetHash();
+	assert(mapBlockIndex.find(snapshotBlockHash) != mapBlockIndex.end());
+	chainActive.SetTipWithoutSync(mapBlockIndex[snapshotBlockHash]);
+	pcoinsTip->SetBestBlock(snapshotBlockHash);
 
+	/* request all chunks */
+	for (uint32_t chunkId = 0; chunkId < psnapshot->snpMetadata.vChunkHash.size(); chunkId++) {
+	    connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GET_CHUNK, chunkId));
+	}
     }
 
-    else if (strCommand == NetMsgType::SNAPSHOT)
+    else if (strCommand == NetMsgType::GET_CHUNK){
+	uint32_t chunkId;
+	vRecv >> chunkId;
+	/* send the requested snapshot chunks.*/
+	psnapshot->sendChunk(pfrom, msgMaker, connman, chunkId);
+    }
+
+    else if (strCommand == NetMsgType::CHUNK)
     {
-        psnapshot->receiveSnapshot(vRecv);
-        LogPrintf("synced snapshot to %d/%d chunks.\n", psnapshot->chunkCnt, psnapshot->headerNheight.numChunks);
-	if (psnapshot->chunkCnt < psnapshot->headerNheight.numChunks) {
-	    /* send block header of the last snapshot block.*/
-	    connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::MORE_SNAPSHOT_CHUNK));
+	/* TODO: must verify chunk hash first, then accept the chunk to snapshot and  pcoinsTip.*/
+	uint32_t chunkId;
+	vRecv >> chunkId;
+	std::vector<OutpointCoinPair> chunk;
+	vRecv >> chunk;
+
+        if(psnapshot->verifyChunk(chunkId, chunk)) {
+	    psnapshot->acceptChunk(chunk);
+	    psnapshot->receivedChunkCnt++;
+	    LogPrintf("synced snapshot to %d/%d chunks.\n", psnapshot->receivedChunkCnt, psnapshot->snpMetadata.vChunkHash.size());
+	    if (psnapshot->receivedChunkCnt == psnapshot->snpMetadata.vChunkHash.size()) {
+		gettimeofday(&syncEndTime , NULL);
+		std::vector<CNodeStats> vstats;
+		g_connman->GetNodeStats(vstats);
+		LogPrintf("snapshot sync completes. ending height (%d). Time = %d. syncing takes %lu milliseconds. %d coins have been received. sent %lu bytes, received %lu bytes.\n", chainActive.Tip()->nHeight, time(NULL), (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000, psnapshot->nReceivedUTXOCnt, vstats[0].nSendBytes, vstats[0].nRecvBytes);
+		//std::cout << psnapshot->ToString() << std::endl;
+	    }
 	} else {
-	    assert(psnapshot->chunkCnt == psnapshot->headerNheight.numChunks);
-	    assert(psnapshot->verifySnapshot());
-	    //syncEndTime = time(NULL);
-            gettimeofday(&syncEndTime , NULL);
-	    std::vector<CNodeStats> vstats;
-            g_connman->GetNodeStats(vstats);
-	    LogPrintf("snapshot sync completes. ending height (%d). Time = %d. syncing takes %lu milliseconds. The snapshot has %d coins. sent %lu bytes, received %lu bytes.\n", chainActive.Tip()->nHeight, time(NULL), (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000, psnapshot->getSnapshotSize(), vstats[0].nSendBytes, vstats[0].nRecvBytes);
+	    std::cout << "get corrupted chunk, id = " << chunkId << std::endl;
+	    /* we probably should request this chunk from another peer since the chunk from this peer has failed the verification, but in our performance test, this will not happen.*/
+	    connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GET_CHUNK, chunkId));
 	}
-	
-	//std::cout << psnapshot->ToString() << std::endl;
-
-	/* add all coins to coincache by calling AddCoins (check if we have to set coinEntry as dirty manually). */
-
-	/* initialize our snapshot data ( should do this from Cache since the disk is empty). */
-
-	/* take snapshot*/
-	
-	/* check if the merkle root is the same as the last snapshot*/
-
-
     }
 
     else if (strCommand == NetMsgType::GETBLOCKS)
@@ -3235,7 +3242,7 @@ void PeerLogicValidation::fetchSnapshot() {
     if(firstNode == nullptr)
 	return;
     const CNetMsgMaker msgMaker(firstNode->GetSendVersion());
-    connman->PushMessage(firstNode, msgMaker.Make(NetMsgType::GETSNAPSHOT));
+    connman->PushMessage(firstNode, msgMaker.Make(NetMsgType::GET_SNAPSHOT_INFO));
 }
 
 bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptMsgProc)
@@ -3346,14 +3353,14 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
                 //connman->PushMessage(pto, msgMaker.Make(NetMsgType::GETHEADERS, chainActive.GetLocator(pindexStart), uint256()));
 
 		/* Only ask for snapshot if we are a new peer.*/
-		if (psnapshot->snapshotBlockHash.IsNull()) {
+		if (chainActive.Height() == 0) {
 		    /* we have no more block other than the genesis, thus a new peer,
 		     * ask for system state from peer.
 		     */
 		    LogPrintf("sync starting height (%d) to peer=%d (startheight:%d). Time = %d \n", pindexStart->nHeight, pto->GetId(), pto->nStartingHeight, time(NULL));
 		    //syncStartTime = time(NULL);
 		    gettimeofday(&syncStartTime, NULL);
-                    connman->PushMessage(pto, msgMaker.Make(NetMsgType::GETSNAPSHOT, chainActive.GetLocator(pindexStart), uint256()));
+                    connman->PushMessage(pto, msgMaker.Make(NetMsgType::GET_SNAPSHOT_INFO, chainActive.GetLocator(pindexStart), uint256()));
 		}
             }
         }

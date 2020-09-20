@@ -238,11 +238,10 @@ extern const char *GETBLOCKTXN;
  */
 extern const char *BLOCKTXN;
 
-extern const char *GETSNAPSHOT;
-extern const char *MORE_SNAPSHOT_CHUNK;
-extern const char *SNAPSHOT;
-extern const char *SNAPSHOT_BLK_HEADER;
-extern const char *SNAPSHOT_COINS;
+extern const char *GET_SNAPSHOT_INFO;
+extern const char *SNAPSHOT_INFO;
+extern const char *GET_CHUNK;
+extern const char *CHUNK;
 };
 
 /* Get a vector of all valid message types (see above) */

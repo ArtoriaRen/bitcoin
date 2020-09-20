@@ -809,7 +809,7 @@ void InitParameterInteraction()
 
     /* a snapshot will be cut into chunks, each of which contains chunksize coins. */
     if (gArgs.IsArgSet("-chunksize")) {
-         MAX_COIN_NUM_PER_MSG = gArgs.GetArg("-chunksize", 0);
+         CHUNK_SIZE = gArgs.GetArg("-chunksize", 0);
     }
 }
 
