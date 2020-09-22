@@ -22,6 +22,23 @@ OutpointCoinPair::OutpointCoinPair(){ }
 
 OutpointCoinPair::OutpointCoinPair(COutPoint opIn, Coin coinIn): outpoint(opIn), coin(coinIn){ }
 
+uint256 SnapshotMetadata::getSnapshotBlockInfoHash() const {
+    CHash256 hasher; 	
+    uint256 hash;
+    hasher.Write((const unsigned char*)&blockHeader.nVersion, sizeof(blockHeader.nVersion))
+	    .Write(blockHeader.hashPrevBlock.begin(), blockHeader.hashPrevBlock.size())
+	    .Write(blockHeader.hashMerkleRoot.begin(), blockHeader.hashMerkleRoot.size())
+	    .Write((const unsigned char*)&blockHeader.nTime, sizeof(blockHeader.nTime))
+	    .Write((const unsigned char*)&blockHeader.nBits, sizeof(blockHeader.nBits))
+	    .Write((const unsigned char*)&blockHeader.nNonce, sizeof(blockHeader.nNonce))
+	    .Write((const unsigned char*)&height, sizeof(height))
+	    .Write((const unsigned char*)&timeMax, sizeof(timeMax))
+	    .Write(chainWork.begin(), chainWork.size())
+	    .Write((const unsigned char*)&chainTx, sizeof(chainTx));
+    hasher.Finalize((unsigned char*)&hash);
+    return hash;
+}
+
 Snapshot::Snapshot(): period(1000), receivedChunkCnt(0), nReceivedUTXOCnt(0), notYetDownloadSnapshot(true) {
     unspent.reserve(pcoinsTip->GetCacheSize());
 }
@@ -72,8 +89,15 @@ void Snapshot::sendChunk(CNode* pfrom, const CNetMsgMaker& msgMaker, CConnman* c
 //    headerChain.insert(headerChain.end(), headers.begin(), headers.end());
 //}
 
-bool Snapshot::verifyChunkHashes(const std::vector<uint256>& vChunkHash, const uint256& snpHashOnChain) const {
-    return ComputeMerkleRoot(vChunkHash, NULL) == snpHashOnChain; 
+bool Snapshot::verifyMetadata(const SnapshotMetadata& metadata, const uint256& snpHashOnChain) const {
+    uint256 chunkMerkleRoot = ComputeMerkleRoot(metadata.vChunkHash, NULL);   
+    uint256 snapshotBlockInfoHash = metadata.getSnapshotBlockInfoHash();
+    CHash256 hasher; 	
+    uint256 hash;
+    hasher.Write(chunkMerkleRoot.begin(), chunkMerkleRoot.size())
+	    .Write(snapshotBlockInfoHash.begin(), snapshotBlockInfoHash.size());
+    hasher.Finalize((unsigned char*)&hash);
+    return hash == snpHashOnChain; 
 }
 
 bool Snapshot::verifyChunk(const uint32_t chunkId, const std::vector<OutpointCoinPair>& chunk) const {
@@ -153,12 +177,17 @@ uint256 Snapshot::takeSnapshot(bool updateBlkInfo) {
 	snpMetadata.timeMax = chainActive.Tip()->nTimeMax;
 	snpMetadata.chainWork = ArithToUint256(chainActive.Tip()->nChainWork);
 	snpMetadata.chainTx = chainActive.Tip()->nChainTx;
-	snpMetadata.merkleRoot = ComputeMerkleRoot(leaves, NULL); 
+	uint256 chunkMerkleRoot = ComputeMerkleRoot(leaves, NULL);   
+	uint256 snapshotBlockInfoHash = snpMetadata.getSnapshotBlockInfoHash();
+	CHash256 hasher; 	
+	hasher.Write(chunkMerkleRoot.begin(), chunkMerkleRoot.size())
+		.Write(snapshotBlockInfoHash.begin(), snapshotBlockInfoHash.size());
+	hasher.Finalize((unsigned char*)&snpMetadata.snapshotHash);
 	snpMetadata.vChunkHash.swap(leaves);
     } else if (!updateBlkInfo && chainActive.Tip()) {
 	assert(snpMetadata.height == chainActive.Tip()->nHeight);
     }
-    return snpMetadata.merkleRoot;
+    return snpMetadata.snapshotHash;
 }
 
 void Snapshot::updateCoins(const CCoinsMap& mapCoins){
@@ -301,7 +330,7 @@ std::string Snapshot::ToString() const
     } 
 
     ret.append("lastsnapshotmerkleroot = ");
-    ret.append(snpMetadata.merkleRoot.GetHex());
+    ret.append(snpMetadata.snapshotHash.GetHex());
 
     ret.append("\nunspent.size() = ");
     ret.append(std::to_string(unspent.size()));
@@ -343,7 +372,7 @@ void Snapshot::Write2File() const
     } 
 
     file << "lastsnapshotmerkleroot = ";
-    file << snpMetadata.merkleRoot.GetHex();
+    file << snpMetadata.snapshotHash.GetHex();
 
     file << "\nunspent.size() = ";
     file << std::to_string(unspent.size());

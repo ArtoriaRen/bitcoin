@@ -47,32 +47,34 @@ public:
 
 class SnapshotMetadata{
 public:
+    uint256 snapshotHash; // the hash of metadata fields concatenated with the merekle root of chunk hash. 
+    int currentChainLength; // the chain length used when a new peer request this snapshot. Used by optimist peer to detect longest chain switch.
+
+    /* snapshot block info */
     CBlockHeader blockHeader; // snapshot block header
     int height; // snapshot block height
-    int currentChainLength;
-    uint256 merkleRoot;
+    unsigned int timeMax; // Maximum nTime in the chain up to and including this block.
+    uint256 chainWork; // Total amount of work (expected number of hashes) in the chain up to and including this block
+    unsigned int chainTx; //cannot be obtained from a header chain.
 
-    /* TODO: check if the following field are not available on header chain. If not, can they be calculated using the header chain? or stored also in the coinbase field (check the coinbase field size)*/
-    // Maximum nTime in the chain up to and including this block.
-    unsigned int timeMax;
-    // Total amount of work (expected number of hashes) in the chain up to and including this block
-    uint256 chainWork;
-    unsigned int chainTx;
+    /* chunk hashes */
     std::vector<uint256> vChunkHash;
     
     ADD_SERIALIZE_METHODS;
 
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action) {
+        READWRITE(snapshotHash);
+        READWRITE(currentChainLength);
         READWRITE(blockHeader);
         READWRITE(height);
-        READWRITE(currentChainLength);
-        READWRITE(merkleRoot);
         READWRITE(timeMax);
         READWRITE(chainWork);
         READWRITE(chainTx);
         READWRITE(vChunkHash);
     }
+
+    uint256 getSnapshotBlockInfoHash() const;
 };
 
 class Snapshot{
@@ -121,7 +123,7 @@ public:
 
 //    void appendToHeaderChain(const std::vector<CBlockHeader>& headers);
     /* TODO: the merkle tree should have metadata hash as a leaf. */
-    bool verifyChunkHashes(const std::vector<uint256>& vChunkHash, const uint256& snpHashOnChain) const;
+    bool verifyMetadata(const SnapshotMetadata& metadata, const uint256& snpHashOnChain) const;
     bool verifyChunk(const uint32_t chunkId, const std::vector<OutpointCoinPair>& chunk) const;
     int getLastSnapshotBlockHeight() const;
     /* determine if we are a new peer with a valid snapshot base on if pprev 

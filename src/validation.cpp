@@ -2392,7 +2392,6 @@ CBlockIndex* CChainState::FindMostWorkChain() {
     do {
         CBlockIndex *pindexNew = nullptr;
 
-	std::cout << __func__ <<  " setBlockIndexCandidates.size = " <<  setBlockIndexCandidates.size() << std::endl;
         // Find the best candidate header.
         {
             std::set<CBlockIndex*, CBlockIndexWorkComparator>::reverse_iterator it = setBlockIndexCandidates.rbegin();
@@ -2464,12 +2463,12 @@ bool CChainState::ActivateBestChainStep(CValidationState& state, const CChainPar
     AssertLockHeld(cs_main);
     const CBlockIndex *pindexOldTip = chainActive.Tip();
     const CBlockIndex *pindexFork = chainActive.FindFork(pindexMostWork);
-    if ( pindexOldTip ) 
-    std::cout << __func__ << ": pindexOldTip " << pindexOldTip->nHeight << std::endl;
-    if ( pindexMostWork)
-	std::cout << __func__ << ", pindexMostWork = " << pindexMostWork->nHeight << std::endl;
-    if ( pindexFork)
-	std::cout << __func__  << ", pindexFork = " << pindexFork->nHeight << std::endl;
+//    if ( pindexOldTip ) 
+//    std::cout << __func__ << ": pindexOldTip " << pindexOldTip->nHeight << std::endl;
+//    if ( pindexMostWork)
+//	std::cout << __func__ << ", pindexMostWork = " << pindexMostWork->nHeight << std::endl;
+//    if ( pindexFork)
+//	std::cout << __func__  << ", pindexFork = " << pindexFork->nHeight << std::endl;
 
     // Disconnect active blocks which are no longer in the best chain.
     bool fBlocksDisconnected = false;
@@ -2824,9 +2823,9 @@ CBlockIndex* CChainState::AddToBlockIndex(const CBlockHeader& block)
 	    pindexNew->pprev = (*miPrev).second;
 	    pindexNew->nHeight = pindexNew->pprev->nHeight + 1;
 	    pindexNew->BuildSkip();
-	    pindexNew->nTimeMax = (pindexNew->pprev ? std::max(pindexNew->pprev->nTimeMax, pindexNew->nTime) : pindexNew->nTime);
-	    pindexNew->nChainWork = (pindexNew->pprev ? pindexNew->pprev->nChainWork : 0) + GetBlockProof(*pindexNew);
 	}
+	pindexNew->nTimeMax = (pindexNew->pprev ? std::max(pindexNew->pprev->nTimeMax, pindexNew->nTime) : pindexNew->nTime);
+	pindexNew->nChainWork = (pindexNew->pprev ? pindexNew->pprev->nChainWork : 0) + GetBlockProof(*pindexNew);
     }
     pindexNew->RaiseValidity(BLOCK_VALID_TREE);
     if (pindexBestHeader == nullptr || pindexBestHeader->nChainWork < pindexNew->nChainWork)
@@ -2852,11 +2851,11 @@ bool CChainState::ReceivedBlockTransactions(const CBlock &block, CValidationStat
     pindexNew->RaiseValidity(BLOCK_VALID_TRANSACTIONS);
     setDirtyBlockIndex.insert(pindexNew);
 
-    if (pindexNew->pprev == nullptr) {
-	std::cout <<  __func__ << " height = " << pindexNew->nHeight << ", pprev is null" << std::endl;
-    } else {
-	std::cout <<  __func__ << " height = " << pindexNew->nHeight << ", pprev.nChainTx = " << pindexNew->pprev->nChainTx << std::endl;
-    }
+//    if (pindexNew->pprev == nullptr) {
+//	std::cout <<  __func__ << " height = " << pindexNew->nHeight << ", pprev is null" << std::endl;
+//    } else {
+//	std::cout <<  __func__ << " height = " << pindexNew->nHeight << ", pprev.nChainTx = " << pindexNew->pprev->nChainTx << std::endl;
+//    }
     if (pindexNew->pprev == nullptr || pindexNew->pprev->nChainTx) {
         // If pindexNew is the genesis block or all parents are BLOCK_VALID_TRANSACTIONS.
         std::deque<CBlockIndex*> queue;

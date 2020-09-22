@@ -1427,7 +1427,6 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, const std::ve
 		for (int i = 0; i < pindexLast->nHeight - psnapshot->snpMetadata.height; i++) {
 		    pindex = pindex->pprev;
 		}
-		std::cout << "pindex->nHeight = " << pindex->nHeight  << ", psnapshot->snpMetadata.height" << psnapshot->snpMetadata.height << std::endl;
 		uint32_t nFetchFlags = GetFetchFlags(pfrom);
 		LogPrint(BCLog::NET, "Requesting snapshot block (height = %d) peer=%d\n", psnapshot->snpMetadata.height, pfrom->GetId());
 		connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GETDATA, std::vector<CInv>(1, CInv(MSG_BLOCK | nFetchFlags, pindex->GetBlockHash()))));
@@ -1987,21 +1986,28 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	     * this peer downloading snapshot block. */
 	    assert(mapBlockIndex.find(snapshotBlockHash) != mapBlockIndex.end());
 	    /* check snapshot block height. */
+	    CBlockIndex* pindex = mapBlockIndex[snapshotBlockHash];
 	    if (tempMetadata.height != psnapshot->snpMetadata.height) {
 		LogPrintf("According to the header chain, last snapshot block height = %d, but the metadata from an old peer says the height = %d. Should try to download the metadata with another peer.\n", psnapshot->snpMetadata.height, tempMetadata.height);
 		return false;
 	    }
 	    /* check snapshot block header. */
-	    if (!headerEqual(tempMetadata.blockHeader, mapBlockIndex[snapshotBlockHash]->GetBlockHeader())) {
-		LogPrintf("The block header in SNAPSNOT_INFO does not match that in the header chain.\n");
+	    if (!headerEqual(tempMetadata.blockHeader, pindex->GetBlockHeader())){
+		LogPrintf("The snapshot block header in SNAPSNOT_INFO message does not match that in the header chain. \n");
 		return false;
 	    }
-	     
+
+	    /* check snapshot block info related to chaining. 
+	     * First we must set the snapshot block as the chain tip. */
+	    if (UintToArith256(tempMetadata.chainWork) != pindex->nChainWork 
+		    || tempMetadata.timeMax != pindex->nTimeMax) {
+		LogPrintf("The snapshot block info in SNAPSNOT_INFO message does not match that in the header chain. In the message: chainWork = %s, timeMax = %d; on the header chain: chainWork = %s, timeMax = %d.\n", tempMetadata.chainWork.GetHex(), tempMetadata.timeMax, pindex->nChainWork.GetHex(), pindex->nTimeMax);
+		return false;
+	    }
+
 	    /* chech chunk hashes using the snapshot hash stored in the snapshot block. */
 	    CBlock block;
-            CBlockIndex* pblockindex = mapBlockIndex[snapshotBlockHash];
-	    std::cout << "block position = " << pblockindex->GetBlockPos().ToString() << std::endl;
-            if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
+            if (!ReadBlockFromDisk(block, pindex, Params().GetConsensus())) {
                 std::cerr << "Block not found on disk" << std::endl;
             }
 	    CScript coinbase = block.vtx[0]->vin[0].scriptSig;
@@ -2011,9 +2017,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	     * so we extract some data from the coinbase field but have to use the
 	     * snapshot hash sent by the old peer for chunk hash checking.
 	     */
-	    unsigned long dummy_snapshot_hash = coinbase.front();
-	    std::cout  << "first unsigned int in coinbase = " << dummy_snapshot_hash << std::endl; 
-	    if (!psnapshot->verifyChunkHashes(tempMetadata.vChunkHash, tempMetadata.merkleRoot)) {
+	    int dummy_snapshot_hash = coinbase.front();
+	    LogPrintf("first int in coinbase = %d.\n", dummy_snapshot_hash); 
+	    if (!psnapshot->verifyMetadata(tempMetadata, tempMetadata.snapshotHash)) {
 		LogPrintf("chunk hashes do not match the snapshot hash. Should try to download the metadata with another peer.");
 	    }
 
@@ -2028,6 +2034,11 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GET_CHUNK, chunkId));
 	    }
 	} else { 
+	    if (!psnapshot->verifyMetadata(tempMetadata, tempMetadata.snapshotHash)) {
+		LogPrintf("chunk hashes do not match the snapshot hash. Should try to download the metadata with another peer.");
+	    }
+
+	    /* accept the tempMetadata. */
 	    psnapshot->snpMetadata = tempMetadata;
 	    //	std::cout << "snap shot block hash = " << psnapshot->snapshotBlockHash.GetHex()
 	    //		<< std::endl;
