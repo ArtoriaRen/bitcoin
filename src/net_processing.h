@@ -64,9 +64,6 @@ public:
     void ConsiderEviction(CNode *pto, int64_t time_in_seconds);
     void CheckForStaleTipAndEvictPeers(const Consensus::Params &consensusParams);
     void EvictExtraOutboundPeers(int64_t time_in_seconds);
-
-    void fetchSnapshot();
-
 private:
     int64_t m_stale_tip_check_time; //! Next time to check for stale tip
 };

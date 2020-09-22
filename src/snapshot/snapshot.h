@@ -20,6 +20,7 @@
 #include <chain.h>
 #include <netmessagemaker.h>
 
+extern bool pessimistic;
 extern uint32_t CHUNK_SIZE;
 
 class OutpointCoinPair{
@@ -46,8 +47,8 @@ public:
 
 class SnapshotMetadata{
 public:
-    CBlockHeader blockHeader;
-    int height;
+    CBlockHeader blockHeader; // snapshot block header
+    int height; // snapshot block height
     int currentChainLength;
     uint256 merkleRoot;
 
@@ -80,7 +81,10 @@ private:
     std::vector<COutPoint> added;
     std::unordered_map<COutPoint, Coin, SaltedOutpointHasher> spent;
     std::vector<COutPoint> vOutpoint;
+//    std::deque<CBlockHeader> headerChain;
+    uint32_t period;
 public:
+
     /* restrict the number of coins transferred in a SNAPSHOT message to 100k
      * because message size in Bitcoin currently has an uplimit of 4MB, and we
      * believe 100k coins will not exceed the limit.
@@ -88,6 +92,10 @@ public:
     SnapshotMetadata snpMetadata;
     uint32_t receivedChunkCnt; //count how many chunks having been received so far. Used to determine when snapshot sync ends.
     mutable uint32_t nReceivedUTXOCnt; //for stat printing
+
+    /* for pessimistic sync only. Do not download block if we have not downloaded
+     * the latest snapshot yet. */
+    bool notYetDownloadSnapshot;
 
     Snapshot();
 
@@ -111,8 +119,11 @@ public:
     /* add UTXOs in the chunk to the chainstate database. */
     void acceptChunk(std::vector<OutpointCoinPair>& chunk) const;
 
-    bool verifyChunkHashes(const uint256& snpHashOnChain) const;
+//    void appendToHeaderChain(const std::vector<CBlockHeader>& headers);
+    /* TODO: the merkle tree should have metadata hash as a leaf. */
+    bool verifyChunkHashes(const std::vector<uint256>& vChunkHash, const uint256& snpHashOnChain) const;
     bool verifyChunk(const uint32_t chunkId, const std::vector<OutpointCoinPair>& chunk) const;
+    int getLastSnapshotBlockHeight() const;
     /* determine if we are a new peer with a valid snapshot base on if pprev 
      * of the snapshot block index is nullptr. 
      */
@@ -127,6 +138,8 @@ public:
 
     /* serialization */
 };
+
+bool headerEqual(const CBlockHeader& lhs, const CBlockHeader& rhs);
 
 extern std::unique_ptr<Snapshot> psnapshot;
 

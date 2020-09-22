@@ -15,13 +15,14 @@
 
 extern BlockMap& mapBlockIndex;
 
+bool pessimistic = false;
 uint32_t CHUNK_SIZE = 50000; // limit the chunks msg size below 4M msg limit.
 
 OutpointCoinPair::OutpointCoinPair(){ }
 
 OutpointCoinPair::OutpointCoinPair(COutPoint opIn, Coin coinIn): outpoint(opIn), coin(coinIn){ }
 
-Snapshot::Snapshot(): receivedChunkCnt(0), nReceivedUTXOCnt(0) {
+Snapshot::Snapshot(): period(1000), receivedChunkCnt(0), nReceivedUTXOCnt(0), notYetDownloadSnapshot(true) {
     unspent.reserve(pcoinsTip->GetCacheSize());
 }
 
@@ -67,8 +68,12 @@ void Snapshot::sendChunk(CNode* pfrom, const CNetMsgMaker& msgMaker, CConnman* c
     LogPrint(BCLog::NET, "send chunk: startIdx=%d, endIdx=%d, total coin num =%d.\n", startIdx, stopIdx - 1, vOutpoint.size());
 }
 
-bool Snapshot::verifyChunkHashes(const uint256& snpHashOnChain) const {
-    return ComputeMerkleRoot(snpMetadata.vChunkHash, NULL) == snpHashOnChain; 
+//void Snapshot::appendToHeaderChain(const std::vector<CBlockHeader>& headers) {
+//    headerChain.insert(headerChain.end(), headers.begin(), headers.end());
+//}
+
+bool Snapshot::verifyChunkHashes(const std::vector<uint256>& vChunkHash, const uint256& snpHashOnChain) const {
+    return ComputeMerkleRoot(vChunkHash, NULL) == snpHashOnChain; 
 }
 
 bool Snapshot::verifyChunk(const uint32_t chunkId, const std::vector<OutpointCoinPair>& chunk) const {
@@ -87,6 +92,10 @@ bool Snapshot::verifyChunk(const uint32_t chunkId, const std::vector<OutpointCoi
     }
     hasher.Finalize((unsigned char*)&hash);
     return hash == snpMetadata.vChunkHash[chunkId]; 
+}
+
+int Snapshot::getLastSnapshotBlockHeight() const{
+    return snpMetadata.currentChainLength - snpMetadata.currentChainLength % period;
 }
 
 uint256 Snapshot::takeSnapshot(bool updateBlkInfo) {
@@ -360,6 +369,12 @@ void Snapshot::Write2File() const
 	file << it->first.ToString();
 	it++;
     }
+}
+
+bool headerEqual(const CBlockHeader& lhs, const CBlockHeader& rhs) {
+    return lhs.nVersion == rhs.nVersion && lhs.hashPrevBlock == rhs.hashPrevBlock 
+	    && lhs.hashMerkleRoot == rhs.hashMerkleRoot && lhs.nTime == rhs.nTime
+	    && lhs.nBits == rhs.nBits && lhs.nNonce == rhs.nNonce;
 }
 
 std::unique_ptr<Snapshot> psnapshot;

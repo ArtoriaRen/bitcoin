@@ -475,7 +475,11 @@ void FindNextBlocksToDownload(NodeId nodeid, unsigned int count, std::vector<con
     // Make sure pindexBestKnownBlock is up to date, we'll need it.
     ProcessBlockAvailability(nodeid);
 
-    if (state->pindexBestKnownBlock == nullptr || state->pindexBestKnownBlock->nChainWork < chainActive.Tip()->nChainWork || state->pindexBestKnownBlock->nChainWork < nMinimumChainWork) {
+    /* We need to test the sync time when the old peer has only 10k, 100k, ... blocks, 
+     * whose chain work might be lower than the nMinimumChainWork, so we removed
+     * the last condition.
+     */
+    if (state->pindexBestKnownBlock == nullptr || state->pindexBestKnownBlock->nChainWork < chainActive.Tip()->nChainWork) {
         // This peer has nothing interesting.
         return;
     }
@@ -1306,7 +1310,6 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, const std::ve
         //   nUnconnectingHeaders gets reset back to 0.
         if (mapBlockIndex.find(headers[0].hashPrevBlock) == mapBlockIndex.end() && nCount < MAX_BLOCKS_TO_ANNOUNCE) {
             nodestate->nUnconnectingHeaders++;
-	    //std::cout << "line 1302 : pindexBestHeader = " << pindexBestHeader->phashBlock->GetHex() << std::endl;
             connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GETHEADERS, chainActive.GetLocator(pindexBestHeader), uint256()));
             LogPrint(BCLog::NET, "received header %s: missing prev block %s, sending getheaders (%d) to end (peer=%d, nUnconnectingHeaders=%d)\n",
                     headers[0].GetHash().ToString(),
@@ -1412,7 +1415,24 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, const std::ve
             // from there instead.
             LogPrint(BCLog::NET, "more getheaders (%d) to end to peer=%d (startheight:%d)\n", pindexLast->nHeight, pfrom->GetId(), pfrom->nStartingHeight);
             connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GETHEADERS, chainActive.GetLocator(pindexLast), uint256()));
-        }
+        } else {
+	    if (pessimistic) {
+		/* header chain downloading done. */
+		gettimeofday(&syncEndTime , NULL);
+		LogPrintf("header chain downloading done. Ending height = %d. Time = %d. syncing takes %lu milliseconds. start to download the snapshot block body. \n", pindexLast->nHeight, time(NULL), (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000);
+		syncStartTime = syncEndTime;
+		psnapshot->snpMetadata.currentChainLength = pindexLast->nHeight;
+		psnapshot->snpMetadata.height = psnapshot->getLastSnapshotBlockHeight();
+		const CBlockIndex *pindex = pindexLast;
+		for (int i = 0; i < pindexLast->nHeight - psnapshot->snpMetadata.height; i++) {
+		    pindex = pindex->pprev;
+		}
+		std::cout << "pindex->nHeight = " << pindex->nHeight  << ", psnapshot->snpMetadata.height" << psnapshot->snpMetadata.height << std::endl;
+		uint32_t nFetchFlags = GetFetchFlags(pfrom);
+		LogPrint(BCLog::NET, "Requesting snapshot block (height = %d) peer=%d\n", psnapshot->snpMetadata.height, pfrom->GetId());
+		connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GETDATA, std::vector<CInv>(1, CInv(MSG_BLOCK | nFetchFlags, pindex->GetBlockHash()))));
+	    }
+	}
 
         bool fCanDirectFetch = CanDirectFetch(chainparams.GetConsensus());
         // If this set of headers is valid and ends in a block with at least as
@@ -1955,32 +1975,78 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     
 
     else if (strCommand == NetMsgType::SNAPSHOT_INFO){
-	vRecv >> psnapshot->snpMetadata;
+	SnapshotMetadata tempMetadata;
+	vRecv >> tempMetadata;
 	/* TODO: if pessimistic, we should check if the chunk hashes can produce the 
 	 * snapshot hash stored in the snapshot block. 
 	 * However, we cannot really change a historical block to put the snapshot 
 	 * hash in it. We have to assume a value that we got from the header chain. */
-//	if (pessimistic) {
-//	    psnapshot->verifyChunkHashes(psnapshot->snpMetadata.snapshotMerkleRoot);
-//	}
-//	std::cout << "snap shot block hash = " << psnapshot->snapshotBlockHash.GetHex()
-//		<< std::endl;
+	if (pessimistic) {
+	    uint256 snapshotBlockHash =  tempMetadata.blockHeader.GetHash();
+	    /* global variable mapBlockIndex have been updated just before
+	     * this peer downloading snapshot block. */
+	    assert(mapBlockIndex.find(snapshotBlockHash) != mapBlockIndex.end());
+	    /* check snapshot block height. */
+	    if (tempMetadata.height != psnapshot->snpMetadata.height) {
+		LogPrintf("According to the header chain, last snapshot block height = %d, but the metadata from an old peer says the height = %d. Should try to download the metadata with another peer.\n", psnapshot->snpMetadata.height, tempMetadata.height);
+		return false;
+	    }
+	    /* check snapshot block header. */
+	    if (!headerEqual(tempMetadata.blockHeader, mapBlockIndex[snapshotBlockHash]->GetBlockHeader())) {
+		LogPrintf("The block header in SNAPSNOT_INFO does not match that in the header chain.\n");
+		return false;
+	    }
+	     
+	    /* chech chunk hashes using the snapshot hash stored in the snapshot block. */
+	    CBlock block;
+            CBlockIndex* pblockindex = mapBlockIndex[snapshotBlockHash];
+	    std::cout << "block position = " << pblockindex->GetBlockPos().ToString() << std::endl;
+            if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
+                std::cerr << "Block not found on disk" << std::endl;
+            }
+	    CScript coinbase = block.vtx[0]->vin[0].scriptSig;
+	    /* Read the last 256 bit as coinbase. 
+	     * However, as we cannot really change historical block content in 
+	     * our test, the coinbase variable does not really include snapshot hash,
+	     * so we extract some data from the coinbase field but have to use the
+	     * snapshot hash sent by the old peer for chunk hash checking.
+	     */
+	    unsigned long dummy_snapshot_hash = coinbase.front();
+	    std::cout  << "first unsigned int in coinbase = " << dummy_snapshot_hash << std::endl; 
+	    if (!psnapshot->verifyChunkHashes(tempMetadata.vChunkHash, tempMetadata.merkleRoot)) {
+		LogPrintf("chunk hashes do not match the snapshot hash. Should try to download the metadata with another peer.");
+	    }
 
-	/* set the state of global variables to be as if we have already had a chain
-	 * up to the snapshot block. 
-	 */
-	LoadSnapshotBlockHeader(chainparams);
-        //pindexBestHeader = &(psnapshot->blkinfo);
-//	std::cout << "--- pindexBestHeader = " << pindexBestHeader->phashBlock->GetHex() 
-//	<< std::endl;
-	uint256 snapshotBlockHash = psnapshot->snpMetadata.blockHeader.GetHash();
-	assert(mapBlockIndex.find(snapshotBlockHash) != mapBlockIndex.end());
-	chainActive.SetTipWithoutSync(mapBlockIndex[snapshotBlockHash]);
-	pcoinsTip->SetBestBlock(snapshotBlockHash);
+	    /* accept the tempMetadata. */
+	    psnapshot->snpMetadata = tempMetadata;
+	    mapBlockIndex[snapshotBlockHash]->nChainTx = tempMetadata.chainTx;
+	    /* set the snapshot block as the chain tip. */
+	    chainActive.SetTip(mapBlockIndex[snapshotBlockHash]);
+	    pcoinsTip->SetBestBlock(snapshotBlockHash);
+	    /* request all chunks */
+	    for (uint32_t chunkId = 0; chunkId < psnapshot->snpMetadata.vChunkHash.size(); chunkId++) {
+		connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GET_CHUNK, chunkId));
+	    }
+	} else { 
+	    psnapshot->snpMetadata = tempMetadata;
+	    //	std::cout << "snap shot block hash = " << psnapshot->snapshotBlockHash.GetHex()
+	    //		<< std::endl;
 
-	/* request all chunks */
-	for (uint32_t chunkId = 0; chunkId < psnapshot->snpMetadata.vChunkHash.size(); chunkId++) {
-	    connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GET_CHUNK, chunkId));
+	    /* set the state of global variables to be as if we have already had a chain
+	     * up to the snapshot block. 
+	     */
+	    LoadSnapshotBlockHeader(chainparams);
+	    //pindexBestHeader = &(psnapshot->blkinfo);
+	    //	std::cout << "--- pindexBestHeader = " << pindexBestHeader->phashBlock->GetHex() 
+	    //	<< std::endl;
+	    uint256 snapshotBlockHash = psnapshot->snpMetadata.blockHeader.GetHash();
+	    assert(mapBlockIndex.find(snapshotBlockHash) != mapBlockIndex.end());
+	    chainActive.SetTipWithoutSync(mapBlockIndex[snapshotBlockHash]);
+	    pcoinsTip->SetBestBlock(snapshotBlockHash);
+	    /* request all chunks */
+	    for (uint32_t chunkId = 0; chunkId < psnapshot->snpMetadata.vChunkHash.size(); chunkId++) {
+		connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GET_CHUNK, chunkId));
+	    }
 	}
     }
 
@@ -2007,7 +2073,17 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		gettimeofday(&syncEndTime , NULL);
 		std::vector<CNodeStats> vstats;
 		g_connman->GetNodeStats(vstats);
-		LogPrintf("snapshot sync completes. ending height (%d). Time = %d. syncing takes %lu milliseconds. %d coins have been received. sent %lu bytes, received %lu bytes.\n", chainActive.Tip()->nHeight, time(NULL), (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000, psnapshot->nReceivedUTXOCnt, vstats[0].nSendBytes, vstats[0].nRecvBytes);
+		LogPrintf("snapshot downloading done. Ending height = %d. Time = %d. syncing takes %lu milliseconds. %d coins have been received. sent %lu bytes, received %lu bytes. Start to sync %d tail blocks. \n", chainActive.Tip()->nHeight, time(NULL), (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000, psnapshot->nReceivedUTXOCnt, vstats[0].nSendBytes, vstats[0].nRecvBytes, psnapshot->snpMetadata.currentChainLength - psnapshot->snpMetadata.height);
+		if (psnapshot->snpMetadata.height < psnapshot->snpMetadata.currentChainLength) {
+		    if (pessimistic) {
+			/* as we already downloaded the headers of tail blocks 
+			 * when we downloading the header chain, we just need to 
+			 * enable block downloading. */
+			psnapshot->notYetDownloadSnapshot = false;
+		    } else {
+			    connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GETHEADERS, chainActive.GetLocator(pindexBestHeader), uint256()));
+		    }
+		}
 		//std::cout << psnapshot->ToString() << std::endl;
 	    }
 	} else {
@@ -2720,13 +2796,25 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             mapBlockSource.emplace(hash, std::make_pair(pfrom->GetId(), true));
         }
         bool fNewBlock = false;
-        ProcessNewBlock(chainparams, pblock, forceProcessing, &fNewBlock);
+	if (pessimistic && mapBlockIndex[hash]->nHeight == psnapshot->getLastSnapshotBlockHeight()) {
+	    if (ProcessSnapshotBlock(chainparams, pblock, true, &fNewBlock)) {
+		gettimeofday(&syncEndTime , NULL);
+		LogPrintf("snapshot block download done. height = %d. Time = %d. takes %lu milliseconds. start to download the snapshot. \n", mapBlockIndex[hash]->nHeight, time(NULL), (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000);
+		syncStartTime = syncEndTime;
+		connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GET_SNAPSHOT_INFO));
+	    } else {
+		LogPrintf("snapshot block check failed.");
+	    }
+	} else {
+	    ProcessNewBlock(chainparams, pblock, forceProcessing, &fNewBlock);
+	}
         if (fNewBlock) {
             pfrom->nLastBlockTime = GetTime();
         } else {
             LOCK(cs_main);
             mapBlockSource.erase(pblock->GetHash());
         }
+
     }
 
 
@@ -3237,14 +3325,6 @@ public:
     }
 };
 
-void PeerLogicValidation::fetchSnapshot() {
-    CNode* firstNode = connman->getFirstNode();
-    if(firstNode == nullptr)
-	return;
-    const CNetMsgMaker msgMaker(firstNode->GetSendVersion());
-    connman->PushMessage(firstNode, msgMaker.Make(NetMsgType::GET_SNAPSHOT_INFO));
-}
-
 bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptMsgProc)
 {
     const Consensus::Params& consensusParams = Params().GetConsensus();
@@ -3357,10 +3437,16 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
 		    /* we have no more block other than the genesis, thus a new peer,
 		     * ask for system state from peer.
 		     */
-		    LogPrintf("sync starting height (%d) to peer=%d (startheight:%d). Time = %d \n", pindexStart->nHeight, pto->GetId(), pto->nStartingHeight, time(NULL));
-		    //syncStartTime = time(NULL);
-		    gettimeofday(&syncStartTime, NULL);
-                    connman->PushMessage(pto, msgMaker.Make(NetMsgType::GET_SNAPSHOT_INFO, chainActive.GetLocator(pindexStart), uint256()));
+		    if (pessimistic) {
+			LogPrintf("pessimistic sycn. initial getheaders (%d) to peer=%d (startheight:%d)\n", pindexStart->nHeight, pto->GetId(), pto->nStartingHeight);
+			gettimeofday(&syncStartTime, NULL);
+			connman->PushMessage(pto, msgMaker.Make(NetMsgType::GETHEADERS, chainActive.GetLocator(pindexStart), uint256()));
+		    } else {
+			LogPrintf("optimistic sync. initial get_snapshot_info (%d) to peer=%d (startheight:%d). Time = %d \n", pindexStart->nHeight, pto->GetId(), pto->nStartingHeight, time(NULL));
+			//syncStartTime = time(NULL);
+			gettimeofday(&syncStartTime, NULL);
+			connman->PushMessage(pto, msgMaker.Make(NetMsgType::GET_SNAPSHOT_INFO));
+		    }
 		}
             }
         }
@@ -3714,24 +3800,26 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
         // Message: getdata (blocks)
         //
         std::vector<CInv> vGetData;
-        if (!pto->fClient && (fFetch || !IsInitialBlockDownload()) && state.nBlocksInFlight < MAX_BLOCKS_IN_TRANSIT_PER_PEER) {
-            std::vector<const CBlockIndex*> vToDownload;
-            NodeId staller = -1;
-            FindNextBlocksToDownload(pto->GetId(), MAX_BLOCKS_IN_TRANSIT_PER_PEER - state.nBlocksInFlight, vToDownload, staller, consensusParams);
-            for (const CBlockIndex *pindex : vToDownload) {
-                uint32_t nFetchFlags = GetFetchFlags(pto);
-                vGetData.push_back(CInv(MSG_BLOCK | nFetchFlags, pindex->GetBlockHash()));
-                MarkBlockAsInFlight(pto->GetId(), pindex->GetBlockHash(), pindex);
-                LogPrint(BCLog::NET, "Requesting block %s (%d) peer=%d\n", pindex->GetBlockHash().ToString(),
-                    pindex->nHeight, pto->GetId());
-            }
-            if (state.nBlocksInFlight == 0 && staller != -1) {
-                if (State(staller)->nStallingSince == 0) {
-                    State(staller)->nStallingSince = nNow;
-                    LogPrint(BCLog::NET, "Stall started peer=%d\n", staller);
-                }
-            }
-        }
+	if (!(pessimistic && psnapshot->notYetDownloadSnapshot)) { 
+	    if (!pto->fClient && (fFetch || !IsInitialBlockDownload()) && state.nBlocksInFlight < MAX_BLOCKS_IN_TRANSIT_PER_PEER) {
+		std::vector<const CBlockIndex*> vToDownload;
+		NodeId staller = -1;
+		FindNextBlocksToDownload(pto->GetId(), MAX_BLOCKS_IN_TRANSIT_PER_PEER - state.nBlocksInFlight, vToDownload, staller, consensusParams);
+		for (const CBlockIndex *pindex : vToDownload) {
+		    uint32_t nFetchFlags = GetFetchFlags(pto);
+		    vGetData.push_back(CInv(MSG_BLOCK | nFetchFlags, pindex->GetBlockHash()));
+		    MarkBlockAsInFlight(pto->GetId(), pindex->GetBlockHash(), pindex);
+		    LogPrint(BCLog::NET, "Requesting block %s (%d) peer=%d\n", pindex->GetBlockHash().ToString(),
+			pindex->nHeight, pto->GetId());
+		}
+		if (state.nBlocksInFlight == 0 && staller != -1) {
+		    if (State(staller)->nStallingSince == 0) {
+			State(staller)->nStallingSince = nNow;
+			LogPrint(BCLog::NET, "Stall started peer=%d\n", staller);
+		    }
+		}
+	    }
+	}
 
         //
         // Message: getdata (non-blocks)

@@ -1762,5 +1762,6 @@ bool AppInitMain()
     StartWallets(scheduler);
 #endif
 
+    pessimistic = gArgs.GetBoolArg("-pessimistic", false);
     return true;
 }

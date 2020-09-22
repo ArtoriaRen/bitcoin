@@ -2392,6 +2392,7 @@ CBlockIndex* CChainState::FindMostWorkChain() {
     do {
         CBlockIndex *pindexNew = nullptr;
 
+	std::cout << __func__ <<  " setBlockIndexCandidates.size = " <<  setBlockIndexCandidates.size() << std::endl;
         // Find the best candidate header.
         {
             std::set<CBlockIndex*, CBlockIndexWorkComparator>::reverse_iterator it = setBlockIndexCandidates.rbegin();
@@ -2463,6 +2464,12 @@ bool CChainState::ActivateBestChainStep(CValidationState& state, const CChainPar
     AssertLockHeld(cs_main);
     const CBlockIndex *pindexOldTip = chainActive.Tip();
     const CBlockIndex *pindexFork = chainActive.FindFork(pindexMostWork);
+    if ( pindexOldTip ) 
+    std::cout << __func__ << ": pindexOldTip " << pindexOldTip->nHeight << std::endl;
+    if ( pindexMostWork)
+	std::cout << __func__ << ", pindexMostWork = " << pindexMostWork->nHeight << std::endl;
+    if ( pindexFork)
+	std::cout << __func__  << ", pindexFork = " << pindexFork->nHeight << std::endl;
 
     // Disconnect active blocks which are no longer in the best chain.
     bool fBlocksDisconnected = false;
@@ -2805,13 +2812,13 @@ CBlockIndex* CChainState::AddToBlockIndex(const CBlockHeader& block)
 //	    << block.hashMerkleRoot.GetHex() 
 //	    << ", map size = " << mapBlockIndex.size() << std::endl;
     pindexNew->phashBlock = &((*mi).first);
-    if (psnapshot && hash == psnapshot->snpMetadata.blockHeader.GetHash()) {
+    if (psnapshot && !pessimistic && hash == psnapshot->snpMetadata.blockHeader.GetHash()) {
         pindexNew->nHeight = psnapshot->snpMetadata.height;
         pindexNew->BuildSkip();
 	pindexNew->nTimeMax = psnapshot->snpMetadata.timeMax;
 	pindexNew->nChainWork = UintToArith256(psnapshot->snpMetadata.chainWork);
     } else {
-    BlockMap::iterator miPrev = mapBlockIndex.find(block.hashPrevBlock);
+	BlockMap::iterator miPrev = mapBlockIndex.find(block.hashPrevBlock);
 	if (miPrev != mapBlockIndex.end())
 	{
 	    pindexNew->pprev = (*miPrev).second;
@@ -2845,6 +2852,11 @@ bool CChainState::ReceivedBlockTransactions(const CBlock &block, CValidationStat
     pindexNew->RaiseValidity(BLOCK_VALID_TRANSACTIONS);
     setDirtyBlockIndex.insert(pindexNew);
 
+    if (pindexNew->pprev == nullptr) {
+	std::cout <<  __func__ << " height = " << pindexNew->nHeight << ", pprev is null" << std::endl;
+    } else {
+	std::cout <<  __func__ << " height = " << pindexNew->nHeight << ", pprev.nChainTx = " << pindexNew->pprev->nChainTx << std::endl;
+    }
     if (pindexNew->pprev == nullptr || pindexNew->pprev->nChainTx) {
         // If pindexNew is the genesis block or all parents are BLOCK_VALID_TRANSACTIONS.
         std::deque<CBlockIndex*> queue;
@@ -3125,8 +3137,10 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationSta
 
     // Check proof of work
     const Consensus::Params& consensusParams = params.GetConsensus();
-    if (block.nBits != GetNextWorkRequired(pindexPrev, &block, consensusParams))
-        return state.DoS(100, false, REJECT_INVALID, "bad-diffbits", false, "incorrect proof of work");
+    if (pessimistic) {
+	if (block.nBits != GetNextWorkRequired(pindexPrev, &block, consensusParams))
+	    return state.DoS(100, false, REJECT_INVALID, "bad-diffbits", false, "incorrect proof of work");
+    }
 
     // Check against checkpoints
     if (fCheckpointsEnabled) {
@@ -3454,6 +3468,34 @@ bool ProcessNewBlock(const CChainParams& chainparams, const std::shared_ptr<cons
     CValidationState state; // Only used to report errors, not invalidity - ignore it
     if (!g_chainstate.ActivateBestChain(state, chainparams, pblock))
         return error("%s: ActivateBestChain failed", __func__);
+
+    return true;
+}
+
+bool ProcessSnapshotBlock(const CChainParams& chainparams, const std::shared_ptr<const CBlock> pblock, bool fForceProcessing, bool *fNewBlock)
+{
+    AssertLockNotHeld(cs_main);
+
+    {
+        CBlockIndex *pindex = nullptr;
+        if (fNewBlock) *fNewBlock = false;
+        CValidationState state;
+        // Ensure that CheckBlock() passes before calling AcceptBlock, as
+        // belt-and-suspenders.
+        bool ret = CheckBlock(*pblock, state, chainparams.GetConsensus());
+
+        LOCK(cs_main);
+
+        if (ret) {
+            // Store to disk
+            ret = g_chainstate.AcceptBlock(pblock, state, chainparams, &pindex, fForceProcessing, nullptr, fNewBlock);
+        }
+        if (!ret) {
+            GetMainSignals().BlockChecked(*pblock, state);
+            return error("%s: AcceptBlock FAILED (%s)", __func__, state.GetDebugMessage());
+        }
+    }
+    //mapBlockIndex[pblock->GetHash()] = pindex;
 
     return true;
 }
@@ -4264,9 +4306,9 @@ bool CChainState::LoadSnapshotBlockHeader(const CChainParams& chainparams)
         CBlockIndex *pindex = AddToBlockIndex(block);
         CValidationState state;
         if (!ReceivedBlockTransactions(block, state, pindex, blockPos, chainparams.GetConsensus()))
-            return error("%s: genesis block not accepted", __func__);
+            return error("%s: snapshot block not accepted", __func__);
     } catch (const std::runtime_error& e) {
-        return error("%s: failed to write genesis block: %s", __func__, e.what());
+        return error("%s: failed to write snapshot block: %s", __func__, e.what());
     }
 
     return true;
