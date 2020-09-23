@@ -238,8 +238,8 @@ extern const char *GETBLOCKTXN;
  */
 extern const char *BLOCKTXN;
 
-extern const char *GET_SNAPSHOT_INFO;
-extern const char *SNAPSHOT_INFO;
+extern const char *GET_STATE;
+extern const char *STATE;
 extern const char *GET_CHUNK;
 extern const char *CHUNK;
 };

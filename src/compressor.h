@@ -75,9 +75,11 @@ public:
     void Unserialize(Stream &s) {
         unsigned int nSize = 0;
         s >> VARINT(nSize);
+//        VARINT(nSize).Serialize(s);
         if (nSize < nSpecialScripts) {
             std::vector<unsigned char> vch(GetSpecialSize(nSize), 0x00);
             s >> REF(CFlatData(vch));
+//            REF(CFlatData(vch)).Unserialize(s);
             Decompress(nSize, vch);
             return;
         }
@@ -90,6 +92,7 @@ public:
         } else {
             script.resize(nSize);
             s >> REF(CFlatData(script));
+//            REF(CFlatData(script)).Unserialize(s);
         }
     }
 };

@@ -177,7 +177,6 @@ public:
     bool ReplayBlocks(const CChainParams& params, CCoinsView* view);
     bool RewindBlockIndex(const CChainParams& params);
     bool LoadGenesisBlock(const CChainParams& chainparams);
-    bool LoadSnapshotBlockHeader(const CChainParams& chainparams);
 
     void PruneBlockIndexCandidates();
 
@@ -2358,7 +2357,6 @@ bool CChainState::ConnectTip(CValidationState& state, const CChainParams& chainp
         }
         nTime3 = GetTimeMicros(); nTimeConnectTotal += nTime3 - nTime2;
         LogPrint(BCLog::BENCH, "  - Connect total: %.2fms [%.2fs (%.2fms/blk)]\n", (nTime3 - nTime2) * MILLI, nTimeConnectTotal * MICRO, nTimeConnectTotal * MILLI / nBlocksTotal);
-	psnapshot->updateCoins(view.getCachedCoins());
         bool flushed = view.Flush();
         assert(flushed);
     }
@@ -2811,22 +2809,15 @@ CBlockIndex* CChainState::AddToBlockIndex(const CBlockHeader& block)
 //	    << block.hashMerkleRoot.GetHex() 
 //	    << ", map size = " << mapBlockIndex.size() << std::endl;
     pindexNew->phashBlock = &((*mi).first);
-    if (psnapshot && !pessimistic && hash == psnapshot->snpMetadata.blockHeader.GetHash()) {
-        pindexNew->nHeight = psnapshot->snpMetadata.height;
-        pindexNew->BuildSkip();
-	pindexNew->nTimeMax = psnapshot->snpMetadata.timeMax;
-	pindexNew->nChainWork = UintToArith256(psnapshot->snpMetadata.chainWork);
-    } else {
-	BlockMap::iterator miPrev = mapBlockIndex.find(block.hashPrevBlock);
-	if (miPrev != mapBlockIndex.end())
-	{
-	    pindexNew->pprev = (*miPrev).second;
-	    pindexNew->nHeight = pindexNew->pprev->nHeight + 1;
-	    pindexNew->BuildSkip();
-	}
-	pindexNew->nTimeMax = (pindexNew->pprev ? std::max(pindexNew->pprev->nTimeMax, pindexNew->nTime) : pindexNew->nTime);
-	pindexNew->nChainWork = (pindexNew->pprev ? pindexNew->pprev->nChainWork : 0) + GetBlockProof(*pindexNew);
+    BlockMap::iterator miPrev = mapBlockIndex.find(block.hashPrevBlock);
+    if (miPrev != mapBlockIndex.end())
+    {
+	pindexNew->pprev = (*miPrev).second;
+	pindexNew->nHeight = pindexNew->pprev->nHeight + 1;
+	pindexNew->BuildSkip();
     }
+    pindexNew->nTimeMax = (pindexNew->pprev ? std::max(pindexNew->pprev->nTimeMax, pindexNew->nTime) : pindexNew->nTime);
+    pindexNew->nChainWork = (pindexNew->pprev ? pindexNew->pprev->nChainWork : 0) + GetBlockProof(*pindexNew);
     pindexNew->RaiseValidity(BLOCK_VALID_TREE);
     if (pindexBestHeader == nullptr || pindexBestHeader->nChainWork < pindexNew->nChainWork)
         pindexBestHeader = pindexNew;
@@ -2865,15 +2856,7 @@ bool CChainState::ReceivedBlockTransactions(const CBlock &block, CValidationStat
         while (!queue.empty()) {
             CBlockIndex *pindex = queue.front();
             queue.pop_front();
-	    if (pindex->pprev == nullptr && psnapshot && pindex->nHeight == psnapshot->snpMetadata.height) {
-		/* We are a new peer and this is the snapshot block, update its chainTx 
-		 * using the field from old peer. 
-		 */
-		pindex->nChainTx = psnapshot->snpMetadata.chainTx;
-		//std::cout << "--- " << __func__ << ": snap shot block nchainTx = " << pindex->nChainTx << std::endl;
-	    } else {
-		pindex->nChainTx = (pindex->pprev ? pindex->pprev->nChainTx : 0) + pindex->nTx;
-	    }
+	    pindex->nChainTx = (pindex->pprev ? pindex->pprev->nChainTx : 0) + pindex->nTx;
             {
                 LOCK(cs_nBlockSequenceId);
                 pindex->nSequenceId = nBlockSequenceId++;
@@ -3136,10 +3119,10 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationSta
 
     // Check proof of work
     const Consensus::Params& consensusParams = params.GetConsensus();
-    if (pessimistic) {
-	if (block.nBits != GetNextWorkRequired(pindexPrev, &block, consensusParams))
-	    return state.DoS(100, false, REJECT_INVALID, "bad-diffbits", false, "incorrect proof of work");
-    }
+    std::cout  << "block height = " << nHeight  << ", nBits = " << block.nBits << ", required nBits = " << (GetNextWorkRequired(pindexPrev, &block, consensusParams)) << std::endl;
+
+    if (block.nBits != GetNextWorkRequired(pindexPrev, &block, consensusParams))
+	return state.DoS(100, false, REJECT_INVALID, "bad-diffbits", false, "incorrect proof of work");
 
     // Check against checkpoints
     if (fCheckpointsEnabled) {
@@ -4271,52 +4254,6 @@ bool LoadGenesisBlock(const CChainParams& chainparams)
     return g_chainstate.LoadGenesisBlock(chainparams);
 }
 
-//void updateChainStateFromSnapshot () {
-//
-//	/* update data structures for processing future blocks */
-//	psnapshot->blkinfo.nChainTx = 0; // we don't know the block body of the snapshot block. 
-//	g_chainstate->setBlockIndexCandidates.insert(psnapshot->blkinfo);
-//}
-
-bool CChainState::LoadSnapshotBlockHeader(const CChainParams& chainparams)
-{
-    LOCK(cs_main);
-
-    // Check whether we're already initialized by checking for snapshot in
-    // mapBlockIndex. Note that we can't use chainActive here, since it is
-    // set based on the coins db, not the block index db, which is the only
-    // thing loaded at this point.
-    SnapshotMetadata &snpMetadata = psnapshot->snpMetadata; 
-    uint256 snapshotBlockHash = snpMetadata.blockHeader.GetHash();
-    if (mapBlockIndex.count(snapshotBlockHash))
-        return true;
-
-    try {
-	/* create a dummy block from the snapshot block header. */
-	const CBlock block(snpMetadata.blockHeader);
-//    std::cout << "----" << __func__ << ": hash = " << block.GetHash().GetHex() << ", prevhash ="
-//	    << block.hashPrevBlock.GetHex() << ", merkleRoot = "
-//	    << block.hashMerkleRoot.GetHex()
-//	    << ",height = " << snpMetadata.height 
-//	    << std::endl;
-        CDiskBlockPos blockPos = SaveBlockToDisk(block, snpMetadata.height, chainparams, nullptr);
-        if (blockPos.IsNull())
-            return error("%s: writing genesis block to disk failed", __func__);
-        CBlockIndex *pindex = AddToBlockIndex(block);
-        CValidationState state;
-        if (!ReceivedBlockTransactions(block, state, pindex, blockPos, chainparams.GetConsensus()))
-            return error("%s: snapshot block not accepted", __func__);
-    } catch (const std::runtime_error& e) {
-        return error("%s: failed to write snapshot block: %s", __func__, e.what());
-    }
-
-    return true;
-}
-
-bool LoadSnapshotBlockHeader(const CChainParams& chainparams)
-{
-    return g_chainstate.LoadSnapshotBlockHeader(chainparams);
-}
 
 bool LoadExternalBlockFile(const CChainParams& chainparams, FILE* fileIn, CDiskBlockPos *dbp)
 {
@@ -4492,7 +4429,7 @@ void CChainState::CheckBlockIndex(const Consensus::Params& consensusParams)
      * here.
      */ 
     CBlockIndex* genesisIndex = nullptr;
-    uint256 snapshotBlockHash = psnapshot->snpMetadata.blockHeader.GetHash();
+    uint256 snapshotBlockHash = psnapshot->snpMetadata.snapshotBlockHash;
     if (twoNullPprev) {
 	assert(mapBlockIndex.find(snapshotBlockHash) != mapBlockIndex.end());
 	if (rangeGenesis.first->second == mapBlockIndex[snapshotBlockHash]) {
@@ -4537,7 +4474,6 @@ void CChainState::CheckBlockIndex(const Consensus::Params& consensusParams)
 	 * do not perform checks for the snapshot block because we do not have the 
 	 * full block on disk. 
 	 */
-	uint256 snapshotBlockHash = psnapshot->snpMetadata.blockHeader.GetHash();
 	if (twoNullPprev && *pindex->phashBlock == snapshotBlockHash) {
 	    /* set the height to be the height of snapshot block. */
 	    nHeight = pindex->nHeight;

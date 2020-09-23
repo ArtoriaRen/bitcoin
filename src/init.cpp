@@ -806,11 +806,6 @@ void InitParameterInteraction()
             LogPrintf("%s: Ignoring blockmaxsize setting which is overridden by blockmaxweight", __func__);
         }
     }
-
-    /* a snapshot will be cut into chunks, each of which contains chunksize coins. */
-    if (gArgs.IsArgSet("-chunksize")) {
-         CHUNK_SIZE = gArgs.GetArg("-chunksize", 0);
-    }
 }
 
 static std::string ResolveErrMsg(const char * const optname, const std::string& strBind)
@@ -1521,7 +1516,6 @@ bool AppInitMain()
 
 		/* create snapshot object*/
 		psnapshot.reset(new Snapshot());
-		psnapshot->initialLoad(); // load from pcoinsdbview
 
 
                 if (!fReset) {
@@ -1762,6 +1756,5 @@ bool AppInitMain()
     StartWallets(scheduler);
 #endif
 
-    pessimistic = gArgs.GetBoolArg("-pessimistic", false);
     return true;
 }

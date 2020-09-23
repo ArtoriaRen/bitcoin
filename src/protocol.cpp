@@ -39,8 +39,8 @@ const char *SENDCMPCT="sendcmpct";
 const char *CMPCTBLOCK="cmpctblock";
 const char *GETBLOCKTXN="getblocktxn";
 const char *BLOCKTXN="blocktxn";
-const char *GET_SNAPSHOT_INFO="getsnpinfo";
-const char *SNAPSHOT_INFO="snpinfo";
+const char *GET_STATE="getsnpstate";
+const char *STATE="snpstate";
 const char *GET_CHUNK="getchunk";
 const char *CHUNK="chunk";
 } // namespace NetMsgType
@@ -75,8 +75,8 @@ const static std::string allNetMessageTypes[] = {
     NetMsgType::CMPCTBLOCK,
     NetMsgType::GETBLOCKTXN,
     NetMsgType::BLOCKTXN,
-    NetMsgType::GET_SNAPSHOT_INFO,
-    NetMsgType::SNAPSHOT_INFO,
+    NetMsgType::GET_STATE,
+    NetMsgType::STATE,
     NetMsgType::GET_CHUNK,
     NetMsgType::CHUNK
 };
