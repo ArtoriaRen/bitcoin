@@ -88,45 +88,45 @@ uint256 Snapshot::takeSnapshot() {
     /* create 1MB chunks of serialized UTXOs. */
     std::stringstream ss;
     for (uint i = 0; i < vAllOutPoints.size(); i++) {
-	COutPoint key = vAllOutPoints[i];
-	Coin coin;
-	bool found = pcoinsTip->GetCoin(key, coin);
-	/* unspent coins must exist */
-	assert(found);
-	key.Serialize(ss);
-	coin.Serialize(ss);
+        COutPoint key = vAllOutPoints[i];
+        Coin coin;
+        bool found = pcoinsTip->GetCoin(key, coin);
+        /* unspent coins must exist */
+        assert(found);
+        key.Serialize(ss);
+        coin.Serialize(ss);
     }
     char chunk_charArr[MB];
     while (!ss.eof()) {
-	ss.read(chunk_charArr, MB);
-	vSerializedChunks.push_back(std::string(chunk_charArr, MB));
+        ss.read(chunk_charArr, MB);
+        vSerializedChunks.push_back(std::string(chunk_charArr, MB));
     }
     if (ss.gcount() > 0) {
-	vSerializedChunks.push_back(std::string(chunk_charArr, ss.gcount()));
+        vSerializedChunks.back().resize(ss.gcount());
     }
     snpMetadata.vChunkHash.resize(vSerializedChunks.size());
 
     /* fill snapshot header */
     if (chainActive.Tip()) {
-	snpMetadata.height = chainActive.Tip()->nHeight;
-	snpMetadata.snapshotBlockHash = chainActive.Tip()->GetBlockHash();
-	snpMetadata.nChunks = vSerializedChunks.size();
-	snpMetadata.chainTx = chainActive.Tip()->nChainTx;
+        snpMetadata.height = chainActive.Tip()->nHeight;
+        snpMetadata.snapshotBlockHash = chainActive.Tip()->GetBlockHash();
+        snpMetadata.nChunks = vSerializedChunks.size();
+        snpMetadata.chainTx = chainActive.Tip()->nChainTx;
     }
 
     /* calculate header and chunk hashes. */
     uint256 headerHash = snpMetadata.getHeaderHash();
     for (uint i = 0; i <vSerializedChunks.size(); i++) {
-	CHash256 hasher; 	
-	hasher.Write((const unsigned char*)vSerializedChunks[i].data(), vSerializedChunks[i].size());
-	hasher.Finalize((unsigned char*)&snpMetadata.vChunkHash[i]);
+        CHash256 hasher; 	
+        hasher.Write((const unsigned char*)vSerializedChunks[i].data(), vSerializedChunks[i].size());
+        hasher.Finalize((unsigned char*)&snpMetadata.vChunkHash[i]);
     }
 
     /* calculate snapshot hash */
     CHash256 hasher; 	
     hasher.Write(headerHash.begin(), headerHash.size());
     for (const auto& h: snpMetadata.vChunkHash){
-	hasher.Write(h.begin(), h.size());
+        hasher.Write(h.begin(), h.size());
     }
     hasher.Finalize((unsigned char*)&snpMetadata.snapshotHash);
     return snpMetadata.snapshotHash;
@@ -134,18 +134,18 @@ uint256 Snapshot::takeSnapshot() {
 
 
 void Snapshot::applySnapshot() const {
-    CDataStream ds(SER_NETWORK, PROTOCOL_VERSION);
     for (auto& chunk : vSerializedChunks) {
-	ds.write(chunk.data(), chunk.size());
-    }
-    /* Unserialize UTXOs and add them to the chainstate database. */
-    while (!ds.eof()) {
-	COutPoint key;
-	Coin coin;
-	ds >> key;
-	ds >> coin;
-	pcoinsTip->AddCoin(std::move(key), std::move(coin), false);
-	nReceivedUTXOCnt++;
+        CDataStream ds(SER_NETWORK, PROTOCOL_VERSION);
+        ds.write(chunk.data(), chunk.size());
+        /* Unserialize UTXOs and add them to the chainstate database. */
+        while (!ds.eof()) {
+            COutPoint key;
+            Coin coin;
+            ds >> key;
+            ds >> coin;
+            pcoinsTip->AddCoin(std::move(key), std::move(coin), false);
+            nReceivedUTXOCnt++;
+        }
     }
 }
 

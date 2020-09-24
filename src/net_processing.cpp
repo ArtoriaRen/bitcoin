@@ -1965,50 +1965,55 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     
 
     else if (strCommand == NetMsgType::STATE){
-	SnapshotMetadata tempMetadata;
-	vRecv >> tempMetadata;
-	if (!psnapshot->verifyMetadata(tempMetadata)) {
-	    LogPrintf("chunk hashes do not match the snapshot hash. Should try to download the metadata with another peer.");
-	}
+        SnapshotMetadata tempMetadata;
+        vRecv >> tempMetadata;
+        if (!psnapshot->verifyMetadata(tempMetadata)) {
+            LogPrintf("chunk hashes do not match the snapshot hash. Should try to download the metadata with another peer.");
+            return false;
+        }
 
-	/* accept the tempMetadata. */
-	psnapshot->snpMetadata = tempMetadata;
-	/* request all chunks */
-	for (uint32_t chunkId = 0; chunkId < psnapshot->snpMetadata.vChunkHash.size(); chunkId++) {
-	    connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GET_CHUNK, chunkId));
-	}
-    }
+        /* accept the tempMetadata. */
+        psnapshot->snpMetadata = tempMetadata;
+        psnapshot->vSerializedChunks.resize(tempMetadata.nChunks);
+        /* request all chunks */
+        for (uint32_t chunkId = 0; chunkId < psnapshot->snpMetadata.vChunkHash.size(); chunkId++) {
+            connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GET_CHUNK, chunkId));
+        }
+        }
 
-    else if (strCommand == NetMsgType::GET_CHUNK){
-	uint32_t chunkId;
-	vRecv >> chunkId;
-	/* send the requested snapshot chunks.*/
-	psnapshot->sendChunk(pfrom, msgMaker, connman, chunkId);
+        else if (strCommand == NetMsgType::GET_CHUNK){
+        uint32_t chunkId;
+        vRecv >> chunkId;
+        /* send the requested snapshot chunks.*/
+        psnapshot->sendChunk(pfrom, msgMaker, connman, chunkId);
     }
 
     else if (strCommand == NetMsgType::CHUNK)
     {
-	/* TODO: must verify chunk hash first, then accept the chunk to snapshot and  pcoinsTip.*/
-	uint32_t chunkId;
-	vRecv >> chunkId;
-	std::string chunk;
-	vRecv >> chunk;
+        /* TODO: must verify chunk hash first, then accept the chunk to snapshot and 
+         * pcoinsTip.*/
+        uint32_t chunkId;
+        vRecv >> chunkId;
+        std::string chunk;
+        vRecv >> chunk;
 
         if(psnapshot->verifyChunk(chunkId, chunk)) {
-	    psnapshot->receivedChunkCnt++;
-	    LogPrintf("synced snapshot to %d/%d chunks.\n", psnapshot->receivedChunkCnt, psnapshot->snpMetadata.vChunkHash.size());
-	    if (psnapshot->receivedChunkCnt == psnapshot->snpMetadata.vChunkHash.size()) {
-		gettimeofday(&syncEndTime , NULL);
-		std::vector<CNodeStats> vstats;
-		g_connman->GetNodeStats(vstats);
-		LogPrintf("snapshot downloading done. Ending height = %d. Time = %d. syncing takes %lu milliseconds. %d coins have been received. sent %lu bytes, received %lu bytes. Start to download header chain. \n", chainActive.Tip()->nHeight, time(NULL), (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000, psnapshot->nReceivedUTXOCnt, vstats[0].nSendBytes, vstats[0].nRecvBytes);
-		connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GETHEADERS, chainActive.GetLocator(chainActive.Tip()), uint256()));
-	    }
-	} else {
-	    std::cout << "get corrupted chunk, id = " << chunkId << std::endl;
-	    /* we probably should request this chunk from another peer since the chunk from this peer has failed the verification, but in our performance test, this will not happen.*/
-	    connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GET_CHUNK, chunkId));
-	}
+            psnapshot->receivedChunkCnt++;
+            psnapshot->vSerializedChunks[chunkId] = std::move(chunk);
+            LogPrintf("synced snapshot to %d/%d chunks.\n", psnapshot->receivedChunkCnt, psnapshot->snpMetadata.vChunkHash.size());
+            if (psnapshot->receivedChunkCnt == psnapshot->snpMetadata.vChunkHash.size()) {
+                gettimeofday(&syncEndTime , NULL);
+                std::vector<CNodeStats> vstats;
+                g_connman->GetNodeStats(vstats);
+                LogPrintf("snapshot downloading done. Ending height = %d. Time = %d. syncing takes %lu milliseconds. sent %lu bytes, received %lu bytes. Start to download header chain. \n", chainActive.Tip()->nHeight, time(NULL), (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000, vstats[0].nSendBytes, vstats[0].nRecvBytes);
+                syncStartTime = syncEndTime;
+                connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GETHEADERS, chainActive.GetLocator(chainActive.Tip()), uint256()));
+            }
+        } else {
+            std::cout << "get corrupted chunk, id = " << chunkId << std::endl;
+            /* we probably should request this chunk from another peer since the chunk from this peer has failed the verification, but in our performance test, this will not happen.*/
+            connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GET_CHUNK, chunkId));
+        }
     }
 
     else if (strCommand == NetMsgType::GETBLOCKS)
@@ -2714,12 +2719,12 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             mapBlockSource.emplace(hash, std::make_pair(pfrom->GetId(), true));
         }
         bool fNewBlock = false;
-	if (mapBlockIndex[hash]->nHeight == psnapshot->snpMetadata.height) {
-	    if (ProcessSnapshotBlock(chainparams, pblock, true, &fNewBlock)) {
-		/* -------verify snapshot header data.------- */
-		uint256 snapshotBlockHash = psnapshot->snpMetadata.snapshotBlockHash;
+        if (mapBlockIndex[hash]->nHeight == psnapshot->snpMetadata.height) {
+            if (ProcessSnapshotBlock(chainparams, pblock, true, &fNewBlock)) {
+                /* -------verify snapshot header data.------- */
+                uint256 snapshotBlockHash = psnapshot->snpMetadata.snapshotBlockHash;
                 /* global variable mapBlockIndex have been updated just before
-		 * this peer downloading snapshot block. */
+                 * this peer downloading snapshot block. */
                 assert(mapBlockIndex.find(snapshotBlockHash) != mapBlockIndex.end());
                 /* check snapshot block height. */
                 CBlockIndex* pindex = mapBlockIndex[snapshotBlockHash];
@@ -2728,51 +2733,60 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                     return false;
                 }
 
-		/* check chunk hashes using the snapshot hash stored in the snapshot block. */
-		CBlock block;
-		if (!ReadBlockFromDisk(block, pindex, Params().GetConsensus())) {
-		    std::cerr << "Block not found on disk" << std::endl;
-		}
-		CScript coinbase = block.vtx[0]->vin[0].scriptSig;
-		/* Read the last 256 bit as coinbase. 
-		* However, as we cannot really change historical block content in 
-		* our test, the coinbase variable does not really include snapshot hash,
-		* so we extract some data from the coinbase field but have to use the
-		* snapshot hash sent by the old peer for chunk hash checking.
-		*/
-		int dummy_snapshot_hash = coinbase.front();
-		LogPrintf("first int in coinbase = %d.\n", dummy_snapshot_hash); 
-//		if (!psnapshot->snpMetadata.snapshotHash != <dummy_snapshot_hash>) {
-//		   LogPrintf("chunk hashes do not match the snapshot hash. Should try to download the metadata with another peer.");
-//		}
+                /* check chunk hashes using the snapshot hash stored in the snapshot block. */
+                CBlock block;
+                if (!ReadBlockFromDisk(block, pindex, Params().GetConsensus())) {
+                    std::cerr << "Block not found on disk" << std::endl;
+                }
+                CScript coinbase = block.vtx[0]->vin[0].scriptSig;
+                /* Read the last 256 bit as coinbase. 
+                * However, as we cannot really change historical block content in 
+                * our test, the coinbase variable does not really include snapshot hash,
+                * so we extract some data from the coinbase field but have to use the
+                * snapshot hash sent by the old peer for chunk hash checking.
+                */
+                int dummy_snapshot_hash = coinbase.front();
+                LogPrintf("first int in coinbase = %d.\n", dummy_snapshot_hash); 
+                //		if (!psnapshot->snpMetadata.snapshotHash != <dummy_snapshot_hash>) {
+                //		   LogPrintf("chunk hashes do not match the snapshot hash. Should try to download the metadata with another peer.");
+                //		}
+                gettimeofday(&syncEndTime , NULL);
+                unsigned long snpBlockDowloadTime = (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000;
+                syncStartTime = syncEndTime;
 
-		/* update global variable and chainstate database. */
-		psnapshot->applySnapshot();
+                /* update global variable and chainstate database. */
+                psnapshot->applySnapshot();
                 /* set the snapshot block as the chain tip. */
-		mapBlockIndex[snapshotBlockHash]->nChainTx = psnapshot->snpMetadata.chainTx;
+                mapBlockIndex[snapshotBlockHash]->nChainTx = psnapshot->snpMetadata.chainTx;
                 chainActive.SetTip(mapBlockIndex[snapshotBlockHash]);
                 pcoinsTip->SetBestBlock(snapshotBlockHash);
-		gettimeofday(&syncEndTime , NULL);
-
-		LogPrintf("snapshot block download done. height = %d. Time = %d. takes %lu milliseconds. start to download tail blocks. \n", mapBlockIndex[hash]->nHeight, time(NULL), (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000);
-		syncStartTime = syncEndTime;
-		/* as we already downloaded the headers of tail blocks 
+                gettimeofday(&syncEndTime , NULL);
+                LogPrintf("coinPrune. Snapshot block download done. height = %d. Time = %d. Snapshot block downloading takes %lu ms. Applying snapshot takes %lu ms. chainstate database now has %d coins. start to download tail blocks. \n", mapBlockIndex[hash]->nHeight, time(NULL), snpBlockDowloadTime, (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000, psnapshot->nReceivedUTXOCnt);
+                syncStartTime = syncEndTime;
+                /* as we already downloaded the headers of tail blocks 
                  * when we downloading the header chain, we just need to 
                  * enable block downloading. 
-		 */
+                 */
                 psnapshot->notYetDownloadSnapshot = false;
-
-	    } else {
-		LogPrintf("snapshot block check failed.");
-	    }
-	} else {
-	    ProcessNewBlock(chainparams, pblock, forceProcessing, &fNewBlock);
-	}
+            } else {
+                LogPrintf("snapshot block check failed.");
+            }
+        } else {
+            ProcessNewBlock(chainparams, pblock, forceProcessing, &fNewBlock);
+        }
         if (fNewBlock) {
             pfrom->nLastBlockTime = GetTime();
         } else {
             LOCK(cs_main);
             mapBlockSource.erase(pblock->GetHash());
+        }
+
+        if (mapBlockIndex[hash]->nHeight == pfrom->nStartingHeight) {
+            /* We have finished downloading all tail blocks. */
+            gettimeofday(&syncEndTime , NULL);
+            std::vector<CNodeStats> vstats;
+            g_connman->GetNodeStats(vstats);
+            LogPrintf("Tail block downloading done. Ending height = %d. Time = %d. Downloading tail blocks takes blocks takes %lu ms. Totally sent %lu bytes, received %lu bytes.\n", chainActive.Tip()->nHeight, time(NULL), (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000, vstats[0].nSendBytes, vstats[0].nRecvBytes);
         }
 
     }
