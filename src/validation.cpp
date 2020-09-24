@@ -2581,6 +2581,7 @@ bool CChainState::ActivateBestChain(CValidationState &state, const CChainParams&
     CBlockIndex *pindexMostWork = nullptr;
     CBlockIndex *pindexNewTip = nullptr;
     int nStopAtHeight = gArgs.GetArg("-stopatheight", DEFAULT_STOPATHEIGHT);
+    int totalTx = 0;
     do {
         boost::this_thread::interruption_point();
 
@@ -2610,12 +2611,12 @@ bool CChainState::ActivateBestChain(CValidationState &state, const CChainParams&
             std::shared_ptr<const CBlock> nullBlockPtr;
             if (!ActivateBestChainStep(state, chainparams, pindexMostWork, pblock && pblock->GetHash() == pindexMostWork->GetBlockHash() ? pblock : nullBlockPtr, fInvalidFound, connectTrace))
                 return false;
-
             if (fInvalidFound) {
                 // Wipe cache, we may need another branch now.
                 pindexMostWork = nullptr;
             }
             pindexNewTip = chainActive.Tip();
+	    totalTx  += pindexNewTip->nTx; 
             pindexFork = chainActive.FindFork(pindexOldTip);
             fInitialDownload = IsInitialBlockDownload();
 
@@ -2646,6 +2647,7 @@ bool CChainState::ActivateBestChain(CValidationState &state, const CChainParams&
             break;
     } while (pindexNewTip != pindexMostWork);
     CheckBlockIndex(chainparams.GetConsensus());
+    std::cout << "total tx in tail block = " << totalTx << std::endl;
 
     // Write changes periodically to disk, after relay.
     if (!FlushStateToDisk(chainparams, state, FLUSH_STATE_PERIODIC)) {
@@ -4537,7 +4539,6 @@ void CChainState::CheckBlockIndex(const Consensus::Params& consensusParams)
 	 * do not perform checks for the snapshot block because we do not have the 
 	 * full block on disk. 
 	 */
-	uint256 snapshotBlockHash = psnapshot->snpMetadata.blockHeader.GetHash();
 	if (twoNullPprev && *pindex->phashBlock == snapshotBlockHash) {
 	    /* set the height to be the height of snapshot block. */
 	    nHeight = pindex->nHeight;

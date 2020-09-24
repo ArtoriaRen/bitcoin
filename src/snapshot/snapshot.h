@@ -113,7 +113,7 @@ public:
     void initialLoad();
     void sendChunk(CNode* pfrom, const CNetMsgMaker& msgMaker, CConnman* connman, uint32_t chunkId) const;
     /* create a snapshot at the current block height. */
-    uint256 takeSnapshot(bool updateBlkInfo = true);
+    uint256 takeSnapshot();
     
     /* the original updateCoin plus update the unspent and spent sets. */
     void updateCoins(const CCoinsMap& mapCoins);

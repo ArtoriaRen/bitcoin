@@ -122,19 +122,17 @@ int Snapshot::getLastSnapshotBlockHeight() const{
     return snpMetadata.currentChainLength - snpMetadata.currentChainLength % period;
 }
 
-uint256 Snapshot::takeSnapshot(bool updateBlkInfo) {
+uint256 Snapshot::takeSnapshot() {
     /* Should use lock to stop other threads reading snaphshot, but in current test,
      * we only get snapshot after we know one has been generate.*/
     unspent.insert(unspent.end(), added.begin(), added.end());
     added.clear();
     spent.clear();
-    if (updateBlkInfo) {
-        /* only sort the unspent set when we are creating a snapshot, not when we are
-         * verifying a snapshot receivd from an old peer, because an peers send us 
-         * outpoints in sorted order using snapshot chunks.
-         */
-        std::sort(unspent.begin(), unspent.end());
-    }
+    /* only sort the unspent set when we are creating a snapshot, not when we are
+     * verifying a snapshot receivd from an old peer, because an peers send us 
+     * outpoints in sorted order using snapshot chunks.
+     */
+    std::sort(unspent.begin(), unspent.end());
     /* keep a copy of the outpoints we used to create the snapshot, so that when
      * we sends the snapshot to a new peer in the future, we can easily cut a 
      * snapshot into chunks because we know all the order of the outpoints.
@@ -145,6 +143,7 @@ uint256 Snapshot::takeSnapshot(bool updateBlkInfo) {
     leaves.reserve(num_chunks);
     for (uint i = 0; i < num_chunks; i++) {
 	std::stringstream ss;
+    //CDataStream ds(SER_NETWORK, PROTOCOL_VERSION);
 	CHash256 hasher; 	
 	uint256 hash;
 	uint end = (i == num_chunks -1) ? unspent.size() : (i + 1) * CHUNK_SIZE;
@@ -171,22 +170,20 @@ uint256 Snapshot::takeSnapshot(bool updateBlkInfo) {
     /* note down which block encloses the snapshot. We only do this if we are an
      * old peer and is producing snapshot. For new peer using this function 
      * calculating snapshot merkle root, there is no need to update.*/
-    if (updateBlkInfo && chainActive.Tip()){
-	snpMetadata.blockHeader = chainActive.Tip()->GetBlockHeader();
+    if (chainActive.Tip()) {
+        snpMetadata.blockHeader = chainActive.Tip()->GetBlockHeader();
         snpMetadata.height = chainActive.Height();
-	snpMetadata.timeMax = chainActive.Tip()->nTimeMax;
-	snpMetadata.chainWork = ArithToUint256(chainActive.Tip()->nChainWork);
-	snpMetadata.chainTx = chainActive.Tip()->nChainTx;
-	uint256 chunkMerkleRoot = ComputeMerkleRoot(leaves, NULL);   
-	uint256 snapshotBlockInfoHash = snpMetadata.getSnapshotBlockInfoHash();
-	CHash256 hasher; 	
-	hasher.Write(chunkMerkleRoot.begin(), chunkMerkleRoot.size())
-		.Write(snapshotBlockInfoHash.begin(), snapshotBlockInfoHash.size());
-	hasher.Finalize((unsigned char*)&snpMetadata.snapshotHash);
-	snpMetadata.vChunkHash.swap(leaves);
-    } else if (!updateBlkInfo && chainActive.Tip()) {
-	assert(snpMetadata.height == chainActive.Tip()->nHeight);
-    }
+        snpMetadata.timeMax = chainActive.Tip()->nTimeMax;
+        snpMetadata.chainWork = ArithToUint256(chainActive.Tip()->nChainWork);
+        snpMetadata.chainTx = chainActive.Tip()->nChainTx;
+        uint256 chunkMerkleRoot = ComputeMerkleRoot(leaves, NULL);   
+        uint256 snapshotBlockInfoHash = snpMetadata.getSnapshotBlockInfoHash();
+        CHash256 hasher; 	
+        hasher.Write(chunkMerkleRoot.begin(), chunkMerkleRoot.size())
+            .Write(snapshotBlockInfoHash.begin(), snapshotBlockInfoHash.size());
+        hasher.Finalize((unsigned char*)&snpMetadata.snapshotHash);
+        snpMetadata.vChunkHash.swap(leaves);
+    } 
     return snpMetadata.snapshotHash;
 }
 
@@ -254,54 +251,8 @@ void Snapshot::updateCoins(const CCoinsMap& mapCoins){
 	/* record the change in the added set (the current code will allow one 
 	 * coin to be insert more than once if it is changed more than once.)*/
 	added.emplace_back(it->first.hash, it->first.n);
-
-//        std::vector<COutPoint>::iterator itUs = std::find(unspent.begin(), unspent.end(), it->first);
-//        if (itUs == unspent.end()) {
-//            // The unspent vector does not have an entry, while the mapCoins does
-//            // We can ignore it if it's both FRESH and pruned (spent) in the mapCoins
-//            if (!(it->second.flags & CCoinsCacheEntry::FRESH && it->second.coin.IsSpent())) {
-//                // Otherwise we will need to create it in the added vector
-//		/* The entry may have the same outpoint as some entry in the
-//		 * unspent dataset. Should let this entry overwrite the entry 
-//		 * in the unspent dataset when merge them when taking snapshot.
-//		 * Will entry als overwrite another entry in the added set?
-//		 */
-//		added.emplace_back(it->first.hash, it->first.n);
-//            } 
-//        } else {
-//            // Found the entry in the parent cache
-//            if (it->second.coin.IsSpent()) {
-//		// move it from the unspent vector to the spent map
-//		spent.insert(std::make_pair(std::move(*itUs), it->second.coin));
-//		unspent.erase(itUs);
-//            } else {
-//                // A normal modification.
-//		/* when will this happen? Why a coin is modified? */
-//            }
-//        }
-
-	
     }
 }
-
-//void Snapshot::spendCoin(const COutPoint& op){
-//    std::cout << __func__ << ": " << op.ToString() << std::endl;
-//    auto it = std::find(unspent.begin(), unspent.end(), op);
-//    if(it != unspent.end()){
-//	Coin coin;
-//	pcoinsTip->GetCoin(*it, coin);
-//	spent.insert(std::make_pair(std::move(*it), coin));
-//	unspent.erase(it);
-//	return;
-//    }
-//    /* The coin is not in the unspent set, it must be in the added set. 
-//     * Then there is not need to move it to the spent set because it is not
-//     * in the last snapshot.
-//     */
-//    auto itAdded = std::find(added.begin(), added.end(), op);
-//    assert (itAdded != added.end());
-//    added.erase(itAdded);
-//}
 
 void Snapshot::acceptChunk(std::vector<OutpointCoinPair>& chunk) const {
     /* add all UTXOs in the chunk to the chainstate database. */
@@ -363,40 +314,15 @@ void Snapshot::Write2File() const
 {
     std::ofstream file;
     file.open("snapshot.out");
-    if (!snpMetadata.blockHeader.GetHash().IsNull()) {
-		file << "snapshot block = ";
-		file << snpMetadata.blockHeader.GetHash().GetHex();
-		file << "\nheight = ";
-		file << std::to_string(snpMetadata.height);
-		file << "\n";
-    } 
-
-    file << "lastsnapshotmerkleroot = ";
-    file << snpMetadata.snapshotHash.GetHex();
-
-    file << "\nunspent.size() = ";
-    file << std::to_string(unspent.size());
-    file << "\nunspent = ";
-    for(uint i = 0; i < unspent.size(); i++) {
-	file << unspent[i].ToString();
-	file << ", ";
+    snpMetadata.Serialize(file);
+    std::cout << __func__ << ": spent map size = " <<  spent.size() << std::endl;
+    for (const auto& pair: spent) {
+        pair.first.Serialize(file);
+        pair.second.Serialize(file);
     }
-
-    file << "\nadded.size() = ";
-    file << std::to_string(added.size());
-    file << "\nadded = ";
-    for(uint i = 0; i < added.size(); i++) {
-	file << added[i].ToString();
-	file << ", ";
-    }
-
-    file << "\nspent.size() = ";
-    file << std::to_string(spent.size());
-    file << "\nspent = ";
-    auto it = spent.begin();
-    while(it != spent.end()) {
-	file << it->first.ToString();
-	it++;
+    std::cout << __func__ << ": unspent vector size = " <<  unspent.size() << std::endl;
+    for (const auto& outpoint: unspent) {
+        outpoint.Serialize(file);
     }
 }
 
