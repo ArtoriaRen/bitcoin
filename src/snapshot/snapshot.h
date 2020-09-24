@@ -88,14 +88,9 @@ public:
     /* create a snapshot at the current block height. */
     uint256 takeSnapshot();
     
-    /* the original updateCoin plus update the unspent and spent sets. */
-    void updateCoins(const CCoinsMap& mapCoins);
-
     /* add UTXOs in the chunk to the chainstate database. */
     void applySnapshot() const;
 
-//    void appendToHeaderChain(const std::vector<CBlockHeader>& headers);
-    /* TODO: the merkle tree should have metadata hash as a leaf. */
     bool verifyMetadata(const SnapshotMetadata& metadata) const;
     bool verifyChunk(const uint32_t chunkId, const std::string& chunk) const;
 
@@ -103,7 +98,6 @@ public:
     void Write2File() const;
 };
 
-bool headerEqual(const CBlockHeader& lhs, const CBlockHeader& rhs);
 
 extern std::unique_ptr<Snapshot> psnapshot;
 

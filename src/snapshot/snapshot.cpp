@@ -176,27 +176,11 @@ std::string Snapshot::ToString() const
 void Snapshot::Write2File() const
 {
     std::ofstream file;
-    file.open("snapshot.out");
-    file << "snapshot block = ";
-    file << snpMetadata.snapshotBlockHash.GetHex();
-    file << "\nheight = ";
-    file << std::to_string(snpMetadata.height);
-    file << "\n";
-
-    file << "snapshot hash  = ";
-    file << snpMetadata.snapshotHash.GetHex();
-
-    file << "\n chunks = ";
+    file.open("snapshot_coinPrune.out");
+    snpMetadata.Serialize(file);
     for (uint i = 0; i < vSerializedChunks.size(); i++) {
-	file << ("id = " + std::to_string(i) + "\n");
 	file << vSerializedChunks[i];
     }
-}
-
-bool headerEqual(const CBlockHeader& lhs, const CBlockHeader& rhs) {
-    return lhs.nVersion == rhs.nVersion && lhs.hashPrevBlock == rhs.hashPrevBlock 
-	    && lhs.hashMerkleRoot == rhs.hashMerkleRoot && lhs.nTime == rhs.nTime
-	    && lhs.nBits == rhs.nBits && lhs.nNonce == rhs.nNonce;
 }
 
 std::unique_ptr<Snapshot> psnapshot;
