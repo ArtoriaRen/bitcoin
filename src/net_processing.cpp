@@ -2074,14 +2074,19 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	uint32_t chunkId;
 	vRecv >> chunkId;
         if(psnapshot->verifyChunk(chunkId, vRecv)) {
+	    gettimeofday(&syncEndTime , NULL);
+	    psnapshot->snpDownloadTime += (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000;
+	    syncStartTime = syncEndTime;
 	    psnapshot->applyChunk(vRecv);
+	    gettimeofday(&syncEndTime , NULL);
+	    psnapshot->applyTime += (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000;
+	    syncStartTime = syncEndTime;
 	    psnapshot->receivedChunkCnt++;
 	    LogPrintf("synced snapshot to %d/%d chunks.\n", psnapshot->receivedChunkCnt, psnapshot->snpMetadata.vChunkHash.size());
 	    if (psnapshot->receivedChunkCnt == psnapshot->snpMetadata.vChunkHash.size()) {
-		gettimeofday(&syncEndTime , NULL);
 		std::vector<CNodeStats> vstats;
 		g_connman->GetNodeStats(vstats);
-		LogPrintf("snapshot downloading done. Ending height = %d. Time = %d. syncing takes %lu milliseconds. %d coins have been received. sent %lu bytes, received %lu bytes. Start to sync %d tail blocks. \n", chainActive.Tip()->nHeight, time(NULL), (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000, psnapshot->nReceivedUTXOCnt, vstats[0].nSendBytes, vstats[0].nRecvBytes, psnapshot->snpMetadata.currentChainLength - psnapshot->snpMetadata.height);
+		LogPrintf("snapshot downloading done. Ending height = %d. Time = %d. Downloading snapshot takes %lu ms. Applying snapshot take %lu ms. %d coins have been received. sent %lu bytes, received %lu bytes. Start to sync %d tail blocks. \n", chainActive.Tip()->nHeight, time(NULL), psnapshot->snpDownloadTime, psnapshot->applyTime, psnapshot->nReceivedUTXOCnt, vstats[0].nSendBytes, vstats[0].nRecvBytes, psnapshot->snpMetadata.currentChainLength - psnapshot->snpMetadata.height);
 		if (psnapshot->snpMetadata.height < psnapshot->snpMetadata.currentChainLength) {
 		    if (pessimistic) {
 			/* as we already downloaded the headers of tail blocks 
@@ -2822,6 +2827,13 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             LOCK(cs_main);
             mapBlockSource.erase(pblock->GetHash());
         }
+	
+	if (mapBlockIndex[hash]->nHeight == psnapshot->snpMetadata.currentChainLength) {
+	    gettimeofday(&syncEndTime , NULL);
+	    std::vector<CNodeStats> vstats;
+	    g_connman->GetNodeStats(vstats);
+	    LogPrintf("Tail block downloading done. Ending height = %d. Time = %d. Downloading take blocks takes %lu ms. Totally sent %lu bytes, received %lu bytes.\n", chainActive.Tip()->nHeight, time(NULL), (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000, vstats[0].nSendBytes, vstats[0].nRecvBytes);
+	}
 
     }
 

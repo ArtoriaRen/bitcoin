@@ -79,6 +79,10 @@ public:
      * the latest snapshot yet. */
     bool notYetDownloadSnapshot;
 
+    /* time stat in ms */
+    unsigned long snpDownloadTime;
+    unsigned long applyTime;
+
     Snapshot();
 
     /* feed unspent vector with all outpoints in chainstate database.

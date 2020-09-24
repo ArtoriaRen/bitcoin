@@ -37,7 +37,7 @@ uint256 SnapshotMetadata::getSnapshotBlockInfoHash() const {
     return hash;
 }
 
-Snapshot::Snapshot(): period(1000), receivedChunkCnt(0), nReceivedUTXOCnt(0), notYetDownloadSnapshot(true) {
+Snapshot::Snapshot(): period(1000), receivedChunkCnt(0), nReceivedUTXOCnt(0), notYetDownloadSnapshot(true), snpDownloadTime(0), applyTime(0) {
     unspent.reserve(pcoinsTip->GetCacheSize());
 }
 
