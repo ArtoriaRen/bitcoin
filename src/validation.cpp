@@ -3138,10 +3138,8 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationSta
 
     // Check proof of work
     const Consensus::Params& consensusParams = params.GetConsensus();
-    if (pessimistic) {
-	if (block.nBits != GetNextWorkRequired(pindexPrev, &block, consensusParams))
-	    return state.DoS(100, false, REJECT_INVALID, "bad-diffbits", false, "incorrect proof of work");
-    }
+    if (block.nBits != GetNextWorkRequired(pindexPrev, &block, consensusParams))
+	return state.DoS(100, false, REJECT_INVALID, "bad-diffbits", false, "incorrect proof of work");
 
     // Check against checkpoints
     if (fCheckpointsEnabled) {

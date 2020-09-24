@@ -23,28 +23,6 @@
 extern bool pessimistic;
 extern uint32_t CHUNK_SIZE;
 
-class OutpointCoinPair{
-public:
-    COutPoint outpoint;
-    Coin coin;
-
-    // empty constructor
-    OutpointCoinPair();
-
-    OutpointCoinPair(COutPoint opIn, Coin coinIn);
-
-    template<typename Stream>
-    void Serialize(Stream &s) const {
-	outpoint.Serialize(s);
-	coin.Serialize(s);
-    }
-    template<typename Stream>
-    void Unserialize(Stream &s) {
-	outpoint.Unserialize(s);
-	coin.Unserialize(s);
-    }
-};
-
 class SnapshotMetadata{
 public:
     uint256 snapshotHash; // the hash of metadata fields concatenated with the merekle root of chunk hash. 
@@ -55,6 +33,7 @@ public:
     int height; // snapshot block height
     unsigned int timeMax; // Maximum nTime in the chain up to and including this block.
     uint256 chainWork; // Total amount of work (expected number of hashes) in the chain up to and including this block
+    uint32_t nTimeLastDifficultyAdjustmentBlock; // used to calculate future PoW difficulty.
     unsigned int chainTx; //cannot be obtained from a header chain.
 
     /* chunk hashes */
@@ -70,6 +49,7 @@ public:
         READWRITE(height);
         READWRITE(timeMax);
         READWRITE(chainWork);
+        READWRITE(nTimeLastDifficultyAdjustmentBlock);
         READWRITE(chainTx);
         READWRITE(vChunkHash);
     }

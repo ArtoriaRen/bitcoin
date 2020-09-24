@@ -9,6 +9,7 @@
 #include <chain.h>
 #include <primitives/block.h>
 #include <uint256.h>
+#include <snapshot/snapshot.h>
 
 unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params& params)
 {
@@ -40,10 +41,16 @@ unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHead
     // Go back by what we want to be 14 days worth of blocks
     int nHeightFirst = pindexLast->nHeight - (params.DifficultyAdjustmentInterval()-1);
     assert(nHeightFirst >= 0);
-    const CBlockIndex* pindexFirst = pindexLast->GetAncestor(nHeightFirst);
-    assert(pindexFirst);
+    if (!pessimistic && nHeightFirst < psnapshot->snpMetadata.height) {
+	/* Optimistic peers do not have header chain prior to the snapshot block height.
+	 * Use the nTime stored in snpMetadata instead.*/
+	return CalculateNextWorkRequired(pindexLast, psnapshot->snpMetadata.nTimeLastDifficultyAdjustmentBlock, params);
+    } else {
+	const CBlockIndex* pindexFirst = pindexLast->GetAncestor(nHeightFirst);
+	assert(pindexFirst);
 
-    return CalculateNextWorkRequired(pindexLast, pindexFirst->GetBlockTime(), params);
+	return CalculateNextWorkRequired(pindexLast, pindexFirst->GetBlockTime(), params);
+    }
 }
 
 unsigned int CalculateNextWorkRequired(const CBlockIndex* pindexLast, int64_t nFirstBlockTime, const Consensus::Params& params)

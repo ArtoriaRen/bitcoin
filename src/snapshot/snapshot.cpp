@@ -13,14 +13,12 @@
 #include <vector>
 #include <fstream>
 
+#include "chainparams.h"
+
 extern BlockMap& mapBlockIndex;
 
 bool pessimistic = false;
 uint32_t CHUNK_SIZE = 50000; // limit the chunks msg size below 4M msg limit.
-
-OutpointCoinPair::OutpointCoinPair(){ }
-
-OutpointCoinPair::OutpointCoinPair(COutPoint opIn, Coin coinIn): outpoint(opIn), coin(coinIn){ }
 
 uint256 SnapshotMetadata::getSnapshotBlockInfoHash() const {
     CHash256 hasher; 	
@@ -158,6 +156,9 @@ uint256 Snapshot::takeSnapshot() {
         snpMetadata.height = chainActive.Height();
         snpMetadata.timeMax = chainActive.Tip()->nTimeMax;
         snpMetadata.chainWork = ArithToUint256(chainActive.Tip()->nChainWork);
+	uint32_t lastDifficultyAdjustmentBlockHeight = snpMetadata.height - snpMetadata.height % Params().GetConsensus().DifficultyAdjustmentInterval();
+//	std::cout << "last difficulty adjustment height = " << lastDifficultyAdjustmentBlockHeight << std::endl;
+        snpMetadata.nTimeLastDifficultyAdjustmentBlock = chainActive[lastDifficultyAdjustmentBlockHeight ]->nTime;
         snpMetadata.chainTx = chainActive.Tip()->nChainTx;
         uint256 chunkMerkleRoot = ComputeMerkleRoot(leaves, NULL);   
         uint256 snapshotBlockInfoHash = snpMetadata.getSnapshotBlockInfoHash();
@@ -303,11 +304,13 @@ void Snapshot::Write2File() const
     file.open("snapshot.out");
     snpMetadata.Serialize(file);
     std::cout << __func__ << ": spent map size = " <<  spent.size() << std::endl;
+    file << spent.size();
     for (const auto& pair: spent) {
         pair.first.Serialize(file);
         pair.second.Serialize(file);
     }
     std::cout << __func__ << ": unspent vector size = " <<  unspent.size() << std::endl;
+    file << unspent.size();
     for (const auto& outpoint: unspent) {
         outpoint.Serialize(file);
     }
