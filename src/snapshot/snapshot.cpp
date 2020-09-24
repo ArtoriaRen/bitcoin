@@ -61,27 +61,27 @@ void Snapshot::initialLoad() {
 }
 
 void Snapshot::sendChunk(CNode* pfrom, const CNetMsgMaker& msgMaker, CConnman* connman, uint32_t chunkId) const {
-    std::vector<OutpointCoinPair> chunk;
+    CDataStream ds(SER_NETWORK, PROTOCOL_VERSION);
     uint32_t startIdx = chunkId * CHUNK_SIZE;
     uint64_t stopIdx = vOutpoint.size() < (chunkId + 1) * CHUNK_SIZE ? vOutpoint.size() : (chunkId + 1) * CHUNK_SIZE;
-    chunk.reserve(stopIdx - startIdx);
     for (uint32_t i = startIdx; i < stopIdx; i++){
         auto it = spent.find(vOutpoint[i]); 
         if ( it != spent.end()){
             /* The coin is in the spent set. */
-            chunk.emplace_back(it->first, it->second);
+	    it->first.Serialize(ds);
+	    it->second.Serialize(ds);
         } else {
             /* Have to fetch the coin from the current coins view. */
             Coin coin;
             bool found = pcoinsTip->GetCoin(vOutpoint[i], coin);
             /* unspent coins must exist */
             assert(found);
-            //OutpointCoinPair coinPair(snapshotOutpointArray[i], std::move(coin));
-            chunk.emplace_back(vOutpoint[i], std::move(coin));
+	    vOutpoint[i].Serialize(ds);
+	    coin.Serialize(ds);
         }
     }
 
-    connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::CHUNK, chunkId, chunk));
+    connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::CHUNK, chunkId, ds));
     LogPrint(BCLog::NET, "send chunk: startIdx=%d, endIdx=%d, total coin num =%d.\n", startIdx, stopIdx - 1, vOutpoint.size());
 }
 
@@ -100,20 +100,10 @@ bool Snapshot::verifyMetadata(const SnapshotMetadata& metadata, const uint256& s
     return hash == snpHashOnChain; 
 }
 
-bool Snapshot::verifyChunk(const uint32_t chunkId, const std::vector<OutpointCoinPair>& chunk) const {
+bool Snapshot::verifyChunk(const uint32_t chunkId, CDataStream& vRecv) const {
     CHash256 hasher; 	
     uint256 hash;
-    std::stringstream ss;
-    for (const OutpointCoinPair& pair: chunk) {
-	ss.str("");
-	pair.outpoint.Serialize(ss);
-	std::string key_str(ss.str());
-	ss.str("");
-	pair.coin.Serialize(ss);
-	std::string coin_str(ss.str());
-	hasher.Write((const unsigned char*)key_str.c_str(), sizeof(key_str.size()))
-		.Write((const unsigned char*)coin_str.c_str(), sizeof(coin_str.size()));
-    }
+    hasher.Write((const unsigned char*)vRecv.data(), vRecv.size());
     hasher.Finalize((unsigned char*)&hash);
     return hash == snpMetadata.vChunkHash[chunkId]; 
 }
@@ -142,8 +132,7 @@ uint256 Snapshot::takeSnapshot() {
     uint num_chunks = (unspent.size() + CHUNK_SIZE - 1) / CHUNK_SIZE;
     leaves.reserve(num_chunks);
     for (uint i = 0; i < num_chunks; i++) {
-	std::stringstream ss;
-    //CDataStream ds(SER_NETWORK, PROTOCOL_VERSION);
+	CDataStream ds(SER_NETWORK, PROTOCOL_VERSION);
 	CHash256 hasher; 	
 	uint256 hash;
 	uint end = (i == num_chunks -1) ? unspent.size() : (i + 1) * CHUNK_SIZE;
@@ -154,17 +143,11 @@ uint256 Snapshot::takeSnapshot() {
 	    bool found = pcoinsTip->GetCoin(key, coin);
 	    /* unspent coins must exist */
 	    assert(found);
-
-	    ss.str("");
-	    key.Serialize(ss);
-	    std::string key_str(ss.str());
-	    ss.str("");
-	    coin.Serialize(ss);
-	    std::string coin_str(ss.str());
-	    hasher.Write((const unsigned char*)key_str.c_str(), sizeof(key_str.size()))
-		    .Write((const unsigned char*)coin_str.c_str(), sizeof(coin_str.size()));
+	    key.Serialize(ds);
+	    coin.Serialize(ds);
 	}
-	hasher.Finalize((unsigned char*)&hash);
+	hasher.Write((const unsigned char*)ds.data(), ds.size())
+		.Finalize((unsigned char*)&hash);
 	leaves.push_back(hash);
     }
     /* note down which block encloses the snapshot. We only do this if we are an
@@ -254,11 +237,15 @@ void Snapshot::updateCoins(const CCoinsMap& mapCoins){
     }
 }
 
-void Snapshot::acceptChunk(std::vector<OutpointCoinPair>& chunk) const {
-    /* add all UTXOs in the chunk to the chainstate database. */
-    nReceivedUTXOCnt += chunk.size();
-    for(OutpointCoinPair& pair: chunk) {
-	pcoinsTip->AddCoin(std::move(pair.outpoint), std::move(pair.coin), false);
+void Snapshot::applyChunk(CDataStream& vRecv) const {
+    /* Unserialize UTXOs and add them to the chainstate database. */
+    while (!vRecv.eof()) {
+        COutPoint key;
+        Coin coin;
+        vRecv >> key;
+        vRecv >> coin;
+        pcoinsTip->AddCoin(std::move(key), std::move(coin), false);
+        nReceivedUTXOCnt++;
     }
 }
 

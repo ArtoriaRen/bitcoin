@@ -119,12 +119,12 @@ public:
     void updateCoins(const CCoinsMap& mapCoins);
 
     /* add UTXOs in the chunk to the chainstate database. */
-    void acceptChunk(std::vector<OutpointCoinPair>& chunk) const;
+    void applyChunk(CDataStream& vRecv) const;
 
 //    void appendToHeaderChain(const std::vector<CBlockHeader>& headers);
     /* TODO: the merkle tree should have metadata hash as a leaf. */
     bool verifyMetadata(const SnapshotMetadata& metadata, const uint256& snpHashOnChain) const;
-    bool verifyChunk(const uint32_t chunkId, const std::vector<OutpointCoinPair>& chunk) const;
+    bool verifyChunk(const uint32_t chunkId, CDataStream& vRecv) const;
     int getLastSnapshotBlockHeight() const;
     /* determine if we are a new peer with a valid snapshot base on if pprev 
      * of the snapshot block index is nullptr. 

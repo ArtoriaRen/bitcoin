@@ -2073,11 +2073,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	/* TODO: must verify chunk hash first, then accept the chunk to snapshot and  pcoinsTip.*/
 	uint32_t chunkId;
 	vRecv >> chunkId;
-	std::vector<OutpointCoinPair> chunk;
-	vRecv >> chunk;
-
-        if(psnapshot->verifyChunk(chunkId, chunk)) {
-	    psnapshot->acceptChunk(chunk);
+        if(psnapshot->verifyChunk(chunkId, vRecv)) {
+	    psnapshot->applyChunk(vRecv);
 	    psnapshot->receivedChunkCnt++;
 	    LogPrintf("synced snapshot to %d/%d chunks.\n", psnapshot->receivedChunkCnt, psnapshot->snpMetadata.vChunkHash.size());
 	    if (psnapshot->receivedChunkCnt == psnapshot->snpMetadata.vChunkHash.size()) {
@@ -2100,7 +2097,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	} else {
 	    std::cout << "get corrupted chunk, id = " << chunkId << std::endl;
 	    /* we probably should request this chunk from another peer since the chunk from this peer has failed the verification, but in our performance test, this will not happen.*/
-	    connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GET_CHUNK, chunkId));
+//	    connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GET_CHUNK, chunkId));
 	}
     }
 

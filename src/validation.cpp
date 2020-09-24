@@ -2581,7 +2581,7 @@ bool CChainState::ActivateBestChain(CValidationState &state, const CChainParams&
     CBlockIndex *pindexMostWork = nullptr;
     CBlockIndex *pindexNewTip = nullptr;
     int nStopAtHeight = gArgs.GetArg("-stopatheight", DEFAULT_STOPATHEIGHT);
-    int totalTx = 0;
+//    int totalTx = 0;
     do {
         boost::this_thread::interruption_point();
 
@@ -2616,7 +2616,7 @@ bool CChainState::ActivateBestChain(CValidationState &state, const CChainParams&
                 pindexMostWork = nullptr;
             }
             pindexNewTip = chainActive.Tip();
-	    totalTx  += pindexNewTip->nTx; 
+//	    totalTx  += pindexNewTip->nTx; 
             pindexFork = chainActive.FindFork(pindexOldTip);
             fInitialDownload = IsInitialBlockDownload();
 
@@ -2647,7 +2647,7 @@ bool CChainState::ActivateBestChain(CValidationState &state, const CChainParams&
             break;
     } while (pindexNewTip != pindexMostWork);
     CheckBlockIndex(chainparams.GetConsensus());
-    std::cout << "total tx in tail block = " << totalTx << std::endl;
+//    std::cout << "total tx in tail block = " << totalTx << std::endl;
 
     // Write changes periodically to disk, after relay.
     if (!FlushStateToDisk(chainparams, state, FLUSH_STATE_PERIODIC)) {
