@@ -249,7 +249,7 @@ void Shutdown()
         pcoinscatcher.reset();
         pcoinsdbview.reset();
         pblocktree.reset();
-	psnapshot.reset();
+        psnapshot.reset();
     }
 #ifdef ENABLE_WALLET
     StopWallets();
@@ -1434,7 +1434,7 @@ bool AppInitMain()
                 UnloadBlockIndex();
                 pcoinsTip.reset();
                 pcoinsdbview.reset();
-		psnapshot.reset();
+                psnapshot.reset();
                 pcoinscatcher.reset();
                 // new CBlockTreeDB tries to delete the existing file, which
                 // fails if it's still open from the previous loop. Close it first:
@@ -1519,9 +1519,11 @@ bool AppInitMain()
                     assert(chainActive.Tip() != nullptr);
                 }
 
-		/* create snapshot object*/
-		psnapshot.reset(new Snapshot());
-		psnapshot->initialLoad(); // load from pcoinsdbview
+                /* create snapshot object*/
+                psnapshot.reset(new Snapshot());
+                psnapshot->initialLoad(); // load from pcoinsdbview
+                if (pessimistic)
+                    psnapshot->snpMetadata.height = gArgs.GetArg("-snapshotblkheight", 1);
 
 
                 if (!fReset) {

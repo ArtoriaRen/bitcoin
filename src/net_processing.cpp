@@ -1422,7 +1422,8 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, const std::ve
 		LogPrintf("header chain downloading done. Ending height = %d. Time = %d. syncing takes %lu milliseconds. start to download the snapshot block body. \n", pindexLast->nHeight, time(NULL), (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000);
 		syncStartTime = syncEndTime;
 		psnapshot->snpMetadata.currentChainLength = pindexLast->nHeight;
-		psnapshot->snpMetadata.height = psnapshot->getLastSnapshotBlockHeight();
+        /* For testing convinience, we pass in the snapshot block height from the configuration file. The assignment occurs in the init.cpp file. */
+		//psnapshot->snpMetadata.height = psnapshot->getLastSnapshotBlockHeight();
 		const CBlockIndex *pindex = pindexLast;
 		for (int i = 0; i < pindexLast->nHeight - psnapshot->snpMetadata.height; i++) {
 		    pindex = pindex->pprev;
@@ -1981,7 +1982,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	 * However, we cannot really change a historical block to put the snapshot 
 	 * hash in it. We have to assume a value that we got from the header chain. */
 	if (pessimistic) {
-	    uint256 snapshotBlockHash =  tempMetadata.blockHeader.GetHash();
+	    uint256 snapshotBlockHash = tempMetadata.blockHeader.GetHash();
 	    /* global variable mapBlockIndex have been updated just before
 	     * this peer downloading snapshot block. */
 	    assert(mapBlockIndex.find(snapshotBlockHash) != mapBlockIndex.end());
@@ -2832,7 +2833,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    gettimeofday(&syncEndTime , NULL);
 	    std::vector<CNodeStats> vstats;
 	    g_connman->GetNodeStats(vstats);
-	    LogPrintf("Tail block downloading done. Ending height = %d. Time = %d. Downloading take blocks takes %lu ms. Totally sent %lu bytes, received %lu bytes.\n", chainActive.Tip()->nHeight, time(NULL), (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000, vstats[0].nSendBytes, vstats[0].nRecvBytes);
+	    LogPrintf("Tail block downloading done. Ending height = %d. Time = %d. Downloading tail blocks takes blocks takes %lu ms. Totally sent %lu bytes, received %lu bytes.\n", chainActive.Tip()->nHeight, time(NULL), (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000, vstats[0].nSendBytes, vstats[0].nRecvBytes);
 	}
 
     }
