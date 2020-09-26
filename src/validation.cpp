@@ -151,6 +151,7 @@ private:
 public:
     CChain chainActive;
     BlockMap mapBlockIndex;
+    BlockMap mapInvalidateBlockIndex; // <block_hash_to_be_invalidate, pindex_of_current_tip>
     std::multimap<CBlockIndex*, CBlockIndex*> mapBlocksUnlinked;
     CBlockIndex *pindexBestInvalid = nullptr;
 
@@ -205,6 +206,7 @@ private:
 CCriticalSection cs_main;
 
 BlockMap& mapBlockIndex = g_chainstate.mapBlockIndex;
+BlockMap& mapInvalidateBlockIndex = g_chainstate.mapInvalidateBlockIndex;
 CChain& chainActive = g_chainstate.chainActive;
 CBlockIndex *pindexBestHeader = nullptr;
 CWaitableCriticalSection csBestBlock;
@@ -2704,6 +2706,7 @@ bool CChainState::InvalidateBlock(CValidationState& state, const CChainParams& c
 
     bool pindex_was_in_chain = false;
     CBlockIndex *invalid_walk_tip = chainActive.Tip();
+    mapInvalidateBlockIndex[*pindex->phashBlock] = invalid_walk_tip;
 
     DisconnectedBlockTransactions disconnectpool;
     while (chainActive.Contains(pindex)) {
@@ -2760,22 +2763,41 @@ bool CChainState::ResetBlockFailureFlags(CBlockIndex *pindex) {
 
     int nHeight = pindex->nHeight;
 
-    // Remove the invalidity flag from this block and all its descendants.
-    BlockMap::iterator it = mapBlockIndex.begin();
-    while (it != mapBlockIndex.end()) {
-        if (!it->second->IsValid() && it->second->GetAncestor(nHeight) == pindex) {
-            it->second->nStatus &= ~BLOCK_FAILED_MASK;
-            setDirtyBlockIndex.insert(it->second);
-            if (it->second->IsValid(BLOCK_VALID_TRANSACTIONS) && it->second->nChainTx && setBlockIndexCandidates.value_comp()(chainActive.Tip(), it->second)) {
-                setBlockIndexCandidates.insert(it->second);
+    /* Remove the invalidity flag from this block and all its descendants up to
+     * the next manually invalidated block
+     */
+    if (mapInvalidateBlockIndex.find(*pindex->phashBlock) != mapInvalidateBlockIndex.end()) {
+        auto startIndex = mapInvalidateBlockIndex[*pindex->phashBlock]; while (startIndex != pindex) {
+            startIndex->nStatus &= ~BLOCK_FAILED_MASK;
+            setDirtyBlockIndex.insert(startIndex);
+            if (startIndex->IsValid(BLOCK_VALID_TRANSACTIONS) && startIndex->nChainTx && setBlockIndexCandidates.value_comp()(chainActive.Tip(), startIndex)) {
+                setBlockIndexCandidates.insert(startIndex);
             }
-            if (it->second == pindexBestInvalid) {
+            if (startIndex == pindexBestInvalid) {
                 // Reset invalid block marker if it was pointing to one of those.
                 pindexBestInvalid = nullptr;
             }
-            g_failed_blocks.erase(it->second);
+            g_failed_blocks.erase(startIndex);
+            startIndex = startIndex->pprev;
         }
-        it++;
+    } else {
+        // Remove the invalidity flag from this block and all its descendants.
+        BlockMap::iterator it = mapBlockIndex.begin();
+        while (it != mapBlockIndex.end()) {
+            if (!it->second->IsValid() && it->second->GetAncestor(nHeight) == pindex) {
+                it->second->nStatus &= ~BLOCK_FAILED_MASK;
+                setDirtyBlockIndex.insert(it->second);
+                if (it->second->IsValid(BLOCK_VALID_TRANSACTIONS) && it->second->nChainTx && setBlockIndexCandidates.value_comp()(chainActive.Tip(), it->second)) {
+                    setBlockIndexCandidates.insert(it->second);
+                }
+                if (it->second == pindexBestInvalid) {
+                    // Reset invalid block marker if it was pointing to one of those.
+                    pindexBestInvalid = nullptr;
+                }
+                g_failed_blocks.erase(it->second);
+            }
+            it++;
+        }
     }
 
     // Remove the invalidity flag from all ancestors too.
