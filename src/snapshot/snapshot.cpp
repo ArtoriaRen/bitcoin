@@ -107,7 +107,9 @@ bool Snapshot::verifyChunk(const uint32_t chunkId, CDataStream& vRecv) const {
 }
 
 int Snapshot::getLastSnapshotBlockHeight() const{
-    return snpMetadata.currentChainLength - snpMetadata.currentChainLength % period;
+    //return snpMetadata.currentChainLength - snpMetadata.currentChainLength % period;
+    /* in our test, we specify the snapshot block height from conf file */
+    return snpMetadata.height;
 }
 
 uint256 Snapshot::takeSnapshot() {

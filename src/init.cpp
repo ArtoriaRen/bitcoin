@@ -1522,8 +1522,11 @@ bool AppInitMain()
                 /* create snapshot object*/
                 psnapshot.reset(new Snapshot());
                 psnapshot->initialLoad(); // load from pcoinsdbview
-                if (pessimistic)
+		pessimistic = gArgs.GetBoolArg("-pessimistic", false);
+		/* only the new peer must set snapshotblkheight. */
+                if (pessimistic && gArgs.IsArgSet("-snapshotblkheight")) {
                     psnapshot->snpMetadata.height = gArgs.GetArg("-snapshotblkheight", 1);
+		}
 
 
                 if (!fReset) {
@@ -1764,6 +1767,5 @@ bool AppInitMain()
     StartWallets(scheduler);
 #endif
 
-    pessimistic = gArgs.GetBoolArg("-pessimistic", false);
     return true;
 }

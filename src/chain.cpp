@@ -110,7 +110,7 @@ const CBlockIndex* CBlockIndex::GetAncestor(int height) const
             // Only follow pskip if pprev->pskip isn't better than pskip->pprev.
             pindexWalk = pindexWalk->pskip;
             heightWalk = heightSkip;
-        } else if (pindexWalk->pprev == nullptr && psnapshot->IsNewPeerWithValidSnapshot()) {
+        } else if (!pessimistic && pindexWalk->pprev == nullptr && psnapshot->IsNewPeerWithValidSnapshot()) {
 	    /* We are a new peer and pindexWalk is trying to access block eariler than the 
 	     * snapshot block. */
 	    break;
@@ -133,7 +133,7 @@ void CBlockIndex::BuildSkip()
 {
     if (pprev) {
 	int jumpToHeight = GetSkipHeight(nHeight);
-	if (psnapshot && nHeight > psnapshot->snpMetadata.height) {
+	if (!pessimistic && psnapshot && nHeight > psnapshot->snpMetadata.height) {
 	    /* do not go back further than the snapshot block. */
 	    jumpToHeight  = std::max(jumpToHeight, psnapshot->snpMetadata.height);
 	}
