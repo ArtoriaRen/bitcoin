@@ -134,9 +134,11 @@ uint256 Snapshot::takeSnapshot() {
 
 
 void Snapshot::applySnapshot() const {
+    CDataStream ds(SER_NETWORK, PROTOCOL_VERSION);
     for (auto& chunk : vSerializedChunks) {
-        CDataStream ds(SER_NETWORK, PROTOCOL_VERSION);
         ds.write(chunk.data(), chunk.size());
+    }
+    try {
         /* Unserialize UTXOs and add them to the chainstate database. */
         while (!ds.eof()) {
             COutPoint key;
@@ -145,6 +147,13 @@ void Snapshot::applySnapshot() const {
             ds >> coin;
             pcoinsTip->AddCoin(std::move(key), std::move(coin), false);
             nReceivedUTXOCnt++;
+        }
+    }
+    catch (const std::ios_base::failure& e)
+    {
+        if (strstr(e.what(), "end of data"))
+        {
+            LogPrint(BCLog::NET, "%s: Exception '%s' caught. Failed to deserialize combined chunks. \n", __func__, e.what());
         }
     }
 }

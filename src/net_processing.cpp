@@ -2721,25 +2721,20 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         bool fNewBlock = false;
         if (mapBlockIndex[hash]->nHeight == psnapshot->snpMetadata.height) {
             if (ProcessSnapshotBlock(chainparams, pblock, true, &fNewBlock)) {
-                /* -------verify snapshot header data.------- */
+                /* -------verify snapshot hash.------- */
                 uint256 snapshotBlockHash = psnapshot->snpMetadata.snapshotBlockHash;
                 /* global variable mapBlockIndex have been updated just before
                  * this peer downloading snapshot block. */
                 assert(mapBlockIndex.find(snapshotBlockHash) != mapBlockIndex.end());
-                /* check snapshot block height. */
-                CBlockIndex* pindex = mapBlockIndex[snapshotBlockHash];
-                if (pindex->nHeight != psnapshot->snpMetadata.height) {
-                    LogPrintf("According to the header chain, last snapshot block height = %d, but the metadata from an old peer says the height = %d. Should try to download the metadata with another peer.\n", pindex->nHeight, psnapshot->snpMetadata.height);
-                    return false;
-                }
 
-                /* check chunk hashes using the snapshot hash stored in the snapshot block. */
+                /* check snapshot hash from peers is the same as the one stored in 
+                 * the snapshot block. */
                 CBlock block;
-                if (!ReadBlockFromDisk(block, pindex, Params().GetConsensus())) {
+                if (!ReadBlockFromDisk(block, mapBlockIndex[snapshotBlockHash], Params().GetConsensus())) {
                     std::cerr << "Block not found on disk" << std::endl;
                 }
                 CScript coinbase = block.vtx[0]->vin[0].scriptSig;
-                /* Read the last 256 bit as coinbase. 
+                /* Should read the last 256 bit as coinbase. 
                 * However, as we cannot really change historical block content in 
                 * our test, the coinbase variable does not really include snapshot hash,
                 * so we extract some data from the coinbase field but have to use the
@@ -2748,13 +2743,13 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                 int dummy_snapshot_hash = coinbase.front();
                 LogPrintf("first int in coinbase = %d.\n", dummy_snapshot_hash); 
                 //		if (!psnapshot->snpMetadata.snapshotHash != <dummy_snapshot_hash>) {
-                //		   LogPrintf("chunk hashes do not match the snapshot hash. Should try to download the metadata with another peer.");
+                //		   LogPrintf("snapshot hash from peers is the same as the one stored in the snapshot block.");
                 //		}
                 gettimeofday(&syncEndTime , NULL);
                 unsigned long snpBlockDowloadTime = (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000;
                 syncStartTime = syncEndTime;
 
-                /* update global variable and chainstate database. */
+                /* update chainstate database. */
                 psnapshot->applySnapshot();
                 /* set the snapshot block as the chain tip. */
                 mapBlockIndex[snapshotBlockHash]->nChainTx = psnapshot->snpMetadata.chainTx;
@@ -2787,6 +2782,31 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             std::vector<CNodeStats> vstats;
             g_connman->GetNodeStats(vstats);
             LogPrintf("Tail block downloading done. Ending height = %d. Time = %d. Downloading tail blocks takes blocks takes %lu ms. Totally sent %lu bytes, received %lu bytes.\n", chainActive.Tip()->nHeight, time(NULL), (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000, vstats[0].nSendBytes, vstats[0].nRecvBytes);
+
+            /* should count confirmation blocks for all different snapshot hashes
+             * in blocks following the latest pulse block within the time window.
+             * As we cannot alter history blocks, we emulate time consumption of 
+             * this step by reading an int from the coinbase field of 10 tail 
+             * blocks.
+             */
+            int nConfirmation = 0;
+            int dummy_snapshot_hash_in_snapshotblk = 0;
+            for (int height = psnapshot->snpMetadata.height; height < psnapshot->snpMetadata.height + 10; height++) {
+                CBlock block;
+                if (!ReadBlockFromDisk(block, chainActive[height], Params().GetConsensus())) {
+                    std::cerr << "Block not found on disk" << std::endl;
+                }
+                CScript coinbase = block.vtx[0]->vin[0].scriptSig;
+                if (height == psnapshot->snpMetadata.height) {
+                    dummy_snapshot_hash_in_snapshotblk = coinbase.front();
+                } else {
+                    int dummy_snapshot_hash = coinbase.front();
+                    if (dummy_snapshot_hash != dummy_snapshot_hash_in_snapshotblk)
+                        LogPrintf("dummy_snapshot_hash in block %d is %d.\n", height,dummy_snapshot_hash);
+                }
+                nConfirmation++;
+            }
+            LogPrintf("nConfirmation = %d \n", nConfirmation);
         }
 
     }
