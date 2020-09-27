@@ -1306,10 +1306,12 @@ void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txund
             txundo.vprevout.emplace_back();
             bool is_spent = inputs.SpendCoin(txin.prevout, &txundo.vprevout.back());
             assert(is_spent);
+            psnapshot->spendCoin(txin.prevout, txundo.vprevout.back());
         }
     }
     // add outputs
     AddCoins(inputs, tx, nHeight);
+    psnapshot->addCoins(tx);
 }
 
 void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, int nHeight)
@@ -2360,7 +2362,7 @@ bool CChainState::ConnectTip(CValidationState& state, const CChainParams& chainp
         }
         nTime3 = GetTimeMicros(); nTimeConnectTotal += nTime3 - nTime2;
         LogPrint(BCLog::BENCH, "  - Connect total: %.2fms [%.2fs (%.2fms/blk)]\n", (nTime3 - nTime2) * MILLI, nTimeConnectTotal * MICRO, nTimeConnectTotal * MILLI / nBlocksTotal);
-	psnapshot->updateCoins(view.getCachedCoins());
+//	psnapshot->updateCoins(view.getCachedCoins());
         bool flushed = view.Flush();
         assert(flushed);
     }

@@ -59,10 +59,12 @@ public:
 
 class Snapshot{
 private:
-    std::vector<COutPoint> unspent;
-    std::vector<COutPoint> added;
+    std::unordered_set<COutPoint, SaltedOutpointHasher> unspent;
     std::unordered_map<COutPoint, Coin, SaltedOutpointHasher> spent;
-    std::vector<COutPoint> vOutpoint;
+    /* memory-only. Can be rebuilt from unspent and the chainstate database. */
+    std::unordered_set<COutPoint, SaltedOutpointHasher> added;
+    /* memory-only. Can be rebuilt from unspent and spent. */
+    std::deque<COutPoint> vOutpoint;
 //    std::deque<CBlockHeader> headerChain;
     uint32_t period;
 public:
@@ -99,8 +101,12 @@ public:
     /* create a snapshot at the current block height. */
     uint256 takeSnapshot();
     
-    /* the original updateCoin plus update the unspent and spent sets. */
-    void updateCoins(const CCoinsMap& mapCoins);
+    /* if the outpoint is found in the unspent set, move it to the spent set.
+     * Otherwise, just remove it from the added set.*/
+    void spendCoin(const COutPoint& outpoint, const Coin& coin);
+
+    /* add coin to the added set */
+    void addCoins(const CTransaction& tx);
 
     /* add UTXOs in the chunk to the chainstate database. */
     void applyChunk(CDataStream& vRecv) const;
