@@ -2756,7 +2756,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                 chainActive.SetTip(mapBlockIndex[snapshotBlockHash]);
                 pcoinsTip->SetBestBlock(snapshotBlockHash);
                 gettimeofday(&syncEndTime , NULL);
-                LogPrintf("coinPrune. Snapshot block download done. height = %d. Time = %d. Snapshot block downloading takes %lu ms. Applying snapshot takes %lu ms. chainstate database now has %d coins. start to download tail blocks. \n", mapBlockIndex[hash]->nHeight, time(NULL), snpBlockDowloadTime, (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000, psnapshot->nReceivedUTXOCnt);
+                std::vector<CNodeStats> vstats;
+                g_connman->GetNodeStats(vstats);
+                LogPrintf("coinPrune. Snapshot block download done. height = %d. Time = %d. Snapshot block downloading takes %lu ms. Applying snapshot takes %lu ms. chainstate database now has %d coins. sent %lu bytes, received %lu bytes. start to download tail blocks. \n", mapBlockIndex[hash]->nHeight, time(NULL), snpBlockDowloadTime, (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000, psnapshot->nReceivedUTXOCnt, vstats[0].nSendBytes, vstats[0].nRecvBytes);
                 syncStartTime = syncEndTime;
                 /* as we already downloaded the headers of tail blocks 
                  * when we downloading the header chain, we just need to 
@@ -2776,34 +2778,20 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             mapBlockSource.erase(pblock->GetHash());
         }
 
+        /* should count confirmation blocks for all different snapshot hashes
+         * in blocks following the latest pulse block within the time window.
+         * As we cannot alter history blocks, we emulate time consumption of 
+         * this step by reading an int from the coinbase field of 10 
+         * (the window size) tail blocks.
+         */
+        if (mapBlockIndex[hash]->nHeight > psnapshot->snpMetadata.height && mapBlockIndex[hash]->nHeight < psnapshot->snpMetadata.height + 10) {
+            CScript coinbase = pblock->vtx[0]->vin[0].scriptSig;
+            int dummy_snapshot_hash = coinbase.front();
+            LogPrintf("dummy_snapshot_hash in block %d is %d.\n", mapBlockIndex[hash]->nHeight, dummy_snapshot_hash);
+        }
+
         if (mapBlockIndex[hash]->nHeight == pfrom->nStartingHeight) {
             /* We have finished downloading all tail blocks. */
-
-            /* should count confirmation blocks for all different snapshot hashes
-             * in blocks following the latest pulse block within the time window.
-             * As we cannot alter history blocks, we emulate time consumption of 
-             * this step by reading an int from the coinbase field of 10 tail 
-             * blocks.
-             */
-            int nConfirmation = 0;
-            int dummy_snapshot_hash_in_snapshotblk = 0;
-            for (int height = psnapshot->snpMetadata.height; height < psnapshot->snpMetadata.height + 10; height++) {
-                CBlock block;
-                if (!ReadBlockFromDisk(block, chainActive[height], Params().GetConsensus())) {
-                    std::cerr << "Block not found on disk" << std::endl;
-                }
-                CScript coinbase = block.vtx[0]->vin[0].scriptSig;
-                if (height == psnapshot->snpMetadata.height) {
-                    dummy_snapshot_hash_in_snapshotblk = coinbase.front();
-                } else {
-                    int dummy_snapshot_hash = coinbase.front();
-                    if (dummy_snapshot_hash != dummy_snapshot_hash_in_snapshotblk)
-                        LogPrintf("dummy_snapshot_hash in block %d is %d.\n", height,dummy_snapshot_hash);
-                }
-                nConfirmation++;
-            }
-            LogPrintf("nConfirmation = %d \n", nConfirmation);
-
             gettimeofday(&syncEndTime , NULL);
             std::vector<CNodeStats> vstats;
             g_connman->GetNodeStats(vstats);
