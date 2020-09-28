@@ -3176,8 +3176,15 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationSta
     }
 
     // Check timestamp against prev
-    if (block.GetBlockTime() <= pindexPrev->GetMedianTimePast())
-        return state.Invalid(false, REJECT_INVALID, "time-too-old", "block's timestamp is too early");
+    if (!pessimistic && pindexPrev->nHeight - psnapshot->snpMetadata.height + 1 < nMedianTimeSpan) {
+        /* this block is too close to the snapshot block, so we do not have enough many
+         * pindex. Use the nTime in snapshot metadata instead. */
+        if (block.GetBlockTime() <= psnapshot->GetMedianTimePast(pindexPrev))
+            return state.Invalid(false, REJECT_INVALID, "time-too-old", "block's timestamp is too early");
+    } else {
+        if (block.GetBlockTime() <= pindexPrev->GetMedianTimePast())
+            return state.Invalid(false, REJECT_INVALID, "time-too-old", "block's timestamp is too early");
+    }
 
     // Check timestamp
     if (block.GetBlockTime() > nAdjustedTime + MAX_FUTURE_BLOCK_TIME)

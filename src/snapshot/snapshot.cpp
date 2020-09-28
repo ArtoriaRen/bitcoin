@@ -23,7 +23,8 @@ uint32_t CHUNK_SIZE = 50000; // limit the chunks msg size below 4M msg limit.
 uint256 SnapshotMetadata::getSnapshotBlockInfoHash() const {
     CHash256 hasher; 	
     uint256 hash;
-    hasher.Write((const unsigned char*)&blockHeader.nVersion, sizeof(blockHeader.nVersion))
+    hasher.Write((const unsigned char*)&currentChainLength, sizeof(currentChainLength))
+        .Write((const unsigned char*)&blockHeader.nVersion, sizeof(blockHeader.nVersion))
 	    .Write(blockHeader.hashPrevBlock.begin(), blockHeader.hashPrevBlock.size())
 	    .Write(blockHeader.hashMerkleRoot.begin(), blockHeader.hashMerkleRoot.size())
 	    .Write((const unsigned char*)&blockHeader.nTime, sizeof(blockHeader.nTime))
@@ -32,6 +33,8 @@ uint256 SnapshotMetadata::getSnapshotBlockInfoHash() const {
 	    .Write((const unsigned char*)&height, sizeof(height))
 	    .Write((const unsigned char*)&timeMax, sizeof(timeMax))
 	    .Write(chainWork.begin(), chainWork.size())
+	    .Write((const unsigned char*)&nTimeLastDifficultyAdjustmentBlock, sizeof(nTimeLastDifficultyAdjustmentBlock))
+	    .Write((const unsigned char*)&nTimeLastTenBlocks, (nMedianTimeSpan - 1) * sizeof(nTimeLastTenBlocks[0]))
 	    .Write((const unsigned char*)&chainTx, sizeof(chainTx));
     hasher.Finalize((unsigned char*)&hash);
     return hash;
@@ -161,6 +164,12 @@ uint256 Snapshot::takeSnapshot() {
 	uint32_t lastDifficultyAdjustmentBlockHeight = snpMetadata.height - snpMetadata.height % Params().GetConsensus().DifficultyAdjustmentInterval();
 //	std::cout << "last difficulty adjustment height = " << lastDifficultyAdjustmentBlockHeight << std::endl;
         snpMetadata.nTimeLastDifficultyAdjustmentBlock = chainActive[lastDifficultyAdjustmentBlockHeight ]->nTime;
+        const CBlockIndex* pindex = chainActive.Tip();
+        pindex = pindex->pprev; // start with the predecessor of the snapshot block
+        for (int i = nMedianTimeSpan - 2 ; i > 0 ; i--, pindex = pindex->pprev) {
+            snpMetadata.nTimeLastTenBlocks[i] = pindex->nTime;
+        }
+        
         snpMetadata.chainTx = chainActive.Tip()->nChainTx;
         uint256 chunkMerkleRoot = ComputeMerkleRoot(leaves, NULL);   
         uint256 snapshotBlockInfoHash = snpMetadata.getSnapshotBlockInfoHash();
@@ -205,6 +214,27 @@ bool Snapshot::IsNewPeerWithValidSnapshot() const {
     uint256 snapshotBlockHash = snpMetadata.blockHeader.GetHash();
     return mapBlockIndex.find(snapshotBlockHash) != mapBlockIndex.end() &&
 		mapBlockIndex[snapshotBlockHash]->pprev == nullptr;
+}
+
+int64_t Snapshot::GetMedianTimePast(const CBlockIndex* pindexStart) const
+{
+    int64_t pmedian[nMedianTimeSpan];
+    int64_t* pbegin = &pmedian[nMedianTimeSpan];
+    int64_t* pend = &pmedian[nMedianTimeSpan];
+
+    int nAvailableIndex = pindexStart->nHeight - snpMetadata.height + 1;
+    const CBlockIndex* pindex = pindexStart;
+    for (int i = 0; i < nAvailableIndex; i++, pindex = pindex->pprev) {
+        *(--pbegin) = pindex->GetBlockTime();
+//        std::cout << " pindex->height = " << pindex->nHeight << std::endl;
+    }
+    for (int i = 0; i < nMedianTimeSpan - nAvailableIndex; i++) {
+        *(--pbegin) = snpMetadata.nTimeLastTenBlocks[nMedianTimeSpan - 2 - i];
+//        std::cout << " index in nTimeLastTenBlocks  = " << nMedianTimeSpan - 2 - i << std::endl;
+    }
+//    std::cout << "distance between pbegin and pend = " << pend - pbegin << std::endl;
+    std::sort(pbegin, pend);
+    return pbegin[(pend - pbegin)/2];
 }
 
 std::string Snapshot::ToString() const

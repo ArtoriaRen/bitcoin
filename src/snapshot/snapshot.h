@@ -22,6 +22,7 @@
 
 extern bool pessimistic;
 extern uint32_t CHUNK_SIZE;
+constexpr int nMedianTimeSpan = 11; // consistent with nMedianTimeSpan in chain.h 
 
 class SnapshotMetadata{
 public:
@@ -34,6 +35,7 @@ public:
     unsigned int timeMax; // Maximum nTime in the chain up to and including this block.
     uint256 chainWork; // Total amount of work (expected number of hashes) in the chain up to and including this block
     uint32_t nTimeLastDifficultyAdjustmentBlock; // used to calculate future PoW difficulty.
+    uint32_t nTimeLastTenBlocks[nMedianTimeSpan - 1]; // used to verify new blocks' timestamps (less than median of last 11 blocks' nTime)
     unsigned int chainTx; //cannot be obtained from a header chain.
 
     /* chunk hashes */
@@ -50,6 +52,9 @@ public:
         READWRITE(timeMax);
         READWRITE(chainWork);
         READWRITE(nTimeLastDifficultyAdjustmentBlock);
+        for (int i = 0; i < nMedianTimeSpan - 1; i++) {
+            READWRITE(nTimeLastTenBlocks[i]);
+        }
         READWRITE(chainTx);
         READWRITE(vChunkHash);
     }
@@ -120,6 +125,8 @@ public:
      * of the snapshot block index is nullptr. 
      */
     bool IsNewPeerWithValidSnapshot() const;
+
+    int64_t GetMedianTimePast(const CBlockIndex* pindexStart) const;
 
     std::string ToString() const;
     void Write2File() const;
