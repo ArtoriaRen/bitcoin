@@ -2816,7 +2816,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	if (pessimistic && mapBlockIndex[hash]->nHeight == psnapshot->getLastSnapshotBlockHeight()) {
 	    if (ProcessSnapshotBlock(chainparams, pblock, true, &fNewBlock)) {
 		gettimeofday(&syncEndTime , NULL);
-		LogPrintf("snapshot block download done. height = %d. Time = %d. takes %lu milliseconds. start to download the snapshot. \n", mapBlockIndex[hash]->nHeight, time(NULL), (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000);
+		std::vector<CNodeStats> vstats;
+		g_connman->GetNodeStats(vstats);
+		LogPrintf("snapshot block download done. height = %d. Time = %d. takes %lu milliseconds. sent %lu bytes, received %lu bytes. start to download the snapshot. \n", mapBlockIndex[hash]->nHeight, time(NULL), (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000, vstats[0].nSendBytes, vstats[0].nRecvBytes);
 		syncStartTime = syncEndTime;
 		connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GET_SNAPSHOT_INFO));
 	    } else {
