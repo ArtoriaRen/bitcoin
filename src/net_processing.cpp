@@ -493,7 +493,7 @@ void FindNextBlocksToDownload(NodeId nodeid, unsigned int count, std::vector<con
     /* if pindexLastCommonBlock is the snapshot block, it must be common, so no need
      * to walk back more blocks. 
      */
-    if(*state->pindexLastCommonBlock->phashBlock != psnapshot->snpMetadata.blockHeader.GetHash()) {
+    if(state->pindexLastCommonBlock != chainActive[psnapshot->snpMetadata.height]) {
         // If the peer reorganized, our previous pindexLastCommonBlock may not be an ancestor
         // of its current tip anymore. Go back enough to fix that.
         state->pindexLastCommonBlock = LastCommonAncestor(state->pindexLastCommonBlock, state->pindexBestKnownBlock);
@@ -1413,25 +1413,27 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, const std::ve
             // Headers message had its maximum size; the peer may have more headers.
             // TODO: optimize: if pindexLast is an ancestor of chainActive.Tip or pindexBestHeader, continue
             // from there instead.
+//            gettimeofday(&syncEndTime , NULL);
+//            LogPrintf("%d-th %d headers takes %d ms.\n", pindexLast->nHeight/MAX_HEADERS_RESULTS, MAX_HEADERS_RESULTS, (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000);
             LogPrint(BCLog::NET, "more getheaders (%d) to end to peer=%d (startheight:%d)\n", pindexLast->nHeight, pfrom->GetId(), pfrom->nStartingHeight);
             connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GETHEADERS, chainActive.GetLocator(pindexLast), uint256()));
         } else {
-	    if (pessimistic) {
-		/* header chain downloading done. */
-		gettimeofday(&syncEndTime , NULL);
-		LogPrintf("header chain downloading done. Ending height = %d. Time = %d. syncing takes %lu milliseconds. start to download the snapshot block body. \n", pindexLast->nHeight, time(NULL), (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000);
-		syncStartTime = syncEndTime;
-		psnapshot->snpMetadata.currentChainLength = pindexLast->nHeight;
-        /* For testing convinience, we pass in the snapshot block height from the configuration file. The assignment occurs in the init.cpp file. */
-		//psnapshot->snpMetadata.height = psnapshot->getLastSnapshotBlockHeight();
-		const CBlockIndex *pindex = pindexLast;
-		for (int i = 0; i < pindexLast->nHeight - psnapshot->snpMetadata.height; i++) {
-		    pindex = pindex->pprev;
-		}
-		uint32_t nFetchFlags = GetFetchFlags(pfrom);
-		LogPrint(BCLog::NET, "Requesting snapshot block (height = %d) peer=%d\n", psnapshot->snpMetadata.height, pfrom->GetId());
-		connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GETDATA, std::vector<CInv>(1, CInv(MSG_BLOCK | nFetchFlags, pindex->GetBlockHash()))));
-	    }
+            if (pessimistic) {
+                /* header chain downloading done. */
+                gettimeofday(&syncEndTime , NULL);
+                LogPrintf("header chain downloading done. Ending height = %d. Time = %d. syncing takes %lu milliseconds. start to download the snapshot block body. \n", pindexLast->nHeight, time(NULL), (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000);
+                syncStartTime = syncEndTime;
+                psnapshot->snpMetadata.currentChainLength = pindexLast->nHeight;
+                /* For testing convinience, we pass in the snapshot block height from the configuration file. The assignment occurs in the init.cpp file. */
+                //psnapshot->snpMetadata.height = psnapshot->getLastSnapshotBlockHeight();
+                const CBlockIndex *pindex = pindexLast;
+                for (int i = 0; i < pindexLast->nHeight - psnapshot->snpMetadata.height; i++) {
+                    pindex = pindex->pprev;
+                }
+                uint32_t nFetchFlags = GetFetchFlags(pfrom);
+                LogPrint(BCLog::NET, "Requesting snapshot block (height = %d) peer=%d\n", psnapshot->snpMetadata.height, pfrom->GetId());
+                connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GETDATA, std::vector<CInv>(1, CInv(MSG_BLOCK | nFetchFlags, pindex->GetBlockHash()))));
+            }
 	}
 
         bool fCanDirectFetch = CanDirectFetch(chainparams.GetConsensus());
@@ -2071,9 +2073,10 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
     else if (strCommand == NetMsgType::CHUNK)
     {
-	/* TODO: must verify chunk hash first, then accept the chunk to snapshot and  pcoinsTip.*/
-	uint32_t chunkId;
-	vRecv >> chunkId;
+        uint32_t chunkId;
+        vRecv >> chunkId;
+//        gettimeofday(&syncEndTime , NULL);
+//        LogPrintf("chunk %d takes %d ms.\n", chunkId, (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000);
         if(psnapshot->verifyChunk(chunkId, vRecv)) {
 	    gettimeofday(&syncEndTime , NULL);
 	    psnapshot->snpDownloadTime += (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000;
@@ -3453,22 +3456,22 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
                 //LogPrint(BCLog::NET, "initial getheaders (%d) to peer=%d (startheight:%d)\n", pindexStart->nHeight, pto->GetId(), pto->nStartingHeight);
                 //connman->PushMessage(pto, msgMaker.Make(NetMsgType::GETHEADERS, chainActive.GetLocator(pindexStart), uint256()));
 
-		/* Only ask for snapshot if we are a new peer.*/
-		if (chainActive.Height() == 0) {
-		    /* we have no more block other than the genesis, thus a new peer,
-		     * ask for system state from peer.
-		     */
-		    if (pessimistic) {
-			LogPrintf("pessimistic sycn. initial getheaders (%d) to peer=%d (startheight:%d)\n", pindexStart->nHeight, pto->GetId(), pto->nStartingHeight);
-			gettimeofday(&syncStartTime, NULL);
-			connman->PushMessage(pto, msgMaker.Make(NetMsgType::GETHEADERS, chainActive.GetLocator(pindexStart), uint256()));
-		    } else {
-			LogPrintf("optimistic sync. initial get_snapshot_info (%d) to peer=%d (startheight:%d). Time = %d \n", pindexStart->nHeight, pto->GetId(), pto->nStartingHeight, time(NULL));
-			//syncStartTime = time(NULL);
-			gettimeofday(&syncStartTime, NULL);
-			connman->PushMessage(pto, msgMaker.Make(NetMsgType::GET_SNAPSHOT_INFO));
-		    }
-		}
+                /* Only ask for snapshot if we are a new peer.*/
+                if (chainActive.Height() == 0) {
+                    /* we have no more block other than the genesis, thus a new peer,
+                     * ask for system state from peer.
+                     */
+                    if (pessimistic) {
+                        LogPrintf("pessimistic sycn. initial getheaders (%d) to peer=%d (startheight:%d)\n", pindexStart->nHeight, pto->GetId(), pto->nStartingHeight);
+                        gettimeofday(&syncStartTime, NULL);
+                        connman->PushMessage(pto, msgMaker.Make(NetMsgType::GETHEADERS, chainActive.GetLocator(pindexStart), uint256()));
+                        } else {
+                        LogPrintf("optimistic sync. initial get_snapshot_info (%d) to peer=%d (startheight:%d). Time = %d \n", pindexStart->nHeight, pto->GetId(), pto->nStartingHeight, time(NULL));
+                        //syncStartTime = time(NULL);
+                        gettimeofday(&syncStartTime, NULL);
+                        connman->PushMessage(pto, msgMaker.Make(NetMsgType::GET_SNAPSHOT_INFO));
+                    }
+                }
             }
         }
 
