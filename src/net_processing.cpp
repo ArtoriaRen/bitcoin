@@ -2778,10 +2778,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
         if (mapBlockIndex[hash]->nHeight == pfrom->nStartingHeight) {
             /* We have finished downloading all tail blocks. */
-            gettimeofday(&syncEndTime , NULL);
-            std::vector<CNodeStats> vstats;
-            g_connman->GetNodeStats(vstats);
-            LogPrintf("Tail block downloading done. Ending height = %d. Time = %d. Downloading tail blocks takes blocks takes %lu ms. Totally sent %lu bytes, received %lu bytes.\n", chainActive.Tip()->nHeight, time(NULL), (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000, vstats[0].nSendBytes, vstats[0].nRecvBytes);
 
             /* should count confirmation blocks for all different snapshot hashes
              * in blocks following the latest pulse block within the time window.
@@ -2807,6 +2803,11 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                 nConfirmation++;
             }
             LogPrintf("nConfirmation = %d \n", nConfirmation);
+
+            gettimeofday(&syncEndTime , NULL);
+            std::vector<CNodeStats> vstats;
+            g_connman->GetNodeStats(vstats);
+            LogPrintf("Tail block downloading and snapshot hash confirmation check done. Ending height = %d. Time = %d. Downloading tail blocks takes blocks takes %lu ms. Totally sent %lu bytes, received %lu bytes.\n", chainActive.Tip()->nHeight, time(NULL), (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000, vstats[0].nSendBytes, vstats[0].nRecvBytes);
         }
 
     }
