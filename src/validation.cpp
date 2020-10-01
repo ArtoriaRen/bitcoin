@@ -222,6 +222,13 @@ int syncStartTime = 0;
 int syncEndTime = 0;
 int syncToHeight = 50;
 
+struct timeval startTimeProcessBlock;
+struct timeval startTime;
+struct timeval endTime;
+
+unsigned long txVerifyDuration = 0; // in us
+unsigned long updateDBDuration = 0; // in us
+
 uint256 hashAssumeValid;
 arith_uint256 nMinimumChainWork;
 
@@ -1906,6 +1913,7 @@ bool CChainState::ConnectBlock(const CBlock& block, CValidationState& state, CBl
 
         nInputs += tx.vin.size();
 
+        gettimeofday(&startTime, NULL);
         if (!tx.IsCoinBase())
         {
             CAmount txfee = 0;
@@ -1951,12 +1959,18 @@ bool CChainState::ConnectBlock(const CBlock& block, CValidationState& state, CBl
                     tx.GetHash().ToString(), FormatStateMessage(state));
             control.Add(vChecks);
         }
+        gettimeofday(&endTime, NULL);
+        
+        txVerifyDuration += (endTime.tv_sec - startTime.tv_sec) * 1000000 + (endTime.tv_usec - startTime.tv_usec);
 
+        gettimeofday(&startTime, NULL);
         CTxUndo undoDummy;
         if (i > 0) {
             blockundo.vtxundo.push_back(CTxUndo());
         }
         UpdateCoins(tx, view, i == 0 ? undoDummy : blockundo.vtxundo.back(), pindex->nHeight);
+        gettimeofday(&endTime, NULL);
+        updateDBDuration += (endTime.tv_sec - startTime.tv_sec) * 1000000 + (endTime.tv_usec - startTime.tv_usec);
     }
     int64_t nTime3 = GetTimeMicros(); nTimeConnect += nTime3 - nTime2;
     LogPrint(BCLog::BENCH, "      - Connect %u transactions: %.2fms (%.3fms/tx, %.3fms/txin) [%.2fs (%.2fms/blk)]\n", (unsigned)block.vtx.size(), MILLI * (nTime3 - nTime2), MILLI * (nTime3 - nTime2) / block.vtx.size(), nInputs <= 1 ? 0 : MILLI * (nTime3 - nTime2) / (nInputs-1), nTimeConnect * MICRO, nTimeConnect * MILLI / nBlocksTotal);

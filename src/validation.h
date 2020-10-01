@@ -185,6 +185,12 @@ extern bool fEnableReplacement;
 extern int syncStartTime;
 extern int syncEndTime;
 extern int syncToHeight;
+extern struct timeval startTimeProcessBlock;
+extern struct timeval startTime;
+extern struct timeval endTime;
+
+extern unsigned long txVerifyDuration;
+extern unsigned long updateDBDuration;
 
 /** Block hash whose ancestors we will assume to have valid scripts without checking them. */
 extern uint256 hashAssumeValid;

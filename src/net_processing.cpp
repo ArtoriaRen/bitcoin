@@ -2639,7 +2639,12 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             mapBlockSource.emplace(hash, std::make_pair(pfrom->GetId(), true));
         }
         bool fNewBlock = false;
+        gettimeofday(&startTimeProcessBlock, NULL);
         ProcessNewBlock(chainparams, pblock, forceProcessing, &fNewBlock);
+        gettimeofday(&endTime, NULL);
+        std::cout << " Process block " << mapBlockIndex[hash]->nHeight << " takes " << (endTime.tv_sec - startTimeProcessBlock.tv_sec) * 1000 + (endTime.tv_usec - startTimeProcessBlock.tv_usec) / 1000 << "ms. Verifying " << pblock->vtx.size() << " tx takes " << txVerifyDuration << " us. Updating DB takes " << updateDBDuration << " us." << std::endl;
+        txVerifyDuration = 0;
+        updateDBDuration = 0;
         if (fNewBlock) {
             pfrom->nLastBlockTime = GetTime();
         } else {
