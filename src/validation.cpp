@@ -2765,41 +2765,23 @@ bool CChainState::ResetBlockFailureFlags(CBlockIndex *pindex) {
 
     int nHeight = pindex->nHeight;
 
-    /* Remove the invalidity flag from this block and all its descendants up to
-     * the next manually invalidated block
-     */
-    if (mapInvalidateBlockIndex.find(*pindex->phashBlock) != mapInvalidateBlockIndex.end()) {
-        auto startIndex = mapInvalidateBlockIndex[*pindex->phashBlock]; while (startIndex != pindex) {
-            startIndex->nStatus &= ~BLOCK_FAILED_MASK;
-            setDirtyBlockIndex.insert(startIndex);
-            if (startIndex->IsValid(BLOCK_VALID_TRANSACTIONS) && startIndex->nChainTx && setBlockIndexCandidates.value_comp()(chainActive.Tip(), startIndex)) {
-                setBlockIndexCandidates.insert(startIndex);
+    /* Remove the invalidity flag from this block up to 9 descendants */
+    BlockMap::iterator it = mapBlockIndex.begin();
+    while (it != mapBlockIndex.end()) {
+        if (!it->second->IsValid() && it->second->GetAncestor(nHeight) == pindex 
+                && it->second->nHeight < nHeight + 10 ) {
+            it->second->nStatus &= ~BLOCK_FAILED_MASK;
+            setDirtyBlockIndex.insert(it->second);
+            if (it->second->IsValid(BLOCK_VALID_TRANSACTIONS) && it->second->nChainTx && setBlockIndexCandidates.value_comp()(chainActive.Tip(), it->second)) {
+                setBlockIndexCandidates.insert(it->second);
             }
-            if (startIndex == pindexBestInvalid) {
+            if (it->second == pindexBestInvalid) {
                 // Reset invalid block marker if it was pointing to one of those.
                 pindexBestInvalid = nullptr;
             }
-            g_failed_blocks.erase(startIndex);
-            startIndex = startIndex->pprev;
+            g_failed_blocks.erase(it->second);
         }
-    } else {
-        // Remove the invalidity flag from this block and all its descendants.
-        BlockMap::iterator it = mapBlockIndex.begin();
-        while (it != mapBlockIndex.end()) {
-            if (!it->second->IsValid() && it->second->GetAncestor(nHeight) == pindex) {
-                it->second->nStatus &= ~BLOCK_FAILED_MASK;
-                setDirtyBlockIndex.insert(it->second);
-                if (it->second->IsValid(BLOCK_VALID_TRANSACTIONS) && it->second->nChainTx && setBlockIndexCandidates.value_comp()(chainActive.Tip(), it->second)) {
-                    setBlockIndexCandidates.insert(it->second);
-                }
-                if (it->second == pindexBestInvalid) {
-                    // Reset invalid block marker if it was pointing to one of those.
-                    pindexBestInvalid = nullptr;
-                }
-                g_failed_blocks.erase(it->second);
-            }
-            it++;
-        }
+        it++;
     }
 
     // Remove the invalidity flag from all ancestors too.

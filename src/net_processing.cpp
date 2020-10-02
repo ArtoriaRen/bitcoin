@@ -2024,6 +2024,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    LogPrintf("first int in coinbase = %d.\n", dummy_snapshot_hash); 
 	    if (!psnapshot->verifyMetadata(tempMetadata, tempMetadata.snapshotHash)) {
 		LogPrintf("chunk hashes do not match the snapshot hash. Should try to download the metadata with another peer.");
+                return false;
 	    }
 
 	    /* accept the tempMetadata. */
@@ -2039,6 +2040,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	} else { 
 	    if (!psnapshot->verifyMetadata(tempMetadata, tempMetadata.snapshotHash)) {
 		LogPrintf("chunk hashes do not match the snapshot hash. Should try to download the metadata with another peer.");
+                return false;
 	    }
 
 	    /* accept the tempMetadata. */
