@@ -23,8 +23,7 @@ uint32_t CHUNK_SIZE = 50000; // limit the chunks msg size below 4M msg limit.
 uint256 SnapshotMetadata::getSnapshotBlockInfoHash() const {
     CHash256 hasher; 	
     uint256 hash;
-    hasher.Write((const unsigned char*)&currentChainLength, sizeof(currentChainLength))
-        .Write((const unsigned char*)&blockHeader.nVersion, sizeof(blockHeader.nVersion))
+    hasher.Write((const unsigned char*)&blockHeader.nVersion, sizeof(blockHeader.nVersion))
 	    .Write(blockHeader.hashPrevBlock.begin(), blockHeader.hashPrevBlock.size())
 	    .Write(blockHeader.hashMerkleRoot.begin(), blockHeader.hashMerkleRoot.size())
 	    .Write((const unsigned char*)&blockHeader.nTime, sizeof(blockHeader.nTime))

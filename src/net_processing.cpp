@@ -2040,7 +2040,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	} else { 
 	    if (!psnapshot->verifyMetadata(tempMetadata, tempMetadata.snapshotHash)) {
 		LogPrintf("chunk hashes do not match the snapshot hash. Should try to download the metadata with another peer.");
-                return false;
+		return false;
 	    }
 
 	    /* accept the tempMetadata. */
