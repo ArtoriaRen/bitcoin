@@ -17,7 +17,7 @@
 
 extern BlockMap& mapBlockIndex;
 
-bool pessimistic = false;
+bool pessimistic = true;
 uint32_t CHUNK_SIZE = 50000; // limit the chunks msg size below 4M msg limit.
 
 uint256 SnapshotMetadata::getSnapshotBlockInfoHash() const {

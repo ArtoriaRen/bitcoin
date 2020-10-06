@@ -1522,7 +1522,7 @@ bool AppInitMain()
                 /* create snapshot object*/
                 psnapshot.reset(new Snapshot());
                 psnapshot->initialLoad(); // load from pcoinsdbview
-		pessimistic = gArgs.GetBoolArg("-pessimistic", false);
+		pessimistic = gArgs.GetBoolArg("-pessimistic", true);
 		/* only the new peer must set snapshotblkheight. */
                 if (pessimistic && gArgs.IsArgSet("-snapshotblkheight")) {
                     psnapshot->snpMetadata.height = gArgs.GetArg("-snapshotblkheight", 1);
