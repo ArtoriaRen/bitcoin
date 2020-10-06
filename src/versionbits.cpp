@@ -4,6 +4,9 @@
 
 #include <versionbits.h>
 #include <consensus/params.h>
+#include <snapshot/snapshot.h>
+
+extern CChain& chainActive;
 
 const struct VBDeploymentInfo VersionBitsDeploymentInfo[Consensus::MAX_VERSION_BITS_DEPLOYMENTS] = {
     {
@@ -31,6 +34,9 @@ ThresholdState AbstractThresholdConditionChecker::GetStateFor(const CBlockIndex*
     if (nTimeStart == Consensus::BIP9Deployment::ALWAYS_ACTIVE) {
         return THRESHOLD_ACTIVE;
     }
+    if (!pessimistic && psnapshot && psnapshot->snpMetadata.height > 400000) {
+	return THRESHOLD_ACTIVE;
+    }
 
     // A block's state is always the same as that of the first of its period, so it is computed based on a pindexPrev whose height equals a multiple of nPeriod - 1.
     if (pindexPrev != nullptr) {
@@ -42,6 +48,11 @@ ThresholdState AbstractThresholdConditionChecker::GetStateFor(const CBlockIndex*
     while (cache.count(pindexPrev) == 0) {
         if (pindexPrev == nullptr) {
             // The genesis block is by definition defined.
+            cache[pindexPrev] = THRESHOLD_DEFINED;
+            break;
+        }
+	if (!pessimistic && pindexPrev == chainActive[psnapshot->snpMetadata.height]) {
+            /* do not go back further than the snapshot block */
             cache[pindexPrev] = THRESHOLD_DEFINED;
             break;
         }

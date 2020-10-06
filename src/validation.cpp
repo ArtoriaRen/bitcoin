@@ -2769,7 +2769,7 @@ bool CChainState::ResetBlockFailureFlags(CBlockIndex *pindex) {
     BlockMap::iterator it = mapBlockIndex.begin();
     while (it != mapBlockIndex.end()) {
         if (!it->second->IsValid() && it->second->GetAncestor(nHeight) == pindex 
-                && it->second->nHeight < nHeight + 10 ) {
+                && it->second->nHeight < nHeight + 1000) {
             it->second->nStatus &= ~BLOCK_FAILED_MASK;
             setDirtyBlockIndex.insert(it->second);
             if (it->second->IsValid(BLOCK_VALID_TRANSACTIONS) && it->second->nChainTx && setBlockIndexCandidates.value_comp()(chainActive.Tip(), it->second)) {
