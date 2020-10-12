@@ -1968,15 +1968,15 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         ProcessGetData(pfrom, chainparams.GetConsensus(), connman, interruptMsgProc);
     }
 
-    else if (strCommand == NetMsgType::GET_SNAPSHOT_INFO)
+    else if (strCommand == NetMsgType::GET_METAINFO)
     {
         psnapshot->snpMetadata.currentChainLength = chainActive.Height();
 	/* send block header of the last snapshot block.*/
-        connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::SNAPSHOT_INFO, psnapshot->snpMetadata));
+        connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::METAINFO, psnapshot->snpMetadata));
     }
     
 
-    else if (strCommand == NetMsgType::SNAPSHOT_INFO){
+    else if (strCommand == NetMsgType::METAINFO){
 	SnapshotMetadata tempMetadata;
 	vRecv >> tempMetadata;
 	/* TODO: if pessimistic, we should check if the chunk hashes can produce the 
@@ -2822,7 +2822,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		g_connman->GetNodeStats(vstats);
 		LogPrintf("snapshot block download done. height = %d. Time = %d. takes %lu milliseconds. sent %lu bytes, received %lu bytes. start to download the snapshot. \n", mapBlockIndex[hash]->nHeight, time(NULL), (syncEndTime.tv_sec - syncStartTime.tv_sec) * 1000 + (syncEndTime.tv_usec - syncStartTime.tv_usec) / 1000, vstats[0].nSendBytes, vstats[0].nRecvBytes);
 		syncStartTime = syncEndTime;
-		connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GET_SNAPSHOT_INFO));
+		connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::GET_METAINFO));
 	    } else {
 		LogPrintf("snapshot block check failed.");
 	    }
@@ -3473,7 +3473,7 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
                         LogPrintf("optimistic sync. initial get_snapshot_info (%d) to peer=%d (startheight:%d). Time = %d \n", pindexStart->nHeight, pto->GetId(), pto->nStartingHeight, time(NULL));
                         //syncStartTime = time(NULL);
                         gettimeofday(&syncStartTime, NULL);
-                        connman->PushMessage(pto, msgMaker.Make(NetMsgType::GET_SNAPSHOT_INFO));
+                        connman->PushMessage(pto, msgMaker.Make(NetMsgType::GET_METAINFO));
                     }
                 }
             }

@@ -29,7 +29,7 @@ public:
     uint256 snapshotHash; // the hash of metadata fields concatenated with the merekle root of chunk hash. 
     int currentChainLength; // the chain length used when a new peer request this snapshot. Used by optimist peer to detect longest chain switch.
 
-    /* snapshot block info */
+    /* chain state essential info */
     CBlockHeader blockHeader; // snapshot block header
     int height; // snapshot block height
     unsigned int timeMax; // Maximum nTime in the chain up to and including this block.
@@ -70,7 +70,6 @@ private:
     std::unordered_set<COutPoint, SaltedOutpointHasher> added;
     /* memory-only. Can be rebuilt from unspent and spent. */
     std::deque<COutPoint> vOutpoint;
-//    std::deque<CBlockHeader> headerChain;
     uint32_t period;
 public:
 
