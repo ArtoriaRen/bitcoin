@@ -1146,13 +1146,6 @@ void CConnman::AcceptConnection(const ListenSocket& hListenSocket) {
     {
         LOCK(cs_vNodes);
         vNodes.push_back(pnode);
-	if (pnode->addrName == clientAddrString) {
-	    g_pbft->client = pnode;
-	} else if (pnode->addrName == leaderAddrString) {
-	    g_pbft->leader = pnode;
-	} else {
-	    g_pbft->otherMembers.push_back(pnode);
-	}
     }
 }
 
@@ -1996,13 +1989,6 @@ void CConnman::OpenNetworkConnection(const CAddress& addrConnect, bool fCountFai
     {
         LOCK(cs_vNodes);
         vNodes.push_back(pnode);
-	if (pnode->addrName == clientAddrString) {
-	    g_pbft->client = pnode;
-	} else if (pnode->addrName == leaderAddrString) {
-	    g_pbft->leader = pnode;
-	} else {
-	    g_pbft->otherMembers.push_back(pnode);
-	}
     }
 }
 

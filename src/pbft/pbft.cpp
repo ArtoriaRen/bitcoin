@@ -19,7 +19,7 @@ std::string leaderAddrString;
 std::string clientAddrString;
 int32_t pbftID; 
 
-CPbft::CPbft() : groupSize(4), nFaulty(1), localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedIndex(-1), leader(nullptr), client(nullptr), privateKey(CKey()) {
+CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedIndex(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
@@ -52,9 +52,13 @@ bool CPbft::ProcessPP(CConnman* connman, CPre_prepare& ppMsg) {
     CPbftMessage pMsg = assembleMsg(ppMsg.seq);
     /* send the pMsg to other peers, including the leader. */
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-    connman->PushMessage(leader, msgMaker.Make(NetMsgType::PBFT_P, pMsg)); // the leader will not receive ppMs, so we do not check if we are the leader here.
-    for (CNode* node: otherMembers) {
-	connman->PushMessage(node, msgMaker.Make(NetMsgType::PBFT_P, pMsg));
+    int32_t start_peerID = pbftID - pbftID % groupSize;
+    int32_t end_peerID = start_peerID + groupSize;
+    for (int32_t i = start_peerID; i < end_peerID; i++) {
+	/* do not send a msg to myself. */
+	if (i == pbftID)
+	    continue; 
+	connman->PushMessage(peers[i], msgMaker.Make(NetMsgType::PBFT_P, pMsg));
     }
     /* add the pMsg to our own log.
      * We should do this after we send the pMsg to other peers so that we always 
@@ -101,20 +105,13 @@ bool CPbft::ProcessP(CConnman* connman, CPbftMessage& pMsg, bool fCheck) {
 	CPbftMessage cMsg = assembleMsg(pMsg.seq);
 	/* send the cMsg to other peers */
 	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-	if(leader != nullptr) {
-	    /* Only followers send cMsg to the leader. The leader should not
-	     * send cMsg to itself.
-	     * The leader has pbft->leader == nullptr b/c no other nodes with
-	     * the leader's address connects to the leader as a peer. 
-	     */
-	    std::cout << __func__ << ": leader->GetAddrName() = " 
-		    << leader->GetAddrName()
-		    << ",  leaderAddrString = " <<  leaderAddrString
-		    << std::endl;
-	    connman->PushMessage(leader, msgMaker.Make(NetMsgType::PBFT_C, cMsg));
-	}
-	for (CNode* node: otherMembers) {
-	    connman->PushMessage(node, msgMaker.Make(NetMsgType::PBFT_C, cMsg));
+        int32_t start_peerID = pbftID - pbftID % groupSize;
+	int32_t end_peerID = start_peerID + groupSize;
+	for (int32_t i = start_peerID; i < end_peerID; i++) {
+	    /* do not send a msg to myself. */
+	    if (i == pbftID)
+		continue; 
+	    connman->PushMessage(peers[i], msgMaker.Make(NetMsgType::PBFT_C, cMsg));
 	}
 	/* add the cMsg to our own log.
 	 * We should do this after we send the pMsg to other peers so that we always 

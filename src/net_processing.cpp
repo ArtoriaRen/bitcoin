@@ -1826,21 +1826,16 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             pfrom->fDisconnect = true;
     }
 
-    else if (strCommand == NetMsgType::PBFT_CLIENT)
-    {
-	/* Remove the client from the otherMembers array. 
-	 * Because followers connect to the leader before the client, we can safely
-	 * treat the last element in otherMembers as the client. 
-	 */
-	pbft->client = pbft->otherMembers[pbft->otherMembers.size() - 1];
-	pbft->otherMembers.resize(pbft->otherMembers.size() - 1);
-    }
-
     else if (strCommand == NetMsgType::PBFT_PUBKEY)
     {
 	std::pair<int32_t, CPubKey> idPubkey;
 	vRecv >> idPubkey;
 	pbft->pubKeyMap.insert(std::make_pair(idPubkey.first, idPubkey.second));
+        if (idPubkey.first == CPbft::clientID) {
+	    pbft->client = pfrom;
+	} else {
+	    pbft->peers[idPubkey.first] = pfrom;
+	}
     }
 
     /* The pbft leader receiving a tx will assemble pp message. */
@@ -1854,13 +1849,13 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	pbft->log[ppMsg.seq].phase = PbftPhase::prepare;
 	const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
 	std::cout << __func__ << ": received tx = " << tx.ToString()
-		<< ", otherMember.size = " << pbft->otherMembers.size()
+                << ", peers.size = " << pbft->peers.size()
 		<< ", log slot "<< ppMsg.seq << " for tx = "
 		<< pbft->log[ppMsg.seq].ppMsg.tx_mutable.GetHash().GetHex() << std::endl;
-	for (CNode* node: pbft->otherMembers) {
-	    /* since we are the leader, we do not care to exclude the leader from 
-	     * the otherMember vector because ourself is not in the vector. */
-	    connman->PushMessage(node, msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
+        uint32_t start_peerID = pbftID + 1; // skip the leader id b/c it is myself
+	uint32_t end_peerID = start_peerID + CPbft::groupSize - 1;
+	for (uint32_t i = start_peerID; i < end_peerID; i++) {
+	    connman->PushMessage(pbft->peers[i], msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
 	}
     }
 

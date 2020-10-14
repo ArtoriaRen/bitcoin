@@ -20,15 +20,15 @@
 #include <unordered_map>
 
 extern bool fIsClient; // if this node is a pbft client.
-extern std::string leaderAddrString;
 extern std::string clientAddrString;
 extern int32_t pbftID; 
 
 class CPbft{
 public:
     static const size_t logSize = 1000;  
-    size_t groupSize;
-    uint32_t nFaulty;
+    static const size_t groupSize = 4;
+    static const uint32_t nFaulty = 1;
+    static const int32_t clientID = 65; // the pbftID of the client.
     uint32_t localView;
     // pbft log. The index is sequence number.
     std::vector<CPbftLogEntry> log;
@@ -36,10 +36,11 @@ public:
     int lastExecutedIndex; 
     CPubKey myPubKey;
 
-    CNode* leader; // pbft leader
-    CNode* client; // pbft leader
-    /* TODO: remove the leader from the otherMembers vector. */
-    std::vector<CNode*> otherMembers; // members other than the leader and the node itself.
+    CNode* client; // pbft client
+    /* all peers in the network: both leaders and followers; both in our committee
+     * and other committees. The index is peerID. Any peers whose peerID % groupSize
+     * = 0 are leaders of committee peerID/groupSize. */
+    std::vector<CNode*> peers;  
     std::unordered_map<int32_t, CPubKey> pubKeyMap;
 
     CPbft();
