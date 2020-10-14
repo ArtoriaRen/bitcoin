@@ -144,7 +144,7 @@ bool CPbft::ProcessP(CConnman* connman, CPbftMessage& pMsg, bool fCheck) {
     /* In the if condition, we use == (nFaulty << 1) instead of >= (nFaulty << 1),
      * so that we do not re-send commit msg every time another prepare msg is received.
      */
-    if (log[pMsg.seq].phase == PbftPhase::prepare && log[pMsg.seq].prepareCount == (nFaulty << 1)) {
+    if (log[pMsg.seq].phase == PbftPhase::prepare && log[pMsg.seq].prepareCount >= (nFaulty << 1)) {
 	/* Enter commit phase. */
         log[pMsg.seq].phase = PbftPhase::commit;
 	/* make a cMsg */
@@ -186,7 +186,7 @@ bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
 
     // count the number of commit msg. enter execute if greater than 2f+1
     log[cMsg.seq].commitCount++;
-    if (log[cMsg.seq].phase == PbftPhase::commit && log[cMsg.seq].commitCount == (nFaulty << 1) + 1) {
+    if (log[cMsg.seq].phase == PbftPhase::commit && log[cMsg.seq].commitCount >= (nFaulty << 1) + 1) {
         // enter reply phase
         std::cout << "enter reply phase" << std::endl;
         log[cMsg.seq].phase = PbftPhase::reply;
