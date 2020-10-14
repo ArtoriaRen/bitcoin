@@ -31,6 +31,7 @@
 #include <utilstrencodings.h>
 #include <pubkey.h>
 #include <queue>
+#include <chrono>
 
 #if defined(NDEBUG)
 # error "Bitcoin cannot be compiled without assertions."
@@ -2992,10 +2993,9 @@ bool PeerLogicValidation::SendPPMessages(){
      * reqQueue is threadsafe, so we do not acquire lock before querying its size.
      */ 
 
-    if (pbft->isLeader() 
-	    && pbft->reqQueue.size() > 0 
-	    &&  pbft->nReqInFly < pbft->nMaxReqInFly) {
-	while (!pbft->reqQueue.empty() && pbft->nReqInFly < pbft->nMaxReqInFly) {
+    if (pbft->isLeader() && pbft->reqQueue.size() > 0) {
+	pbft->printQueueSize(); // only log queue size here cuz it will not change anywhere else
+	while (!pbft->reqQueue.empty() && pbft->nReqInFly < nMaxReqInFly) {
 	    CTransactionRef req = pbft->reqQueue.front();
 	    pbft->reqQueue.pop_front();
 	    /* send ppMsg for this reqs.*/
@@ -3495,8 +3495,8 @@ bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CD
         CTransactionRef ptx;
         vRecv >> ptx;
         pbft->reqQueue.push_back(ptx);
-        std::cout << __func__ << ": push to req queue tx = " << ptx->GetHash().GetHex().substr(0, 10) << std::endl;
         g_connman->WakeMessageHandler();
+//        std::cout << __func__ << ": push to req queue tx = " << ptx->GetHash().GetHex().substr(0, 10) << std::endl;
     }
 
     else if (strCommand == NetMsgType::GETADDR)

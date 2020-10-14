@@ -18,8 +18,10 @@ bool fIsClient; // if this node is a pbft client.
 std::string leaderAddrString;
 std::string clientAddrString;
 int32_t pbftID; 
+int32_t nMaxReqInFly; 
+int32_t QSizePrintPeriod;
 
-CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), clientConnMan(nullptr), privateKey(CKey()) {
+CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
