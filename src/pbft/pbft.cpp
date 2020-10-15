@@ -28,6 +28,8 @@ CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
+    totalExeTime = 0;
+    totalExeCount = 0;
 }
 
 ThreadSafeQueue::ThreadSafeQueue() { }
