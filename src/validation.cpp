@@ -1297,25 +1297,6 @@ void CChainState::InvalidBlockFound(CBlockIndex *pindex, const CValidationState 
 
 void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo, int nHeight)
 {
-//    /* get the shard affinity for output UTXOs*/
-//    int32_t outputShard = -1;
-//    /* txPlacer may be null if UpdateCoins is called from checkmempool */
-//    if (txPlacer != nullptr){
-//	if (tx.IsCoinBase()){
-//	    lastAssignedAffinity = (lastAssignedAffinity + 1) % num_committees;
-//	    outputShard = lastAssignedAffinity;
-//	} else {
-//	    outputShard = txPlacer->smartPlace(tx, inputs);
-//	}
-//    }
-    
-    /* TODO: output shard should be the shard of the first input and should be the id
-     * of this shard. 
-     * 1. add shard affinity to txout. Client must collect information about its
-     * own txout and specify shard id in tx inputs. */
-//    assert(tx.vin[0].shardAffinity);
-    int32_t outputShard = -1;
-
     // mark inputs spent
     if (!tx.IsCoinBase()) {
         txundo.vprevout.reserve(tx.vin.size());

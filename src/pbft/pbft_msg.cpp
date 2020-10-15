@@ -135,11 +135,9 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman) const {
         txCnt++;
         /* update execution time and count */
 	g_pbft->totalExeTime += (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
-	g_pbft->totalExeCount++;
     }
 
     bool flushed = view.Flush(); // flush to pcoinsTip
     assert(flushed);
-    std::cout << "Average execution time: " << g_pbft->totalExeTime/g_pbft->totalExeCount << " us/req" << std::endl;
     return txCnt;
 }

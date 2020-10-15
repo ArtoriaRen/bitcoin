@@ -24,12 +24,10 @@ int32_t nMaxReqInFly;
 int32_t QSizePrintPeriod;
 int32_t maxBlockSize = 2000;
 
-CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), privateKey(CKey()) {
+CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalExeTime(0), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
-    totalExeTime = 0;
-    totalExeCount = 0;
 }
 
 ThreadSafeQueue::ThreadSafeQueue() { }
@@ -217,11 +215,9 @@ bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
         // enter reply phase
         std::cout << "enter reply phase" << std::endl;
         log[cMsg.seq].phase = PbftPhase::reply;
-//	nReqInFly--; 
 	/* if some seq ahead of the cMsg.seq is not in the reply phase yet, 
 	 * cMsg.seq will not be executed.
 	 */
-	int startReplySeq = lastExecutedSeq + 1; 
 	executeLog(cMsg.seq, connman); // this updates the lastExecutedIndex  
 	/* wake up the client-listening thread to send results to clients. The 
 	 * client-listening thread is probably already up if the client sends 
@@ -304,7 +300,7 @@ CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char e
 
 int CPbft::executeLog(const int seq, CConnman* connman) {
     // execute all lower-seq tx until this one if possible.
-    int i = lastExecutedSeq + 1;
+    uint i = lastExecutedSeq + 1;
     /* We should go on to execute all log slots that are in reply phase even
      * their seqs are greater than the seq passed in. If we only execute up to
      * the seq passed in, a slot missing a pbftc msg might permanently block
@@ -313,7 +309,11 @@ int CPbft::executeLog(const int seq, CConnman* connman) {
         if (log[i].phase == PbftPhase::reply) {
 	    log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, connman);
 	    nCompletedTx += log[i].txCnt;
-	    std::cout << "Execute block " << log[i].ppMsg.digest.GetHex() << " at log slot = " << i  << ", block size = " << log[i].ppMsg.pbft_block.vReq.size() << ", contains " << log[i].txCnt << " TX or UNLOCK_TO_COMMIT req. current total completed tx = " << nCompletedTx << std::endl;
+	    std::cout << "Average execution time: " << g_pbft->totalExeTime/nCompletedTx 
+                    << " us/req" << ". Executed block " << log[i].ppMsg.digest.GetHex() 
+                    << " at log slot = " << i  << ", block size = " 
+                    << log[i].ppMsg.pbft_block.vReq.size() << ", current total completed tx = " 
+                    << nCompletedTx << std::endl;
         } else {
             break;
         }

@@ -86,7 +86,6 @@ public:
     /* total execution time and count for Tx, LockReq, COMMIT, and ABORT reqs.
      * For avg execution time calculation. */
     unsigned long totalExeTime; // in us
-    uint32_t totalExeCount;
 
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
