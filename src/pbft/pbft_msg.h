@@ -139,6 +139,7 @@ public:
 	s.read((char*)&block_size, sizeof(block_size));
 	vReq.resize(block_size);
 	for (uint i = 0; i < vReq.size(); i++) {
+	    vReq[i].reset(new CMutableTransaction);
 	    vReq[i]->Unserialize(s);
 	}
     }
