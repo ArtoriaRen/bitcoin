@@ -30,8 +30,11 @@ public:
     // execution result for this log entry
     uint32_t txCnt;
 
+    bool blockVerified;
+    uint32_t blockValidMsgCnt;
+
     //---placeholder. default phase should be pre-prepare.
-    CPbftLogEntry(): prepareCount(0), commitCount(0), phase(PbftPhase::pre_prepare), txCnt(0){}
+    CPbftLogEntry(): prepareCount(0), commitCount(0), phase(PbftPhase::pre_prepare), txCnt(0), blockVerified(false), blockValidMsgCnt(0) {}
 };
 
 

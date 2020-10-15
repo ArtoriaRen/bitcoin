@@ -17,11 +17,11 @@
 #include "consensus/tx_verify.h"
 #include "netmessagemaker.h"
 
-CPbftMessage::CPbftMessage(): view(0), seq(0), digest(), peerID(pbftID), sigSize(0), vchSig(){
+CPbftMessage::CPbftMessage(): view(0), seq(0), digest(), peerID(pbftID), blockValidUpto(-1), sigSize(0), vchSig(){
     vchSig.reserve(72); // the expected sig size is 72 bytes.
 }
 
-CPbftMessage::CPbftMessage(const CPbftMessage& msg): view(msg.view), seq(msg.seq), digest(msg.digest), peerID(pbftID), sigSize(msg.sigSize), vchSig(msg.vchSig){
+CPbftMessage::CPbftMessage(const CPbftMessage& msg): view(msg.view), seq(msg.seq), digest(msg.digest), peerID(pbftID), blockValidUpto(-1), sigSize(msg.sigSize), vchSig(msg.vchSig){
     vchSig.reserve(72); // the expected sig size is 72 bytes.
 }
 
@@ -38,7 +38,7 @@ CPre_prepare::CPre_prepare(const CPbftMessage& msg): CPbftMessage(msg) { }
 
 
 
-char ExecuteTx(CMutableTxRef tx_mutable, const int seq, CCoinsViewCache& view) {
+static bool VerifyTx(CMutableTxRef tx_mutable, const int seq, CCoinsViewCache& view) {
     /* -------------logic from Bitcoin code for tx processing--------- */
     CTransaction tx(*tx_mutable);
     CValidationState state;
@@ -51,7 +51,7 @@ char ExecuteTx(CMutableTxRef tx_mutable, const int seq, CCoinsViewCache& view) {
          * maturity check. */
         if (!Consensus::CheckTxInputs(tx, state, view, INT_MAX, txfee)) {
             std::cerr << __func__ << ": Consensus::CheckTxInputs: " << tx.GetHash().ToString() << ", " << FormatStateMessage(state) << std::endl;
-            return 'n';
+            return false;
         }
 
         // GetTransactionSigOpCost counts 3 types of sigops:
@@ -62,7 +62,7 @@ char ExecuteTx(CMutableTxRef tx_mutable, const int seq, CCoinsViewCache& view) {
         nSigOpsCost += GetTransactionSigOpCost(tx, view, flags);
         if (nSigOpsCost > MAX_BLOCK_SIGOPS_COST) { 
             std::cerr << __func__ << ": ConnectBlock(): too many sigops" << std::endl;
-            return 'n';
+            return false;
         }
 
         PrecomputedTransactionData txdata(tx);
@@ -73,10 +73,14 @@ char ExecuteTx(CMutableTxRef tx_mutable, const int seq, CCoinsViewCache& view) {
                     << tx.GetHash().ToString() 
                     << " failed with " << FormatStateMessage(state)
                     << std::endl;
-            return 'n';
+            return false;
         }
     }
+    return true;
+}
 
+static char ExecuteTx(CMutableTxRef tx_mutable, const int seq, CCoinsViewCache& view) {
+    CTransaction tx(*tx_mutable);
 //	    CTxUndo undoDummy;
 //	    if (i > 0) {
 //		blockundo.vtxundo.push_back(CTxUndo());
@@ -119,6 +123,24 @@ void CPbftBlock::ComputeHash(){
 	hasher.Write((const unsigned char*)vReq[i]->GetHash().begin(), vReq[i]->GetHash().size());
     }
     hasher.Finalize((unsigned char*)&hash);
+}
+
+uint32_t CPbftBlock::Verify(const int seq) const {
+    uint32_t txCnt = 0;
+    CCoinsViewCache view(pcoinsTip.get());
+    struct timeval start_time, end_time;
+    for (uint i = 0; i < vReq.size(); i++) {
+	gettimeofday(&start_time, NULL);
+	assert(VerifyTx(vReq[i], seq, view));
+        gettimeofday(&end_time, NULL);
+        txCnt++;
+        /* update execution time and count */
+	g_pbft->totalVerifyTime += (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
+    }
+
+    bool flushed = view.Flush(); // flush to pcoinsTip
+    assert(flushed);
+    return txCnt;
 }
 
 uint32_t CPbftBlock::Execute(const int seq, CConnman* connman) const {

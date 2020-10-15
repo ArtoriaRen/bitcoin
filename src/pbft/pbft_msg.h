@@ -32,6 +32,7 @@ public:
     //uint32_t senderId;
     uint256 digest; // use the block header hash as digest.
     int32_t peerID;
+    int32_t blockValidUpto;
     uint32_t sigSize;
     std::vector<unsigned char> vchSig; //serilized ecdsa signature.
 //    const static uint32_t messageSizeBytes = 128; // the real size is 4*4 + 32 +72 = 120 bytes.
@@ -45,6 +46,7 @@ public:
 	s.write((char*)&seq, sizeof(seq));
 	s.write((char*)digest.begin(), digest.size());
 	s.write((char*)&peerID, sizeof(peerID));
+	s.write((char*)&blockValidUpto, sizeof(blockValidUpto));
 	s.write((char*)&sigSize, sizeof(sigSize));
 	s.write((char*)vchSig.data(), sigSize);
     }
@@ -55,6 +57,7 @@ public:
 	s.read((char*)&seq, sizeof(seq));
 	s.read((char*)digest.begin(), digest.size());
 	s.read((char*)&peerID, sizeof(peerID));
+	s.read((char*)&blockValidUpto, sizeof(blockValidUpto));
 	s.read((char*)&sigSize, sizeof(sigSize));
 	vchSig.resize(sigSize);
 	s.read((char*)vchSig.data(), sigSize);
@@ -122,6 +125,7 @@ public:
     CPbftBlock();
     CPbftBlock(std::deque<CMutableTxRef> vReqIn);
     void ComputeHash();
+    uint32_t Verify(const int seq) const;
     uint32_t Execute(const int seq, CConnman* connman) const;
 
     template<typename Stream>

@@ -1900,6 +1900,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     else if (strCommand == NetMsgType::PBFT_PP) {
         CPre_prepare ppMsg;
         vRecv >> ppMsg;
+        if (ppMsg.blockValidUpto != -1) {
+            pbft->UpdateBlockValidity(ppMsg.blockValidUpto);
+        }
 	if(!pbft->ProcessPP(connman, ppMsg)) {
 	    std::cout << __func__ << ": process ppMsg failed" <<std::endl;
 	}

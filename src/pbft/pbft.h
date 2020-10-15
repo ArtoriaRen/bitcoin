@@ -83,10 +83,13 @@ public:
 
     std::chrono::milliseconds lastQSizePrintTime;
     
-    /* total execution time and count for Tx, LockReq, COMMIT, and ABORT reqs.
-     * For avg execution time calculation. */
+    /* For avg verify and execution time calculation. */
+    unsigned long totalVerifyTime; // in us
     unsigned long totalExeTime; // in us
 
+    int lastBlockValidSeq; // the highest block has been verified by our subgroup
+    int lastBlockValidSentSeq; // the highest block has been verified by our subgroup and announced to the other group.
+    
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
     bool ProcessPP(CConnman* connman, CPre_prepare& ppMsg);
@@ -103,6 +106,7 @@ public:
     bool checkMsg(CPbftMessage* msg);
     /*return the last executed seq */
     int executeLog(const int seq, CConnman* connman);
+    void UpdateBlockValidity(int32_t blockValidUpto);
 
     inline void printQueueSize(){
 	    /* log queue size if we have reached the period. */
@@ -115,6 +119,10 @@ public:
 
     inline bool isLeader(){
 	return pbftID % groupSize == 0;
+    }
+
+    inline bool isBlockInOurVerifyGroup(uint32_t seq){
+	return ((pbftID & 1) ^ (seq & 1)) == 0;
     }
 
 private:

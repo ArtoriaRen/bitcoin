@@ -24,7 +24,7 @@ int32_t nMaxReqInFly;
 int32_t QSizePrintPeriod;
 int32_t maxBlockSize = 2000;
 
-CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalExeTime(0), privateKey(CKey()) {
+CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalVerifyTime(0), totalExeTime(0), lastBlockValidSentSeq(-1), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
@@ -274,6 +274,12 @@ CPre_prepare CPbft::assemblePPMsg(const CPbftBlock& pbft_block) {
     toSent.getHash(hash); // this hash is used for signature, so client tx is not included in this hash.
     privateKey.Sign(hash, toSent.vchSig);
     toSent.sigSize = toSent.vchSig.size();
+    if (lastBlockValidSeq > lastBlockValidSentSeq) {
+        toSent.blockValidUpto = lastBlockValidSeq; 
+        lastBlockValidSentSeq = lastBlockValidSeq;
+    } else {
+        toSent.blockValidUpto = -1; 
+    }
     return toSent;
 }
 
@@ -283,6 +289,12 @@ CPbftMessage CPbft::assembleMsg(uint32_t seq) {
     toSent.getHash(hash);
     privateKey.Sign(hash, toSent.vchSig);
     toSent.sigSize = toSent.vchSig.size();
+    if (lastBlockValidSeq > lastBlockValidSentSeq) {
+        toSent.blockValidUpto = lastBlockValidSeq; 
+        lastBlockValidSentSeq = lastBlockValidSeq;
+    } else {
+        toSent.blockValidUpto = -1; 
+    }
     return toSent;
 }
 
@@ -306,7 +318,7 @@ int CPbft::executeLog(const int seq, CConnman* connman) {
      * the seq passed in, a slot missing a pbftc msg might permanently block
      * log slots after it to be executed. */
     for (; i < logSize; i++) {
-        if (log[i].phase == PbftPhase::reply) {
+        if (log[i].phase == PbftPhase::reply && log[i].blockVerified) {
 	    log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, connman);
 	    nCompletedTx += log[i].txCnt;
 	    std::cout << "Average execution time: " << g_pbft->totalExeTime/nCompletedTx 
@@ -316,14 +328,43 @@ int CPbft::executeLog(const int seq, CConnman* connman) {
                     << nCompletedTx << std::endl;
         } else {
             break;
-        }
+        } 
     }
     lastExecutedSeq = i - 1;
+    /* We should verify some blocks if we quit the loop because of the block is not verified. */
+    if (log[i].phase == PbftPhase::reply) {
+        if (isBlockInOurVerifyGroup(i)) {
+            /* We are blocked by ourselves, verify all blocks in our verifying group. 
+             * j += 2 is an optimization here. We can use this because we use peerID 
+             * xor block_height to deside blocks in our verifying group. */
+            int j = i;
+            for (; j < logSize && log[j].phase == PbftPhase::reply; j += 2) {
+                log[j].ppMsg.pbft_block.Verify(j);
+                log[j].blockVerified = true;
+
+            }
+            lastBlockValidSeq = j - 2; 
+        } else {
+            /* We are blocked by the other verifying group, verify only the current block */ 
+            log[i].ppMsg.pbft_block.Verify(i);
+            log[i].blockVerified = true;
+        }
+    }
+
     /* if lastExecutedIndex is less than seq, we delay sending reply until 
      * the all requsts up to seq has been executed. This may be triggered 
      * by future requests.
      */
     return lastExecutedSeq;
+}
+
+void CPbft::UpdateBlockValidity(int32_t blockValidUpto) {
+    uint32_t start_seq = isBlockInOurVerifyGroup(lastExecutedSeq + 1) ? lastExecutedSeq + 2 : lastExecutedSeq + 1;
+    for (uint i = start_seq; i < blockValidUpto; i += 2) {
+        if (++log[i].blockValidMsgCnt == nFaulty + 1) {
+            log[i].blockVerified = true;
+        }
+    }
 }
 
 std::unique_ptr<CPbft> g_pbft;
