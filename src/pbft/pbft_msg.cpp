@@ -127,7 +127,7 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman) const {
     CCoinsViewCache view(pcoinsTip.get());
     for (uint i = 0; i < vReq.size(); i++) {
 	char exe_res = ExecuteTx(vReq[i], seq, view);
-        CReply reply = g_pbft->assembleReply(seq, exe_res);
+        CReply reply = g_pbft->assembleReply(seq, i, exe_res);
         connman->PushMessage(g_pbft->client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
         txCnt++;
     }
