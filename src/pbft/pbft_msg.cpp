@@ -134,7 +134,7 @@ uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view) const {
 	assert(VerifyTx(vReq[i], seq, view));
         gettimeofday(&end_time, NULL);
         txCnt++;
-        /* update execution time and count */
+        /* update verify time and count */
 	g_pbft->totalVerifyTime += (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
     }
 
