@@ -121,10 +121,9 @@ void CPbftBlock::ComputeHash(){
     hasher.Finalize((unsigned char*)&hash);
 }
 
-uint32_t CPbftBlock::Execute(const int seq, CConnman* connman) const {
+uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& view) const {
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
     uint32_t txCnt = 0;
-    CCoinsViewCache view(pcoinsTip.get());
     struct timeval start_time, end_time;
     for (uint i = 0; i < vReq.size(); i++) {
 	gettimeofday(&start_time, NULL);
