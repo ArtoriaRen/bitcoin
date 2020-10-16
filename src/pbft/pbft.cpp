@@ -24,6 +24,8 @@
 #include "streams.h"
 #include "clientversion.h"
 
+extern std::unique_ptr<CConnman> g_connman;
+
 bool fIsClient; // if this node is a pbft client.
 std::string leaderAddrString;
 std::string clientAddrString;
@@ -237,19 +239,7 @@ bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
     if (log[cMsg.seq].phase == PbftPhase::commit && log[cMsg.seq].commitCount >= (nFaulty << 1) + 1) {
         // enter reply phase
         log[cMsg.seq].phase = PbftPhase::reply;
-//	nReqInFly--; 
-	/* if some seq ahead of the cMsg.seq is not in the reply phase yet, 
-	 * cMsg.seq will not be executed.
-	 */
-	executeLog(cMsg.seq, connman); // this updates the lastExecutedIndex  
-	/* wake up the client-listening thread to send results to clients. The 
-	 * client-listening thread is probably already up if the client sends 
-	 * request too frequently. 
-	 * The following code cause linking errors still not fixed.
-	 */
-	if (isLeader()) {
-	    clientConnMan->WakeMessageHandler();
-	}
+        /* the log-exe thread will execute blocks in reply phase sequentially. */
     }
     return true;
 }
@@ -334,19 +324,30 @@ CInputShardReply CPbft::assembleInputShardReply(const uint32_t seq, const uint32
     return toSent;
 }
 
-int CPbft::executeLog(const int seq, CConnman* connman) {
-    // execute all lower-seq tx until this one if possible.
-    int i = lastExecutedSeq + 1;
+int CPbft::executeLog() {
+    /* execute all lower-seq tx until this one if possible. */
+    CCoinsViewCache view(pcoinsTip.get());
+    uint i = lastExecutedSeq + 1;
     /* We should go on to execute all log slots that are in reply phase even
      * their seqs are greater than the seq passed in. If we only execute up to
      * the seq passed in, a slot missing a pbftc msg might permanently block
      * log slots after it to be executed. */
-    CCoinsViewCache view(pcoinsTip.get());
     for (; i < logSize; i++) {
         if (log[i].phase == PbftPhase::reply) {
-	    log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, connman, view);
+	    log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, g_connman.get(), view);
 	    nCompletedTx += log[i].txCnt;
-	    std::cout << "Execute block " << log[i].ppMsg.digest.GetHex().substr(0,10) << " at log slot = " << i  << ", block size = " << log[i].ppMsg.pbft_block.vReq.size() << ", contains " << log[i].txCnt << " TX or UNLOCK_TO_COMMIT req. current total completed tx = " << nCompletedTx << std::endl;
+	    std::cout << "Executed block " << log[i].ppMsg.digest.GetHex().substr(0,10) 
+                    << " at log slot = " << i  << ", block size = " 
+                    << log[i].ppMsg.pbft_block.vReq.size()  
+                    << std::endl;
+            /* wake up the client-listening thread to send results to clients. The 
+             * client-listening thread is probably already up if the client sends 
+             * request too frequently. 
+             * The following code cause linking errors still not fixed.
+             */
+            if (isLeader()) {
+                clientConnMan->WakeMessageHandler();
+            }
         } else {
             break;
         }
@@ -410,6 +411,15 @@ void CPbft::WarmUpMemoryCache(CConnman* connman) {
         log[i].ppMsg.pbft_block.Clear();
 	nCompletedTx += block_size; 
 	//std::cout << "warm up -- total executed tx: " << nCompletedTx << std::endl;
+    }
+}
+
+
+void ThreadConsensusLogExe() {
+    RenameThread("log-exe");
+    while (true) {
+        g_pbft->executeLog();
+        MilliSleep(50);
     }
 }
 
