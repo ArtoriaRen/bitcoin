@@ -24,7 +24,7 @@ int32_t nMaxReqInFly;
 int32_t QSizePrintPeriod;
 int32_t maxBlockSize = 2000;
 
-CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalVerifyTime(0), totalExeTime(0), lastBlockValidSeq(-1), lastBlockValidSentSeq(-1), privateKey(CKey()) {
+CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalVerifyTime(0), totalVerifyCnt(0), totalExeTime(0), lastBlockValidSeq(-1), lastBlockValidSentSeq(-1), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
@@ -322,11 +322,12 @@ int CPbft::executeLog(const int seq, CConnman* connman) {
         if (log[i].phase == PbftPhase::reply && log[i].blockVerified) {
 	    log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, connman, view);
 	    nCompletedTx += log[i].txCnt;
-	    std::cout << "Average execution time: " << g_pbft->totalExeTime/nCompletedTx 
-                    << " us/req" << ". Executed block " << log[i].ppMsg.digest.GetHex() 
+	    std::cout << "Average execution time: " << totalExeTime/nCompletedTx 
+                    << " us/req" << ", current total completed tx = " << nCompletedTx 
+		    << ". Executed block " << log[i].ppMsg.digest.GetHex() 
                     << " at log slot = " << i  << ", block size = " 
-                    << log[i].ppMsg.pbft_block.vReq.size() << ", current total completed tx = " 
-                    << nCompletedTx << std::endl;
+                    << log[i].ppMsg.pbft_block.vReq.size()  
+                    << std::endl;
         } else {
             break;
         } 
@@ -343,12 +344,15 @@ int CPbft::executeLog(const int seq, CConnman* connman) {
     CCoinsViewCache view_tenta(pcoinsTip.get());
     for (uint j = lastExecutedSeq + 1; j < logSize && log[j].phase == PbftPhase::reply; j++) {
         if (isBlockInOurVerifyGroup(j)) {
-            std::cout << "verifying block " << j << " in my subgroup to verify" << std::endl;
-            log[j].ppMsg.pbft_block.Verify(j, view_tenta);
+            std::cout << "verifying block " << j << " in my subgroup" << std::endl;
+            totalVerifyCnt += log[j].ppMsg.pbft_block.Verify(j, view_tenta);
             log[j].blockVerified = true;
             lastBlockValidSeq = j;
-        }
-        log[j].ppMsg.pbft_block.Execute(j, nullptr, view_tenta);
+	    std::cout << "Average verifying time: " << totalVerifyTime/totalVerifyCnt 
+                    << " us/req" << std::endl;
+        } else {
+	    log[j].ppMsg.pbft_block.Execute(j, nullptr, view_tenta);
+	}
     }
     std::cout << ", lastBlockValidSeq = " << lastBlockValidSeq << std::endl;
     
@@ -364,15 +368,17 @@ int CPbft::executeLog(const int seq, CConnman* connman) {
     return lastExecutedSeq;
 }
 
-void CPbft::UpdateBlockValidity(int32_t blockValidUpto) {
-    if (isBlockInOurVerifyGroup(blockValidUpto)) {
+void CPbft::UpdateBlockValidity(CPbftMessage& msg) {
+    if (isBlockInOurVerifyGroup(msg.blockValidUpto)) {
         /* BLOCK_VALID from the peer in the same subgroup as us. Ignore it. */
         return;
     }
+    std::cout << "received  BLOCK_VALID msg from peer " << msg.peerID << ", blockValidUpto = " << msg.blockValidUpto << ", current lastExecutedSeq = " << lastExecutedSeq << std::endl;
     uint32_t start_seq = isBlockInOurVerifyGroup(lastExecutedSeq + 1) ? lastExecutedSeq + 2 : lastExecutedSeq + 1;
-    for (uint i = start_seq; i < blockValidUpto; i += 2) {
+    for (uint i = start_seq; i <= msg.blockValidUpto; i += 2) {
         if (++log[i].blockValidMsgCnt == nFaulty + 1) {
             log[i].blockVerified = true;
+	    std::cout << "seq " << i << " get collab verified." << std::endl;
         }
     }
 }

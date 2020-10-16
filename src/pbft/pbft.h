@@ -85,6 +85,7 @@ public:
     
     /* For avg verify and execution time calculation. */
     unsigned long totalVerifyTime; // in us
+    unsigned long totalVerifyCnt; // in us
     unsigned long totalExeTime; // in us
 
     int lastBlockValidSeq; // the highest block has been verified by our subgroup
@@ -106,7 +107,7 @@ public:
     bool checkMsg(CPbftMessage* msg);
     /*return the last executed seq */
     int executeLog(const int seq, CConnman* connman);
-    void UpdateBlockValidity(int32_t blockValidUpto);
+    void UpdateBlockValidity(CPbftMessage& msg);
 
     inline void printQueueSize(){
 	    /* log queue size if we have reached the period. */
