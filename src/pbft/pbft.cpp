@@ -339,6 +339,10 @@ int CPbft::executeLog(const int seq, CConnman* connman) {
          * verify all blocks in our verifying group. 
          * j += 2 is an optimization here. We can use this because we use peerID 
          * xor block_height to deside blocks in our verifying group. */
+        /*prepare the tentative system state. */
+        for (int k = lastExecutedSeq + 1; k < lastBlockValidSeq + 2; k++) {
+            log[k].ppMsg.pbft_block.Execute(k, nullptr, view);
+        }
         int j = lastBlockValidSeq + 2;
         for (; j < logSize && log[j].phase == PbftPhase::reply; j += 2) {
             log[j].ppMsg.pbft_block.Verify(j, view);
