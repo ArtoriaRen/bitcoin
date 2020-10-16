@@ -125,8 +125,8 @@ public:
     CPbftBlock();
     CPbftBlock(std::deque<CMutableTxRef> vReqIn);
     void ComputeHash();
-    uint32_t Verify(const int seq) const;
-    uint32_t Execute(const int seq, CConnman* connman) const;
+    uint32_t Verify(const int seq, CCoinsViewCache& view) const;
+    uint32_t Execute(const int seq, CConnman* connman, CCoinsViewCache& view) const;
 
     template<typename Stream>
     void Serialize(Stream& s) const{

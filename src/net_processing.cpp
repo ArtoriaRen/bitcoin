@@ -1911,6 +1911,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     else if (strCommand == NetMsgType::PBFT_P) {
         CPbftMessage pMsg;
         vRecv >> pMsg;
+        if (pMsg.blockValidUpto != -1) {
+            pbft->UpdateBlockValidity(pMsg.blockValidUpto);
+        }
 	if(!pbft->ProcessP(connman, pMsg)) {
 	    std::cout << __func__ << ": process pMsg failed" <<std::endl;
 	}
@@ -1919,6 +1922,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     else if (strCommand == NetMsgType::PBFT_C) {
         CPbftMessage cMsg;
         vRecv >> cMsg;
+        if (cMsg.blockValidUpto != -1) {
+            pbft->UpdateBlockValidity(cMsg.blockValidUpto);
+        }
 	if(!pbft->ProcessC(connman, cMsg)) {
 	    std::cout << __func__ << ": process cMsg failed" <<std::endl;
 	}

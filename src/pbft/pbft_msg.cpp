@@ -125,9 +125,8 @@ void CPbftBlock::ComputeHash(){
     hasher.Finalize((unsigned char*)&hash);
 }
 
-uint32_t CPbftBlock::Verify(const int seq) const {
+uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view) const {
     uint32_t txCnt = 0;
-    CCoinsViewCache view(pcoinsTip.get());
     struct timeval start_time, end_time;
     for (uint i = 0; i < vReq.size(); i++) {
 	gettimeofday(&start_time, NULL);
@@ -138,15 +137,20 @@ uint32_t CPbftBlock::Verify(const int seq) const {
 	g_pbft->totalVerifyTime += (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
     }
 
-    bool flushed = view.Flush(); // flush to pcoinsTip
-    assert(flushed);
     return txCnt;
 }
 
-uint32_t CPbftBlock::Execute(const int seq, CConnman* connman) const {
+uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& view) const {
+    if (!connman) {
+        /* this is for tentative execution. */
+        for (uint i = 0; i < vReq.size(); i++) {
+            ExecuteTx(vReq[i], seq, view);
+        }
+        return vReq.size();
+    }
+
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
     uint32_t txCnt = 0;
-    CCoinsViewCache view(pcoinsTip.get());
     struct timeval start_time, end_time;
     for (uint i = 0; i < vReq.size(); i++) {
 	gettimeofday(&start_time, NULL);
@@ -159,7 +163,5 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman) const {
 	g_pbft->totalExeTime += (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
     }
 
-    bool flushed = view.Flush(); // flush to pcoinsTip
-    assert(flushed);
     return txCnt;
 }

@@ -311,7 +311,8 @@ CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char e
 }
 
 int CPbft::executeLog(const int seq, CConnman* connman) {
-    // execute all lower-seq tx until this one if possible.
+    /* execute all lower-seq tx until this one if possible. */
+    CCoinsViewCache view(pcoinsTip.get());
     uint i = lastExecutedSeq + 1;
     /* We should go on to execute all log slots that are in reply phase even
      * their seqs are greater than the seq passed in. If we only execute up to
@@ -319,7 +320,7 @@ int CPbft::executeLog(const int seq, CConnman* connman) {
      * log slots after it to be executed. */
     for (; i < logSize; i++) {
         if (log[i].phase == PbftPhase::reply && log[i].blockVerified) {
-	    log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, connman);
+	    log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, connman, view);
 	    nCompletedTx += log[i].txCnt;
 	    std::cout << "Average execution time: " << g_pbft->totalExeTime/nCompletedTx 
                     << " us/req" << ". Executed block " << log[i].ppMsg.digest.GetHex() 
@@ -330,25 +331,27 @@ int CPbft::executeLog(const int seq, CConnman* connman) {
             break;
         } 
     }
+    bool flushed = view.Flush(); // flush to pcoinsTip
+    assert(flushed);
     lastExecutedSeq = i - 1;
-    /* We should verify some blocks if we quit the loop because of the block is not verified. */
-    if (log[i].phase == PbftPhase::reply) {
-        if (isBlockInOurVerifyGroup(i)) {
-            /* We are blocked by ourselves, verify all blocks in our verifying group. 
-             * j += 2 is an optimization here. We can use this because we use peerID 
-             * xor block_height to deside blocks in our verifying group. */
-            int j = i;
-            for (; j < logSize && log[j].phase == PbftPhase::reply; j += 2) {
-                log[j].ppMsg.pbft_block.Verify(j);
-                log[j].blockVerified = true;
-
-            }
-            lastBlockValidSeq = j - 2; 
-        } else {
-            /* We are blocked by the other verifying group, verify only the current block */ 
-            log[i].ppMsg.pbft_block.Verify(i);
-            log[i].blockVerified = true;
+    if (log[lastBlockValidSeq + 2].phase == PbftPhase::reply) { 
+        /* We have some blocks to verify in our subgroup.
+         * verify all blocks in our verifying group. 
+         * j += 2 is an optimization here. We can use this because we use peerID 
+         * xor block_height to deside blocks in our verifying group. */
+        int j = lastBlockValidSeq + 2;
+        for (; j < logSize && log[j].phase == PbftPhase::reply; j += 2) {
+            log[j].ppMsg.pbft_block.Verify(j, view);
+            log[j].blockVerified = true;
+            /* tentative execution. do not update system state. */
+            log[j].ppMsg.pbft_block.Execute(j, nullptr, view);
+            log[j + 1].ppMsg.pbft_block.Execute(j + 1, nullptr, view);
         }
+        lastBlockValidSeq = j - 2; 
+    } else if (log[i].phase == PbftPhase::reply) {
+        /* We are blocked by the other verifying group, verify only the next block */ 
+        log[i].ppMsg.pbft_block.Verify(i, view);
+        log[i].blockVerified = true;
     }
 
     /* if lastExecutedIndex is less than seq, we delay sending reply until 
@@ -359,6 +362,10 @@ int CPbft::executeLog(const int seq, CConnman* connman) {
 }
 
 void CPbft::UpdateBlockValidity(int32_t blockValidUpto) {
+    if (isBlockInOurVerifyGroup(blockValidUpto)) {
+        /* BLOCK_VALID from the peer in the same subgroup as us. Ignore it. */
+        return;
+    }
     uint32_t start_seq = isBlockInOurVerifyGroup(lastExecutedSeq + 1) ? lastExecutedSeq + 2 : lastExecutedSeq + 1;
     for (uint i = start_seq; i < blockValidUpto; i += 2) {
         if (++log[i].blockValidMsgCnt == nFaulty + 1) {
