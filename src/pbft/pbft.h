@@ -124,7 +124,7 @@ public:
     CInputShardReply assembleInputShardReply(const uint32_t seq, const uint32_t idx, const char exe_res, const CAmount& inputUtxoValueSum);
     bool checkMsg(CPbftMessage* msg);
     /*return the last executed seq */
-    int executeLog(const int seq, CConnman* connman);
+    int executeLog();
 
     inline void printQueueSize(){
 	std::chrono::milliseconds current = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
@@ -165,6 +165,8 @@ private:
     // private ECDSA key used to sign messages
     CKey privateKey;
 };
+
+void ThreadConsensusLogExe();
 
 extern std::unique_ptr<CPbft> g_pbft;
 #endif /* PBFT_H */
