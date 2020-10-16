@@ -76,6 +76,7 @@ static bool VerifyTx(CMutableTxRef tx_mutable, const int seq, CCoinsViewCache& v
             return false;
         }
     }
+    UpdateCoins(tx, view, seq);
     return true;
 }
 

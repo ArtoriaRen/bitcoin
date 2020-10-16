@@ -24,7 +24,7 @@ int32_t nMaxReqInFly;
 int32_t QSizePrintPeriod;
 int32_t maxBlockSize = 2000;
 
-CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalVerifyTime(0), totalExeTime(0), lastBlockValidSentSeq(-1), privateKey(CKey()) {
+CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalVerifyTime(0), totalExeTime(0), lastBlockValidSeq(-1), lastBlockValidSentSeq(-1), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
@@ -334,27 +334,34 @@ int CPbft::executeLog(const int seq, CConnman* connman) {
     bool flushed = view.Flush(); // flush to pcoinsTip
     assert(flushed);
     lastExecutedSeq = i - 1;
+    std::cout << "lastExecutedSeq  = " << lastExecutedSeq  << ", lastBlockValidSeq =  " << lastBlockValidSeq << std::endl;
     if (log[lastBlockValidSeq + 2].phase == PbftPhase::reply) { 
         /* We have some blocks to verify in our subgroup.
          * verify all blocks in our verifying group. 
          * j += 2 is an optimization here. We can use this because we use peerID 
          * xor block_height to deside blocks in our verifying group. */
+	std::cout << " have blocks in my subgroup to verify";
         /*prepare the tentative system state. */
+	CCoinsViewCache view_tenta(pcoinsTip.get());
         for (int k = lastExecutedSeq + 1; k < lastBlockValidSeq + 2; k++) {
-            log[k].ppMsg.pbft_block.Execute(k, nullptr, view);
+            log[k].ppMsg.pbft_block.Execute(k, nullptr, view_tenta);
         }
         int j = lastBlockValidSeq + 2;
         for (; j < logSize && log[j].phase == PbftPhase::reply; j += 2) {
-            log[j].ppMsg.pbft_block.Verify(j, view);
+	    std::cout << ", block " << j << std::endl;
+            log[j].ppMsg.pbft_block.Verify(j, view_tenta);
             log[j].blockVerified = true;
+	    lastBlockValidSeq = j;
             /* tentative execution. do not update system state. */
-            log[j].ppMsg.pbft_block.Execute(j, nullptr, view);
-            log[j + 1].ppMsg.pbft_block.Execute(j + 1, nullptr, view);
+            log[j].ppMsg.pbft_block.Execute(j, nullptr, view_tenta);
+            log[j + 1].ppMsg.pbft_block.Execute(j + 1, nullptr, view_tenta);
         }
-        lastBlockValidSeq = j - 2; 
+	std::cout << ", lastBlockValidSeq = " << lastBlockValidSeq << std::endl;
     } else if (log[i].phase == PbftPhase::reply) {
         /* We are blocked by the other verifying group, verify only the next block */ 
-        log[i].ppMsg.pbft_block.Verify(i, view);
+	std::cout << " verifying block " << i << " belonging to the other subgroup."<< std::endl;
+	CCoinsViewCache view_verify(pcoinsTip.get());
+        log[i].ppMsg.pbft_block.Verify(i, view_verify);
         log[i].blockVerified = true;
     }
 
