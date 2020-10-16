@@ -333,42 +333,34 @@ int CPbft::executeLog(const int seq, CConnman* connman) {
     }
     bool flushed = view.Flush(); // flush to pcoinsTip
     assert(flushed);
+    bool executedSomeLogSlot = i - 1 > lastExecutedSeq;
     lastExecutedSeq = i - 1;
     std::cout << "lastExecutedSeq  = " << lastExecutedSeq  << ", lastBlockValidSeq =  " << lastBlockValidSeq << std::endl;
-    if (log[lastBlockValidSeq + 2].phase == PbftPhase::reply) { 
-        /* We have some blocks to verify in our subgroup.
-         * verify all blocks in our verifying group. 
-         * j += 2 is an optimization here. We can use this because we use peerID 
-         * xor block_height to deside blocks in our verifying group. */
-	std::cout << " have blocks in my subgroup to verify";
-        /*prepare the tentative system state. */
-	CCoinsViewCache view_tenta(pcoinsTip.get());
-        for (int k = lastExecutedSeq + 1; k < lastBlockValidSeq + 2; k++) {
-            log[k].ppMsg.pbft_block.Execute(k, nullptr, view_tenta);
-        }
-        int j = lastBlockValidSeq + 2;
-        for (; j < logSize && log[j].phase == PbftPhase::reply; j += 2) {
-	    std::cout << ", block " << j << std::endl;
+
+    int lastBlockValidSeqStart = lastBlockValidSeq;
+    /* verify blocks belonging to our subgroup. */
+    /* tentative execution view. do not update system state b/c the view will be discarded. */
+    CCoinsViewCache view_tenta(pcoinsTip.get());
+    for (uint j = lastExecutedSeq + 1; j < logSize && log[j].phase == PbftPhase::reply; j++) {
+        if (isBlockInOurVerifyGroup(j)) {
+            std::cout << "verifying block " << j << " in my subgroup to verify" << std::endl;
             log[j].ppMsg.pbft_block.Verify(j, view_tenta);
             log[j].blockVerified = true;
-	    lastBlockValidSeq = j;
-            /* tentative execution. do not update system state. */
-            log[j].ppMsg.pbft_block.Execute(j, nullptr, view_tenta);
-            log[j + 1].ppMsg.pbft_block.Execute(j + 1, nullptr, view_tenta);
+            lastBlockValidSeq = j;
         }
-	std::cout << ", lastBlockValidSeq = " << lastBlockValidSeq << std::endl;
-    } else if (log[i].phase == PbftPhase::reply) {
-        /* We are blocked by the other verifying group, verify only the next block */ 
-	std::cout << " verifying block " << i << " belonging to the other subgroup."<< std::endl;
+        log[j].ppMsg.pbft_block.Execute(j, nullptr, view_tenta);
+    }
+    std::cout << ", lastBlockValidSeq = " << lastBlockValidSeq << std::endl;
+    
+    /* if we did have done nothing, and the next log slot is in the reply state, then we
+     * must be blocked by the other subgroup. Verify only the next block. */
+    if (!executedSomeLogSlot && lastBlockValidSeq == lastBlockValidSeqStart && log[lastExecutedSeq + 1].phase == PbftPhase::reply) {
+	std::cout << " verifying block " << lastExecutedSeq + 1 << " belonging to the other subgroup."<< std::endl;
 	CCoinsViewCache view_verify(pcoinsTip.get());
         log[i].ppMsg.pbft_block.Verify(i, view_verify);
         log[i].blockVerified = true;
     }
 
-    /* if lastExecutedIndex is less than seq, we delay sending reply until 
-     * the all requsts up to seq has been executed. This may be triggered 
-     * by future requests.
-     */
     return lastExecutedSeq;
 }
 
