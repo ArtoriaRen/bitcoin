@@ -15,6 +15,7 @@
 #include "netmessagemaker.h"
 #include <memory>
 #include "netmessagemaker.h"
+#include "init.h"
 
 extern std::unique_ptr<CConnman> g_connman;
 
@@ -319,16 +320,13 @@ int CPbft::executeLog() {
         }
     }
     lastExecutedSeq = i - 1;
-    /* if lastExecutedIndex is less than seq, we delay sending reply until 
-     * the all requsts up to seq has been executed. This may be triggered 
-     * by future requests.
-     */
+
     return lastExecutedSeq;
 }
 
 void ThreadConsensusLogExe() {
-    RenameThread("log-exe");
-    while (true) {
+    RenameThread("bitcoin-logexe");
+    while (!ShutdownRequested()) {
         g_pbft->executeLog();
         MilliSleep(50);
     }
