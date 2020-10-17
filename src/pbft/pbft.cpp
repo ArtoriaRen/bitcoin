@@ -15,6 +15,7 @@
 #include "netmessagemaker.h"
 #include <memory>
 #include "netmessagemaker.h"
+#include "init.h"
 
 extern std::unique_ptr<CConnman> g_connman;
 
@@ -335,7 +336,6 @@ int CPbft::executeLog() {
     assert(flushed);
     bool executedSomeLogSlot = i - 1 > lastExecutedSeq;
     lastExecutedSeq = i - 1;
-    std::cout << "lastExecutedSeq  = " << lastExecutedSeq  << ", lastBlockValidSeq =  " << lastBlockValidSeq << std::endl;
 
     int lastBlockValidSeqStart = lastBlockValidSeq;
     /* verify blocks belonging to our subgroup. */
@@ -352,8 +352,8 @@ int CPbft::executeLog() {
         } else {
 	    log[j].ppMsg.pbft_block.Execute(j, nullptr, view_tenta);
 	}
+	std::cout << "lastExecutedSeq  = " << lastExecutedSeq  << ", lastBlockValidSeq =  " << lastBlockValidSeq << std::endl;
     }
-    std::cout << ", lastBlockValidSeq = " << lastBlockValidSeq << std::endl;
     
     /* if we did have done nothing, and the next log slot is in the reply state, then we
      * must be blocked by the other subgroup. Verify only the next block. */
@@ -383,8 +383,8 @@ void CPbft::UpdateBlockValidity(CPbftMessage& msg) {
 }
 
 void ThreadConsensusLogExe() {
-    RenameThread("log-exe");
-    while (true) {
+    RenameThread("bitcoin-logexe");
+    while (!ShutdownRequested()) {
         g_pbft->executeLog();
         MilliSleep(50);
     }
