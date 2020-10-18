@@ -16,6 +16,7 @@
 
 #include "util.h"
 #include "pbft/pbft_msg.h"
+#include <set>
 
 class CPbftLogEntry{
 public:
@@ -31,10 +32,11 @@ public:
     uint32_t txCnt;
 
     bool blockVerified;
-    uint32_t blockValidMsgCnt;
+    /* a set of peerId who sent us collab verifying results. */
+    std::set<uint32_t> setCollabPeerID;
 
     //---placeholder. default phase should be pre-prepare.
-    CPbftLogEntry(): prepareCount(0), commitCount(0), phase(PbftPhase::pre_prepare), txCnt(0), blockVerified(false), blockValidMsgCnt(0) {}
+    CPbftLogEntry(): prepareCount(0), commitCount(0), phase(PbftPhase::pre_prepare), txCnt(0), blockVerified(false) {}
 };
 
 

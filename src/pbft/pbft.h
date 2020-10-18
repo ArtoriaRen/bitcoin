@@ -107,7 +107,7 @@ public:
     bool checkMsg(CPbftMessage* msg);
     /*return the last executed seq */
     int executeLog();
-    void UpdateBlockValidity(CPbftMessage& msg);
+    void UpdateBlockValidity(const CPbftMessage& msg);
 
     inline void printQueueSize(){
 	    /* log queue size if we have reached the period. */

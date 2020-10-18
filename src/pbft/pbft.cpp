@@ -107,6 +107,11 @@ bool CPbft::ProcessPP(CConnman* connman, CPre_prepare& ppMsg) {
         return false;
     }
 
+    /* now that the message is valid, check if it includes collab verification info.*/
+    if (ppMsg.blockValidUpto != -1) {
+        UpdateBlockValidity(ppMsg);
+    }
+
     // check if the digest matches client req
     ppMsg.pbft_block.ComputeHash();
     if (ppMsg.digest != ppMsg.pbft_block.hash) {
@@ -115,7 +120,10 @@ bool CPbft::ProcessPP(CConnman* connman, CPre_prepare& ppMsg) {
     }
     // add to log
     log[ppMsg.seq].ppMsg = ppMsg;
-    /* check if at least 2f prepare has been received. If so, enter commit phase directly; otherwise, enter prepare phase.(The goal of this operation is to tolerate network reordering.)
+
+    /* check if at least 2f prepare has been received. If so, enter commit phase directly; 
+     * otherwise, enter prepare phase.(The goal of this operation is to tolerate network
+     * reordering.)
      -----Placeholder: to tolerate faulty nodes, we must check if all prepare msg matches the pre-prepare.
      */
 
@@ -150,6 +158,11 @@ bool CPbft::ProcessP(CConnman* connman, CPbftMessage& pMsg, bool fCheck) {
 	if (!checkMsg(&pMsg)) {
 	    return false;
 	}
+
+        /* now that the signature is valid, check if it includes collab verification info.*/
+        if (pMsg.blockValidUpto != -1) {
+            UpdateBlockValidity(pMsg);
+        }
 
 	// check the message's view mactches the ppMsg's view in log.
 	if (log[pMsg.seq].ppMsg.view != pMsg.view) {
@@ -203,6 +216,11 @@ bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
 	if (!checkMsg(&cMsg)) {
 	    return false;
 	}
+
+        /* now that the message is valid, check if it includes collab verification info.*/
+        if (cMsg.blockValidUpto != -1) {
+            UpdateBlockValidity(cMsg);
+        }
 
 	// check the message's view mactches the ppMsg's view in log.
 	if (log[cMsg.seq].ppMsg.view != cMsg.view) {
@@ -367,7 +385,7 @@ int CPbft::executeLog() {
     return lastExecutedSeq;
 }
 
-void CPbft::UpdateBlockValidity(CPbftMessage& msg) {
+void CPbft::UpdateBlockValidity(const CPbftMessage& msg) {
     if (isBlockInOurVerifyGroup(msg.blockValidUpto)) {
         /* BLOCK_VALID from the peer in the same subgroup as us. Ignore it. */
         return;
@@ -375,9 +393,12 @@ void CPbft::UpdateBlockValidity(CPbftMessage& msg) {
     std::cout << "received  BLOCK_VALID msg from peer " << msg.peerID << ", blockValidUpto = " << msg.blockValidUpto << ", current lastExecutedSeq = " << lastExecutedSeq << std::endl;
     uint32_t start_seq = isBlockInOurVerifyGroup(lastExecutedSeq + 1) ? lastExecutedSeq + 2 : lastExecutedSeq + 1;
     for (uint i = start_seq; i <= msg.blockValidUpto; i += 2) {
-        if (++log[i].blockValidMsgCnt == nFaulty + 1) {
-            log[i].blockVerified = true;
-	    std::cout << "seq " << i << " get collab verified." << std::endl;
+        if (log[i].setCollabPeerID.size() < nFaulty + 1) {
+            log[i].setCollabPeerID.insert(msg.peerID);
+            if (log[i].setCollabPeerID.size() == nFaulty + 1) {
+                log[i].blockVerified = true;
+                std::cout << "seq " << i << " get collab verified." << std::endl;
+            }
         }
     }
 }
