@@ -2972,7 +2972,16 @@ bool PeerLogicValidation::SendPPMessages(){
      * reqQueue is threadsafe, so we do not acquire lock before querying its size.
      */ 
 
-    if (pbft->isLeader() && pbft->reqQueue.size() > 0) {
+    if (!testStarted) {
+        if (pbft->reqQueue.size() < 8000) {
+            return false;
+        } else {
+            testStarted = true;
+        }
+    }
+
+
+    if (pbft->isLeader() && pbft->reqQueue.size() > 2 * maxBlockSize) {
 	pbft->printQueueSize(); // only log queue size here cuz it will not change anywhere else
 	CPbftBlock pbftblock(pbft->reqQueue.get_upto(static_cast<uint32_t>(maxBlockSize)));
 	pbftblock.ComputeHash();
