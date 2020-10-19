@@ -29,6 +29,7 @@ extern int32_t pbftID;
 extern int32_t nMaxReqInFly; 
 extern int32_t QSizePrintPeriod;
 extern int32_t maxBlockSize; 
+extern bool testStarted;
 
 class ThreadSafeQueue {
 public:

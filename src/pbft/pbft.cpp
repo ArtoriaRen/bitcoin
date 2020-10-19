@@ -26,6 +26,7 @@ int32_t pbftID;
 int32_t nMaxReqInFly; 
 int32_t QSizePrintPeriod;
 int32_t maxBlockSize = 2000;
+bool testStarted = false;
 
 CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalVerifyTime(0), totalVerifyCnt(0), totalExeTime(0), lastBlockValidSeq(-1), lastBlockValidSentSeq(-1), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
