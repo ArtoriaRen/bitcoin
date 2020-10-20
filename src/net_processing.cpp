@@ -1921,6 +1921,12 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	}
     }
 
+    else if (strCommand == NetMsgType::COLLAB_BLOCK_VALID) {
+        CCollabMessage collabMsg;
+        vRecv >> collabMsg;
+        pbft->UpdateBlockValidity(collabMsg);
+    }
+
     else if (strCommand == NetMsgType::SENDHEADERS)
     {
         LOCK(cs_main);

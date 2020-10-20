@@ -46,6 +46,7 @@ const char *PBFT_REPLY="pbftrpl"; // pbft commit
 const char *PBFT_TX="pbfttx"; // use to differentiate pbft tx from normal tx
 const char *PBFT_PUBKEY="pubkey"; 
 const char *PBFT_CLIENT="client"; // a pbft client use this msg to inform the leader that it is a client not a follower.
+const char *COLLAB_BLOCK_VALID="collabvalid"; //Collab BLOCK_VALID
 } // namespace NetMsgType
 
 /** All known message types. Keep this in the same order as the list of
@@ -84,7 +85,8 @@ const static std::string allNetMessageTypes[] = {
     NetMsgType::PBFT_REPLY, // pbft commit
     NetMsgType::PBFT_TX, // use to differentiate pbft tx from normal tx
     NetMsgType::PBFT_PUBKEY,
-    NetMsgType::PBFT_CLIENT // a pbft client use this msg to inform the leader that it is a client not a follower.
+    NetMsgType::PBFT_CLIENT, // a pbft client use this msg to inform the leader that it is a client not a follower.
+    NetMsgType::COLLAB_BLOCK_VALID //Collab BLOCK_VALID
 };
 const static std::vector<std::string> allNetMessageTypesVec(allNetMessageTypes, allNetMessageTypes+ARRAYLEN(allNetMessageTypes));
 

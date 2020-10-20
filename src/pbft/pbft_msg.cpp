@@ -17,11 +17,11 @@
 #include "consensus/tx_verify.h"
 #include "netmessagemaker.h"
 
-CPbftMessage::CPbftMessage(): view(0), seq(0), digest(), peerID(pbftID), blockValidUpto(-1), sigSize(0), vchSig(){
+CPbftMessage::CPbftMessage(): view(0), seq(0), digest(), peerID(pbftID), sigSize(0), vchSig(){
     vchSig.reserve(72); // the expected sig size is 72 bytes.
 }
 
-CPbftMessage::CPbftMessage(const CPbftMessage& msg): view(msg.view), seq(msg.seq), digest(msg.digest), peerID(pbftID), blockValidUpto(-1), sigSize(msg.sigSize), vchSig(msg.vchSig){
+CPbftMessage::CPbftMessage(const CPbftMessage& msg): view(msg.view), seq(msg.seq), digest(msg.digest), peerID(pbftID), sigSize(msg.sigSize), vchSig(msg.vchSig){
     vchSig.reserve(72); // the expected sig size is 72 bytes.
 }
 
@@ -165,4 +165,13 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& 
     }
 
     return txCnt;
+}
+
+CCollabMessage::CCollabMessage(): peerID(pbftID), blockValidUpto(-1), sigSize(0), vchSig(){
+    vchSig.reserve(72); // the expected sig size is 72 bytes.
+}
+
+void CCollabMessage::getHash(uint256& result) const {
+    CHash256().Write((const unsigned char*)&blockValidUpto, sizeof(blockValidUpto))
+	    .Finalize((unsigned char*)&result);
 }

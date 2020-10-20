@@ -108,11 +108,6 @@ bool CPbft::ProcessPP(CConnman* connman, CPre_prepare& ppMsg) {
         return false;
     }
 
-    /* now that the message is valid, check if it includes collab verification info.*/
-    if (ppMsg.blockValidUpto != -1) {
-        UpdateBlockValidity(ppMsg);
-    }
-
     // check if the digest matches client req
     ppMsg.pbft_block.ComputeHash();
     if (ppMsg.digest != ppMsg.pbft_block.hash) {
@@ -159,11 +154,6 @@ bool CPbft::ProcessP(CConnman* connman, CPbftMessage& pMsg, bool fCheck) {
 	if (!checkMsg(&pMsg)) {
 	    return false;
 	}
-
-        /* now that the signature is valid, check if it includes collab verification info.*/
-        if (pMsg.blockValidUpto != -1) {
-            UpdateBlockValidity(pMsg);
-        }
 
 	// check the message's view mactches the ppMsg's view in log.
 	if (log[pMsg.seq].ppMsg.view != pMsg.view) {
@@ -217,11 +207,6 @@ bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
 	if (!checkMsg(&cMsg)) {
 	    return false;
 	}
-
-        /* now that the message is valid, check if it includes collab verification info.*/
-        if (cMsg.blockValidUpto != -1) {
-            UpdateBlockValidity(cMsg);
-        }
 
 	// check the message's view mactches the ppMsg's view in log.
 	if (log[cMsg.seq].ppMsg.view != cMsg.view) {
@@ -285,12 +270,6 @@ CPre_prepare CPbft::assemblePPMsg(const CPbftBlock& pbft_block) {
     toSent.getHash(hash); // this hash is used for signature, so client tx is not included in this hash.
     privateKey.Sign(hash, toSent.vchSig);
     toSent.sigSize = toSent.vchSig.size();
-    if (lastBlockValidSeq > lastBlockValidSentSeq) {
-        toSent.blockValidUpto = lastBlockValidSeq; 
-        lastBlockValidSentSeq = lastBlockValidSeq;
-    } else {
-        toSent.blockValidUpto = -1; 
-    }
     return toSent;
 }
 
@@ -300,12 +279,6 @@ CPbftMessage CPbft::assembleMsg(uint32_t seq) {
     toSent.getHash(hash);
     privateKey.Sign(hash, toSent.vchSig);
     toSent.sigSize = toSent.vchSig.size();
-    if (lastBlockValidSeq > lastBlockValidSentSeq) {
-        toSent.blockValidUpto = lastBlockValidSeq; 
-        lastBlockValidSentSeq = lastBlockValidSeq;
-    } else {
-        toSent.blockValidUpto = -1; 
-    }
     return toSent;
 }
 
@@ -322,7 +295,7 @@ CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char e
 }
 
 int CPbft::executeLog() {
-    /* execute all lower-seq tx until this one if possible. */
+    /* Step 1: execute all lower-seq tx until this one if possible. */
     CCoinsViewCache view(pcoinsTip.get());
     uint i = lastExecutedSeq + 1;
     /* We should go on to execute all log slots that are in reply phase even
@@ -356,8 +329,8 @@ int CPbft::executeLog() {
     bool executedSomeLogSlot = i - 1 > lastExecutedSeq;
     lastExecutedSeq = i - 1;
 
+    /* Step 2: verify blocks belonging to our subgroup. */
     int lastBlockValidSeqStart = lastBlockValidSeq;
-    /* verify blocks belonging to our subgroup. */
     /* tentative execution view. do not update system state b/c the view will be discarded. */
     CCoinsViewCache view_tenta(pcoinsTip.get());
     for (uint j = lastExecutedSeq + 1; j < logSize && log[j].phase == PbftPhase::reply; j++) {
@@ -373,8 +346,14 @@ int CPbft::executeLog() {
 	}
 	std::cout << "lastExecutedSeq  = " << lastExecutedSeq  << ", lastBlockValidSeq =  " << lastBlockValidSeq << std::endl;
     }
+
+    if (lastBlockValidSeq != lastBlockValidSeqStart) {
+        /* we have verified at least one block in our subgroup. Anounce the update-to-date 
+         * verifying result to peers in the other subgroup. */
+        AssembleAndSendCollabMsg();
+    }
     
-    /* if we did have done nothing, and the next log slot is in the reply state, then we
+    /* Step 3: if we did have done nothing, and the next log slot is in the reply state, then we
      * must be blocked by the other subgroup. Verify only the next block. */
     if (!executedSomeLogSlot && lastBlockValidSeq == lastBlockValidSeqStart && log[lastExecutedSeq + 1].phase == PbftPhase::reply) {
 	std::cout << " verifying block " << lastExecutedSeq + 1 << " belonging to the other subgroup."<< std::endl;
@@ -386,7 +365,10 @@ int CPbft::executeLog() {
     return lastExecutedSeq;
 }
 
-void CPbft::UpdateBlockValidity(const CPbftMessage& msg) {
+void CPbft::UpdateBlockValidity(const CCollabMessage& msg) {
+    if (!checkCollabMsg(msg)) {
+        return;
+    }
     if (isBlockInOurVerifyGroup(msg.blockValidUpto)) {
         /* BLOCK_VALID from the peer in the same subgroup as us. Ignore it. */
         return;
@@ -400,6 +382,42 @@ void CPbft::UpdateBlockValidity(const CPbftMessage& msg) {
                 log[i].blockVerified = true;
                 std::cout << "seq " << i << " get collab verified." << std::endl;
             }
+        }
+    }
+}
+
+bool CPbft::checkCollabMsg(const CCollabMessage& msg) {
+    // verify signature and return wrong if sig is wrong
+    auto it = pubKeyMap.find(msg.peerID);
+    if (it == pubKeyMap.end()) {
+        std::cerr << "no pub key for sender " << msg.peerID << std::endl;
+        return false;
+    }
+    uint256 msgHash;
+    msg.getHash(msgHash);
+    if (!it->second.Verify(msgHash, msg.vchSig)) {
+        std::cerr << "collab sig fail" << std::endl;
+        return false;
+    }
+    return true;
+}
+
+void CPbft::AssembleAndSendCollabMsg() {
+    CCollabMessage toSent; 
+    if (lastBlockValidSeq > lastBlockValidSentSeq) {
+        toSent.blockValidUpto = lastBlockValidSeq; 
+        lastBlockValidSentSeq = lastBlockValidSeq;
+    } else {
+        toSent.blockValidUpto = -1; 
+    }
+
+    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+    uint32_t start_peerID = pbftID / CPbft::groupSize; // skip the leader id b/c it is myself
+    uint32_t end_peerID = start_peerID + CPbft::groupSize;
+    for (uint32_t i = start_peerID; i < end_peerID; i++) {
+        if ((i ^ pbftID) & 1) {
+            /* this is a peer in the other subgroup. */
+            g_connman->PushMessage(peers[i], msgMaker.Make(NetMsgType::COLLAB_BLOCK_VALID, toSent));
         }
     }
 }

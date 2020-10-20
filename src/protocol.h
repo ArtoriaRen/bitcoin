@@ -245,6 +245,7 @@ extern const char *PBFT_REPLY; // pbft commit
 extern const char *PBFT_TX; // use to differentiate pbft tx from normal tx
 extern const char *PBFT_PUBKEY; 
 extern const char *PBFT_CLIENT; // a pbft client use this msg to inform the leader that it is a client not a follower.
+extern const char *COLLAB_BLOCK_VALID;
 };
 
 /* Get a vector of all valid message types (see above) */

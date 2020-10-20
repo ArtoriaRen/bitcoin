@@ -108,7 +108,11 @@ public:
     bool checkMsg(CPbftMessage* msg);
     /*return the last executed seq */
     int executeLog();
-    void UpdateBlockValidity(const CPbftMessage& msg);
+    /* when received collab msg from the other subgroup, update our block valid bit.
+     * Called by the net_processing theread. */
+    void UpdateBlockValidity(const CCollabMessage& msg);
+    bool checkCollabMsg(const CCollabMessage& msg);
+    void AssembleAndSendCollabMsg();
 
     inline void printQueueSize(){
 	    /* log queue size if we have reached the period. */
