@@ -1550,7 +1550,7 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, const std::ve
 
 bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman* connman, CPbft* pbft, const std::atomic<bool>& interruptMsgProc)
 {
-    std::cout << __func__ << ": " << strCommand << std::endl;
+    //std::cout << __func__ << ": " << strCommand << std::endl;
     LogPrint(BCLog::NET, "received: %s (%u bytes) peer=%d\n", SanitizeString(strCommand), vRecv.size(), pfrom->GetId());
     if (gArgs.IsArgSet("-dropmessagestest") && GetRand(gArgs.GetArg("-dropmessagestest", 0)) == 0)
     {
@@ -2979,7 +2979,7 @@ bool PeerLogicValidation::SendPPMessages(){
      */ 
 
     if (!testStarted) {
-        if (pbft->reqQueue.size() < 8000) {
+        if (pbft->reqQueue.size() < 16000) {
             return false;
         } else {
             testStarted = true;
@@ -2987,7 +2987,7 @@ bool PeerLogicValidation::SendPPMessages(){
     }
 
 
-    if (pbft->isLeader() && pbft->reqQueue.size() > 2 * maxBlockSize) {
+    if (pbft->isLeader() && pbft->reqQueue.size() > maxBlockSize) {
 	pbft->printQueueSize(); // only log queue size here cuz it will not change anywhere else
 	CPbftBlock pbftblock(pbft->reqQueue.get_upto(static_cast<uint32_t>(maxBlockSize)));
 	pbftblock.ComputeHash();
@@ -3161,7 +3161,7 @@ bool PeerLogicValidation::ProcessMessages(CNode* pfrom, std::atomic<bool>& inter
 
 bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman* connman, CPbft* pbft, const std::atomic<bool>& interruptMsgProc)
 {
-    std::cout << __func__ << ": " << strCommand << std::endl;
+    //std::cout << __func__ << ": " << strCommand << std::endl;
     LogPrint(BCLog::NET, "received: %s (%u bytes) peer=%d\n", SanitizeString(strCommand), vRecv.size(), pfrom->GetId());
     if (gArgs.IsArgSet("-dropmessagestest") && GetRand(gArgs.GetArg("-dropmessagestest", 0)) == 0)
     {

@@ -237,10 +237,9 @@ bool CPbft::checkMsg(CPbftMessage* msg) {
     uint256 msgHash;
     msg->getHash(msgHash);
     if (!it->second.Verify(msgHash, msg->vchSig)) {
-        std::cerr << "verification sig fail" << std::endl;
+        std::cerr << "PBFT verification sig fail" << std::endl;
         return false;
     }
-    std::cerr << "sig ok" << std::endl;
     // server should be in the view
     if (localView != msg->view) {
         std::cerr << "server view = " << localView << ", but msg view = " << msg->view << std::endl;
@@ -329,22 +328,28 @@ int CPbft::executeLog() {
     bool executedSomeLogSlot = i - 1 > lastExecutedSeq;
     lastExecutedSeq = i - 1;
 
-    /* Step 2: verify blocks belonging to our subgroup. */
+    /* Step 2: verify one block belonging to our subgroup. */
     int lastBlockValidSeqStart = lastBlockValidSeq;
     /* tentative execution view. do not update system state b/c the view will be discarded. */
     CCoinsViewCache view_tenta(pcoinsTip.get());
     for (uint j = lastExecutedSeq + 1; j < logSize && log[j].phase == PbftPhase::reply; j++) {
+	if (log[j].blockVerified) {
+	    std::cout << "Tentative executing block " << j << std::endl;
+	    log[j].ppMsg.pbft_block.Execute(j, nullptr, view_tenta);
+	    continue;
+	}
         if (isBlockInOurVerifyGroup(j)) {
             std::cout << "verifying block " << j << " in my subgroup" << std::endl;
             totalVerifyCnt += log[j].ppMsg.pbft_block.Verify(j, view_tenta);
             log[j].blockVerified = true;
             lastBlockValidSeq = j;
 	    std::cout << "Average verifying time: " << totalVerifyTime/totalVerifyCnt 
-                    << " us/req" << std::endl;
-        } else {
+                    << " us/req" << "lastExecutedSeq  = " << lastExecutedSeq  << ", lastBlockValidSeq = " << lastBlockValidSeq << std::endl;
+	    break; // verify only one block per loop, so that we can notify the other subgroup ASAP. 
+        } else if (j+1 < logSize && log[j+1].phase == PbftPhase::reply) {
+	    std::cout << "Tentative executing block " << j << std::endl;
 	    log[j].ppMsg.pbft_block.Execute(j, nullptr, view_tenta);
 	}
-	std::cout << "lastExecutedSeq  = " << lastExecutedSeq  << ", lastBlockValidSeq =  " << lastBlockValidSeq << std::endl;
     }
 
     if (lastBlockValidSeq != lastBlockValidSeqStart) {
@@ -404,12 +409,11 @@ bool CPbft::checkCollabMsg(const CCollabMessage& msg) {
 
 void CPbft::AssembleAndSendCollabMsg() {
     CCollabMessage toSent; 
-    if (lastBlockValidSeq > lastBlockValidSentSeq) {
-        toSent.blockValidUpto = lastBlockValidSeq; 
-        lastBlockValidSentSeq = lastBlockValidSeq;
-    } else {
-        toSent.blockValidUpto = -1; 
-    }
+    toSent.blockValidUpto = lastBlockValidSeq; 
+    uint256 hash;
+    toSent.getHash(hash);
+    privateKey.Sign(hash, toSent.vchSig);
+    toSent.sigSize = toSent.vchSig.size();
 
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
     uint32_t start_peerID = pbftID / CPbft::groupSize; // skip the leader id b/c it is myself

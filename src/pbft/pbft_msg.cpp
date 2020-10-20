@@ -89,8 +89,8 @@ static char ExecuteTx(CMutableTxRef tx_mutable, const int seq, CCoinsViewCache& 
     UpdateCoins(tx, view, seq);
     /* -------------logic from Bitcoin code for tx processing--------- */
 
-    std::cout << __func__ << ": excuted tx " << tx.GetHash().ToString()
-	    << " at log slot " << seq << std::endl;
+    //std::cout << __func__ << ": excuted tx " << tx.GetHash().ToString()
+//	    << " at log slot " << seq << std::endl;
     return 'y';
 }
 
