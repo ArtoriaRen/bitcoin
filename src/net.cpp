@@ -2355,7 +2355,8 @@ bool CConnman::Start(CScheduler& scheduler, const Options& connOptions)
         fMsgProcWake = false;
     }
 
-    for (uint32_t i = 0; i < (num_committees / SHARD_PER_THREAD); i++) {
+    /* create one thread for every node. */
+    for (uint32_t i = 0; i < g_pbft->groupSize; i++) {
 	threadSocketHandler.push_back(std::thread(&TraceThread<std::function<void()> >, "net" + std::to_string(i), std::function<void()>(std::bind(&CConnman::ThreadSocketHandler, this, i))));
     }
 
@@ -2379,7 +2380,7 @@ bool CConnman::Start(CScheduler& scheduler, const Options& connOptions)
         threadOpenConnections = std::thread(&TraceThread<std::function<void()> >, "opencon", std::function<void()>(std::bind(&CConnman::ThreadOpenConnections, this, connOptions.m_specified_outgoing)));
 
     // Process messages
-    for (uint32_t i = 0; i < (num_committees / SHARD_PER_THREAD); i++) {
+    for (uint32_t i = 0; i < g_pbft->groupSize; i++) {
         threadMessageHandler.push_back(std::thread(&TraceThread<std::function<void()> >,  "mghnd" + std::to_string(i), std::function<void()>(std::bind(&CConnman::ThreadMessageHandler, this, i))));
     }
 
@@ -2883,10 +2884,9 @@ std::vector<CNode*> CConnman::GetNodesInThread(uint threadIdx) {
     std::vector<CNode*> ret;
     LOCK(cs_vNodes);
     for (auto& pnode : vNodes) {
-        if (pnode->connectListIdx >= NODES_PER_THREAD * threadIdx && pnode->connectListIdx < NODES_PER_THREAD * (threadIdx + 1)) {
+        if (pnode->connectListIdx == threadIdx) {
 	    ret.push_back(pnode);
-	    if (ret.size() == NODES_PER_THREAD)
-		break;
+	    break;
         }
     }
     return ret;

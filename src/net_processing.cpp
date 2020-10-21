@@ -1833,8 +1833,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     {
 	std::pair<int32_t, CPubKey> idPubkey;
 	vRecv >> idPubkey;
-	assert(idPubkey.first >= threadIdx * SHARD_PER_THREAD * g_pbft->groupSize &&
-		idPubkey.first < (threadIdx + 1) * SHARD_PER_THREAD * g_pbft->groupSize);
+	assert(idPubkey.first == threadIdx);
 	g_pbft->pubKeyMap.insert(std::make_pair(idPubkey.first, idPubkey.second));
 	if (idPubkey.first % CPbft::groupSize == 0) {
 	    /* The g_pbft->leaders vector is not protected by a lock because we
