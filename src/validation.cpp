@@ -1780,6 +1780,7 @@ static int64_t nBlocksTotal = 0;
 bool CChainState::ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pindex,
                   CCoinsViewCache& view, const CChainParams& chainparams, bool fJustCheck)
 {
+    gettimeofday(&startTimeProcessBlock, NULL);
     AssertLockHeld(cs_main);
     assert(pindex);
     // pindex->phashBlock can be null if called by CreateNewBlock/TestBlockValidity
@@ -2011,6 +2012,10 @@ bool CChainState::ConnectBlock(const CBlock& block, CValidationState& state, CBl
     int64_t nTime6 = GetTimeMicros(); nTimeCallbacks += nTime6 - nTime5;
     LogPrint(BCLog::BENCH, "    - Callbacks: %.2fms [%.2fs (%.2fms/blk)]\n", MILLI * (nTime6 - nTime5), nTimeCallbacks * MICRO, nTimeCallbacks * MILLI / nBlocksTotal);
 
+    gettimeofday(&endTime, NULL);
+    std::cout << " Reconsider block " << pindex->nHeight << " takes " << (endTime.tv_sec - startTimeProcessBlock.tv_sec) * 1000 + (endTime.tv_usec - startTimeProcessBlock.tv_usec) / 1000 << "ms. Verifying " << block.vtx.size() << " tx takes " << txVerifyDuration << " us. Updating DB takes " << updateDBDuration << " us." << std::endl;
+    txVerifyDuration = 0;
+    updateDBDuration = 0;
     return true;
 }
 
