@@ -129,6 +129,7 @@ void CPbftBlock::ComputeHash(){
 uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view) const {
     uint32_t txCnt = 0;
     struct timeval start_time, end_time;
+    bool isInOurSubgroup = g_pbft->isBlockInOurVerifyGroup(seq);
     for (uint i = 0; i < vReq.size(); i++) {
 	gettimeofday(&start_time, NULL);
 	assert(VerifyTx(vReq[i], seq, view));
@@ -136,6 +137,12 @@ uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view) const {
         txCnt++;
         /* update verify time and count */
 	g_pbft->totalVerifyTime += (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
+	if (!isInOurSubgroup && (i & 15 == 0)) {
+	    /* check if collab msg is received every 16 blocks. */
+	    if (g_pbft->log[i].blockVerified) {
+		break;
+	    }
+	}
     }
 
     return txCnt;

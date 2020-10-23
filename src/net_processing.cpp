@@ -2972,22 +2972,15 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 }
 
 bool PeerLogicValidation::SendPPMessages(){
-    /* TODO : take client req from the reqQueue when need to process new req. 
-     * Probably we should do this when there are, e.g., 10 reqs in fly. Should 
-     * tune this number to get best thoroughput.
-     * reqQueue is threadsafe, so we do not acquire lock before querying its size.
-     */ 
+    //if (!testStarted) {
+    //    if (pbft->reqQueue.size() < 16000) {
+    //        return false;
+    //    } else {
+    //        testStarted = true;
+    //    }
+    //}
 
-    if (!testStarted) {
-        if (pbft->reqQueue.size() < 16000) {
-            return false;
-        } else {
-            testStarted = true;
-        }
-    }
-
-
-    if (pbft->isLeader() && pbft->reqQueue.size() > maxBlockSize) {
+    if (pbft->isLeader() && pbft->reqQueue.size() >= maxBlockSize) {
 	pbft->printQueueSize(); // only log queue size here cuz it will not change anywhere else
 	CPbftBlock pbftblock(pbft->reqQueue.get_upto(static_cast<uint32_t>(maxBlockSize)));
 	pbftblock.ComputeHash();
