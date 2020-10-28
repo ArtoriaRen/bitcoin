@@ -136,7 +136,7 @@ uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view) const {
         gettimeofday(&end_time, NULL);
         txCnt++;
         /* update verify time and count */
-	g_pbft->totalVerifyTime += (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
+	//g_pbft->totalVerifyTime += (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
 	if (!isInOurSubgroup && (i & 15 == 0)) {
 	    /* check if collab msg is received every 16 blocks. */
 	    if (g_pbft->log[i].blockVerified) {
@@ -168,7 +168,7 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& 
         connman->PushMessage(g_pbft->client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
         txCnt++;
         /* update execution time and count */
-	g_pbft->totalExeTime += (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
+	//g_pbft->totalExeTime += (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
     }
 
     return txCnt;

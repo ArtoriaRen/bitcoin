@@ -305,12 +305,12 @@ int CPbft::executeLog() {
         if (log[i].phase == PbftPhase::reply && log[i].blockVerified) {
 	    log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, g_connman.get(), view);
 	    nCompletedTx += log[i].txCnt;
-	    std::cout << "Average execution time: " << totalExeTime/nCompletedTx 
-                    << " us/req" << ", current total completed tx = " << nCompletedTx 
-		    << ". Executed block " << log[i].ppMsg.digest.GetHex() 
-                    << " at log slot = " << i  << ", block size = " 
-                    << log[i].ppMsg.pbft_block.vReq.size()  
-                    << std::endl;
+	    //std::cout << "Average execution time: " << totalExeTime/nCompletedTx 
+            //        << " us/req" << ", current total completed tx = " << nCompletedTx 
+	    //        << ". Executed block " << log[i].ppMsg.digest.GetHex() 
+            //        << " at log slot = " << i  << ", block size = " 
+            //        << log[i].ppMsg.pbft_block.vReq.size()  
+            //        << std::endl;
             /* wake up the client-listening thread to send results to clients. The 
              * client-listening thread is probably already up if the client sends 
              * request too frequently. 
@@ -340,11 +340,12 @@ int CPbft::executeLog() {
 	}
         if (isBlockInOurVerifyGroup(j)) {
             std::cout << "verifying block " << j << " in my subgroup" << std::endl;
-            totalVerifyCnt += log[j].ppMsg.pbft_block.Verify(j, view_tenta);
+            //totalVerifyCnt += log[j].ppMsg.pbft_block.Verify(j, view_tenta);
+            log[j].ppMsg.pbft_block.Verify(j, view_tenta);
             log[j].blockVerified = true;
             lastBlockValidSeq = j;
-	    std::cout << "Average verifying time: " << totalVerifyTime/totalVerifyCnt 
-                    << " us/req" << "lastExecutedSeq  = " << lastExecutedSeq  << ", lastBlockValidSeq = " << lastBlockValidSeq << std::endl;
+	    //std::cout << "Average verifying time: " << totalVerifyTime/totalVerifyCnt 
+            //        << " us/req" << "lastExecutedSeq  = " << lastExecutedSeq  << ", lastBlockValidSeq = " << lastBlockValidSeq << std::endl;
 	    break; // verify only one block per loop, so that we can notify the other subgroup ASAP. 
         } else if (j+1 < logSize && log[j+1].phase == PbftPhase::reply) {
 	    std::cout << "Tentative executing block " << j << std::endl;
