@@ -46,7 +46,7 @@ void ShardInfo::print() const {
     }
 }
 
-TxPlacer::TxPlacer():totalTxNum(0){}
+TxPlacer::TxPlacer():totalTxNum(0), vTxCnt(num_committees, 0){}
 
 
 /* all output UTXOs of a tx is stored in one shard. */
@@ -120,7 +120,22 @@ std::vector<int32_t> TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCach
     //std::cout << std::endl;
 
     /* get output shard id */
-    int32_t outputShard = cache.AccessCoin(tx.vin[0].prevout).shardAffinity;
+    int32_t outputShard = -1;
+    if (mapInputShardUTXO.size() > 1) {
+        /* input UTXOs are not in the same shard, choose load-balancing path. */
+        int32_t minCnt = 0x7FFFFFFF, minCntIdx = -1;
+        for (uint i = 0; i < vTxCnt.size(); i++) {
+            if (vTxCnt[i] < minCnt) {
+                minCnt = vTxCnt[i];
+                minCntIdx = i;
+            }
+        }
+        outputShard = minCntIdx; 
+        
+    } else {
+        assert(mapInputShardUTXO.size() == 1);
+        outputShard = cache.AccessCoin(tx.vin[0].prevout).shardAffinity;
+    }
     
     /* Because this func is called by the 2PC coordinator, it should add the shard
      * info of this outputs of tx to coinsviewcache for future use. 
@@ -140,6 +155,12 @@ std::vector<int32_t> TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCach
 	vShardUtxoIdxToLock.push_back(it->second);
     }
     assert(vShardUtxoIdxToLock.size() + 1 == ret.size());
+    
+    /*update tx counter. */
+    vTxCnt[outputShard]++;
+    int32_t hashingPlaceRes = randomPlaceUTXO(tx.GetHash());
+    assert(hashingPlaceRes >= 0 && hashingPlaceRes < num_committees);
+    vTxCnt[hashingPlaceRes]--;
     return ret;
 }
 

@@ -66,6 +66,8 @@ public:
     std::map<uint, std::map<uint, uint>> shardCntMap; // < input_utxo_count, shard_count, tx_count>
     uint totalTxNum;
     std::vector<ShardInfo> vShardInfo;
+    /* tx couter for load balancing. */
+    std::vector<int32_t> vTxCnt;
 
     /* return the number of shards that input UTXOs and output UTXOs span */
     TxPlacer();
