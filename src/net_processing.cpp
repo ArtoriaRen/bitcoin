@@ -1497,7 +1497,7 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, const std::ve
 
 bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman* connman, const std::atomic<bool>& interruptMsgProc, uint32_t& nLocalCompletedTxPerInterval, uint32_t& nLocalTotalFailedTxPerInterval, const uint threadIdx)
 {
-    std::cout << __func__ << ": " << strCommand << std::endl;
+    //std::cout << __func__ << ": " << strCommand << std::endl;
     LogPrint(BCLog::NET, "received: %s (%u bytes) peer=%d\n", SanitizeString(strCommand), vRecv.size(), pfrom->GetId());
     if (gArgs.IsArgSet("-dropmessagestest") && GetRand(gArgs.GetArg("-dropmessagestest", 0)) == 0)
     {
@@ -1852,7 +1852,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	//if (!g_pbft->checkReplySig(&reply)) {
 	//    std::cout << strCommand << " from " << reply.peerID << " sig verification fail"  << std::endl;
 	//}
-	std::cout << __func__ << ": received PBFT_REPLY for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
+	//std::cout << __func__ << ": received PBFT_REPLY for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
 	g_pbft->replyMap[reply.digest].emplace(pfrom->GetAddrName());
 	if (g_pbft->replyMap[reply.digest].size() == 2 * CPbft::nFaulty + 1) {
 	    struct timeval endTime;
@@ -1867,15 +1867,16 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		assert (stat.type == TxType::SINGLE_SHARD); 
 		std::cout << "tx " << reply.digest.GetHex().substr(0,10);
 		if (reply.reply == 'y') {
-			std::cout << ", SUCCEED, ";
+			std::cout << ", SUCCEED, " << std::endl;
 			g_pbft->txInFly.erase(reply.digest);
 			nLocalCompletedTxPerInterval++;
 		} else if (reply.reply == 'n') {
-			std::cout << ", FAIL, ";
+			std::cout << ", FAIL, " << std::endl;
 			g_pbft->txResendQueue.push_back(g_pbft->txInFly[reply.digest]);
 			nLocalTotalFailedTxPerInterval++;
 		} 
-		std::cout << "single-shard, result received at " << endTime.tv_sec << "." << endTime.tv_usec << " s , latency = " << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << " ms" << std::endl;
+		//std::cout << "single-shard, result received at " << endTime.tv_sec << "." << endTime.tv_usec << " s , latency = " << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << " ms" << std::endl;
+		g_pbft->latencyFile << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << "\n";
 	    } else {
 		/* cross-shard tx */
 		auto& inputShardRplMap = g_pbft->inputShardReplyMap;

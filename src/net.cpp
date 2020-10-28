@@ -2431,7 +2431,7 @@ void CConnman::Interrupt()
 
 void CConnman::Stop()
 {
-    for (uint i = 0; i < num_committees / SHARD_PER_THREAD; i++) {
+    for (uint i = 0; i < g_pbft->groupSize; i++) {
 	if (threadMessageHandler[i].joinable())
 	    threadMessageHandler[i].join();
     }
@@ -2441,7 +2441,7 @@ void CConnman::Stop()
         threadOpenAddedConnections.join();
     if (threadDNSAddressSeed.joinable())
         threadDNSAddressSeed.join();
-    for (uint i = 0; i < num_committees / SHARD_PER_THREAD; i++) {
+    for (uint i = 0; i < g_pbft->groupSize; i++) {
 	if (threadSocketHandler[i].joinable())
 	    threadSocketHandler[i].join();
     }
@@ -2831,7 +2831,7 @@ bool CConnman::NodeFullyConnected(const CNode* pnode)
 
 void CConnman::PushMessage(CNode* pnode, CSerializedNetMsg&& msg)
 {
-    std::cout << __func__ << ": " << msg.command << std::endl;
+    //std::cout << __func__ << ": " << msg.command << std::endl;
     size_t nMessageSize = msg.data.size();
     size_t nTotalSize = nMessageSize + CMessageHeader::HEADER_SIZE;
     LogPrint(BCLog::NET, "sending %s (%d bytes) peer=%d\n",  SanitizeString(msg.command.c_str()), nMessageSize, pnode->GetId());
@@ -2893,7 +2893,7 @@ std::vector<CNode*> CConnman::GetNodesInThread(uint threadIdx) {
 }
 
 bool CConnman::NodeIsInThread(const CNode* pnode, uint threadIdx) {
-    if (pnode->connectListIdx >= NODES_PER_THREAD * threadIdx && pnode->connectListIdx < NODES_PER_THREAD * (threadIdx + 1)) 
+    if (pnode->connectListIdx == threadIdx) 
 	return true;
     else 
 	return false;

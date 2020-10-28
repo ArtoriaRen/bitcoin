@@ -101,7 +101,7 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
     for (uint j = 0; j < block.vtx.size(); j++) {
 	sendTx(block.vtx[j], j, block_height);
 	cnt++;
-	//nanosleep(&sleep_length, NULL);
+	nanosleep(&sleep_length, NULL);
 
 	/* send one aborted tx every four tx */
 	if ((j & 0x04) == 0) {
@@ -141,17 +141,18 @@ uint32_t sendAllTailTx(int txSendPeriod) {
 
 bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height) {
 	/* get the input shards and output shards id*/
-	TxPlacer txPlacer;
-	CCoinsViewCache view(pcoinsTip.get());
-	std::vector<int32_t> shards = txPlacer.randomPlace(*tx, view);
+	//TxPlacer txPlacer;
+	//CCoinsViewCache view(pcoinsTip.get());
+	//std::vector<int32_t> shards = txPlacer.randomPlace(*tx, view);
 	const uint256& hashTx = tx->GetHash();
 
 	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-	assert((tx->IsCoinBase() && shards.size() == 1) || (!tx->IsCoinBase() && shards.size() >= 2)); // there must be at least one output shard and one input shard for non-coinbase tx.
-	std::cout << idx << "-th" << " tx "  <<  hashTx.GetHex().substr(0, 10) << " : ";
-	for (int shard : shards)
-	    std::cout << shard << ", ";
-	std::cout << std::endl;
+	//assert((tx->IsCoinBase() && shards.size() == 1) || (!tx->IsCoinBase() && shards.size() >= 2)); // there must be at least one output shard and one input shard for non-coinbase tx.
+	//std::cout << idx << "-th" << " tx "  <<  hashTx.GetHex().substr(0, 10) << " : ";
+	std::cout << idx << "-th" << " tx "  <<  hashTx.GetHex().substr(0, 10) << std::endl;
+	//for (int shard : shards)
+	//    std::cout << shard << ", ";
+	//std::cout << std::endl;
 
 	/* send tx and collect time info to calculate latency. 
 	 * We also remove all reply msg for this req for resending aborted tx. */
@@ -159,23 +160,24 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 	//g_pbft->mapTxStartTime.erase(hashTx);
 	g_pbft->txInFly.insert(std::make_pair(hashTx, std::move(TxBlockInfo(tx, block_height, idx))));
 	struct TxStat stat;
-	if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
+	//if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
 	    /* this is a single shard tx */
 	    stat.type = TxType::SINGLE_SHARD;
 	    gettimeofday(&stat.startTime, NULL);
 	    g_pbft->mapTxStartTime.insert(std::make_pair(hashTx, stat));
-	    g_connman->PushMessage(g_pbft->leaders[shards[0]], msgMaker.Make(NetMsgType::PBFT_TX, *tx));
-	} else {
-	    /* this is a cross-shard tx */
-	    stat.type = TxType::CROSS_SHARD;
-	    gettimeofday(&stat.startTime, NULL);
-	    g_pbft->mapTxStartTime.insert(std::make_pair(hashTx, stat));
-	    for (uint i = 1; i < shards.size(); i++) {
-		g_pbft->inputShardReplyMap[hashTx].lockReply.insert(std::make_pair(shards[i], std::vector<CInputShardReply>()));
-		g_pbft->inputShardReplyMap[hashTx].decision = '\0';
-		g_connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_LOCK, *tx));
-	    }
-	}
+	    //g_connman->PushMessage(g_pbft->leaders[shards[0]], msgMaker.Make(NetMsgType::PBFT_TX, *tx));
+	    g_connman->PushMessage(g_pbft->leaders[0], msgMaker.Make(NetMsgType::PBFT_TX, *tx));
+//	} else {
+//	    /* this is a cross-shard tx */
+//	    stat.type = TxType::CROSS_SHARD;
+//	    gettimeofday(&stat.startTime, NULL);
+//	    g_pbft->mapTxStartTime.insert(std::make_pair(hashTx, stat));
+//	    for (uint i = 1; i < shards.size(); i++) {
+//		g_pbft->inputShardReplyMap[hashTx].lockReply.insert(std::make_pair(shards[i], std::vector<CInputShardReply>()));
+//		g_pbft->inputShardReplyMap[hashTx].decision = '\0';
+//		g_connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_LOCK, *tx));
+//	    }
+//	}
 	g_pbft->nTotalSentTx++;
 	return true;
 }

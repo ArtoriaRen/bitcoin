@@ -65,6 +65,11 @@ CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), nLastCompletedTx(
     nextLogTime = {0, 0};
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
+    latencyFile.open ("/home/l27ren/collab_verify/latency.out");
+}
+
+CPbft::~CPbft() {
+    latencyFile.close();
 }
 
 bool CPbft::checkReplySig(const CReply* pReply) const {
