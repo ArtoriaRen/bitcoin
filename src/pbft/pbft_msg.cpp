@@ -136,7 +136,5 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& 
 	g_pbft->totalExeTime += (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
     }
 
-    bool flushed = view.Flush(); // flush to pcoinsTip
-    assert(flushed);
     return txCnt;
 }

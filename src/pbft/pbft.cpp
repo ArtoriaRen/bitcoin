@@ -28,7 +28,7 @@ int32_t QSizePrintPeriod;
 int32_t maxBlockSize = 2000;
 bool testStarted = false;
 
-CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalExeTime(0), privateKey(CKey()) {
+CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalExeTime(0), lastReplySentSeq(-1), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
@@ -279,7 +279,7 @@ CPbftMessage CPbft::assembleMsg(uint32_t seq) {
     return toSent;
 }
 
-CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char exe_res) {
+CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char exe_res) const {
     /* 'y' --- execute sucessfully
      * 'n' --- execute fail
      */
@@ -294,35 +294,39 @@ CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char e
 int CPbft::executeLog() {
     /* execute all lower-seq tx until this one if possible. */
     CCoinsViewCache view(pcoinsTip.get());
+    int lastExecutedSeqStart = lastExecutedSeq;
     uint i = lastExecutedSeq + 1;
     /* We should go on to execute all log slots that are in reply phase even
      * their seqs are greater than the seq passed in. If we only execute up to
      * the seq passed in, a slot missing a pbftc msg might permanently block
      * log slots after it to be executed. */
-    for (; i < logSize; i++) {
-        if (log[i].phase == PbftPhase::reply) {
-	    log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, g_connman.get(), view);
-	    nCompletedTx += log[i].txCnt;
-	    std::cout << "Average execution time: " << g_pbft->totalExeTime/nCompletedTx 
-                    << " us/req" << ". Executed block " << log[i].ppMsg.digest.GetHex() 
-                    << " at log slot = " << i  << ", block size = " 
-                    << log[i].ppMsg.pbft_block.vReq.size()  
-                    << std::endl;
-            /* wake up the client-listening thread to send results to clients. The 
-             * client-listening thread is probably already up if the client sends 
-             * request too frequently. 
-             * The following code cause linking errors still not fixed.
-             */
-            if (isLeader()) {
-                clientConnMan->WakeMessageHandler();
-            }
-        } else {
-            break;
-        }
+    for (; i < logSize && log[i].phase == PbftPhase::reply; i++) {
+	log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, g_connman.get(), view);
+	lastExecutedSeq = i;
+	nCompletedTx += log[i].txCnt;
+	std::cout << "Average execution time: " << g_pbft->totalExeTime/nCompletedTx 
+		<< " us/req" << ". Executed block " << log[i].ppMsg.digest.GetHex() 
+		<< " at log slot = " << i  << ", block size = " 
+		<< log[i].ppMsg.pbft_block.vReq.size()  
+		<< std::endl;
     }
-    lastExecutedSeq = i - 1;
-
+    bool flushed = view.Flush(); // flush to pcoinsTip
+    assert(flushed);
     return lastExecutedSeq;
+}
+
+void CPbft::sendReplies(CConnman* connman, const CNetMsgMaker& msgMaker) {
+    if (lastExecutedSeq > lastReplySentSeq) {
+        /* sent reply msg for only one block per loop b/c we do not want to block receiving msg.*/
+        int seq = lastReplySentSeq + 1;
+        const std::vector<CMutableTxRef>& vReq = log[seq].ppMsg.pbft_block.vReq;
+        for (uint i = 0; i < vReq.size(); i++) {
+            /* hard code execution result as 'y' since we are replaying tx on Bitcoin's chain. */
+            CReply reply = assembleReply(seq, i,'y');
+            connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
+        }
+        lastReplySentSeq++;
+    }
 }
 
 void ThreadConsensusLogExe() {

@@ -24,6 +24,7 @@
 #include <condition_variable>
 #include <memory>
 #include <chrono>
+#include "netmessagemaker.h"
 
 extern int32_t pbftID;
 extern int32_t nMaxReqInFly; 
@@ -88,6 +89,8 @@ public:
      * For avg execution time calculation. */
     unsigned long totalExeTime; // in us
 
+    int lastReplySentSeq; // the highest block we have sent reply to the client. Used only by the msg_hand thread. 
+    
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
     bool ProcessPP(CConnman* connman, CPre_prepare& ppMsg);
@@ -100,10 +103,11 @@ public:
 
     CPre_prepare assemblePPMsg(const CPbftBlock& pbft_block);
     CPbftMessage assembleMsg(const uint32_t seq); 
-    CReply assembleReply(const uint32_t seq, const uint32_t idx, const char exe_res);
+    CReply assembleReply(const uint32_t seq, const uint32_t idx, const char exe_res) const;
     bool checkMsg(CPbftMessage* msg);
     /*return the last executed seq */
     int executeLog();
+    void sendReplies(CConnman* connman, const CNetMsgMaker& msgMaker);
 
     inline void printQueueSize(){
 	    /* log queue size if we have reached the period. */
