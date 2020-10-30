@@ -123,7 +123,7 @@ bool CPbft::ProcessPP(CConnman* connman, CPre_prepare& ppMsg) {
      -----Placeholder: to tolerate faulty nodes, we must check if all prepare msg matches the pre-prepare.
      */
 
-    std::cout << "digest = " << ppMsg.digest.GetHex() << std::endl;
+    //std::cout << "digest = " << ppMsg.digest.GetHex() << std::endl;
 
     /* Enter prepare phase. */
     log[ppMsg.seq].phase = PbftPhase::prepare;
@@ -286,14 +286,15 @@ CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char e
      * 'n' --- execute fail
      */
     CReply toSent(exe_res, log[seq].ppMsg.pbft_block.vReq[idx]->GetHash());
-    uint256 hash;
-    toSent.getHash(hash);
-    privateKey.Sign(hash, toSent.vchSig);
+    //uint256 hash;
+    //toSent.getHash(hash);
+    //privateKey.Sign(hash, toSent.vchSig);
     toSent.sigSize = toSent.vchSig.size();
     return toSent;
 }
 
 int CPbft::executeLog() {
+    struct timeval start_time, end_time;
     /* Step 1: execute all lower-seq tx until this one if possible. */
     CCoinsViewCache view(pcoinsTip.get());
     uint i = lastExecutedSeq + 1;
@@ -302,15 +303,13 @@ int CPbft::executeLog() {
      * the seq passed in, a slot missing a pbftc msg might permanently block
      * log slots after it to be executed. */
     for (; i < logSize; i++) {
-        if (log[i].phase == PbftPhase::reply && log[i].blockVerified) {
+        if (log[i].phase == PbftPhase::reply && log[i].blockVerified.load(std::memory_order_relaxed)) {
+	    gettimeofday(&start_time, NULL);
 	    log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, g_connman.get(), view);
+	    gettimeofday(&end_time, NULL);
 	    nCompletedTx += log[i].txCnt;
-	    //std::cout << "Average execution time: " << totalExeTime/nCompletedTx 
-            //        << " us/req" << ", current total completed tx = " << nCompletedTx 
-	    //        << ". Executed block " << log[i].ppMsg.digest.GetHex() 
-            //        << " at log slot = " << i  << ", block size = " 
-            //        << log[i].ppMsg.pbft_block.vReq.size()  
-            //        << std::endl;
+	    std::cout << "Average execution time of block " << i << ": " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / log[i].txCnt << " us/req" << std::endl; 
+		    
             /* wake up the client-listening thread to send results to clients. The 
              * client-listening thread is probably already up if the client sends 
              * request too frequently. 
@@ -319,53 +318,71 @@ int CPbft::executeLog() {
             if (isLeader()) {
                 clientConnMan->WakeMessageHandler();
             }
+        } else if (log[i].phase == PbftPhase::reply && isBlockInOurVerifyGroup(i) && !log[i].blockVerified.load(std::memory_order_relaxed)){
+	    /* This is a block to be verified by our subgroup. Verify it directly using the real system state. (The Verify call includes executing tx.)*/
+	    gettimeofday(&start_time, NULL);
+            log[i].txCnt = log[i].ppMsg.pbft_block.Verify(i, view, true, g_connman.get());
+	    gettimeofday(&end_time, NULL);
+	    nCompletedTx += log[i].txCnt;
+            log[i].blockVerified.store(true, std::memory_order_relaxed);
+	    totalVerifyCnt += log[i].txCnt;
+            lastBlockValidSeq = i;
+	    /*Anounce the update-to-date verifying result to peers in the other subgroup.*/
+	    AssembleAndSendCollabMsg();
+            if (isLeader()) {
+                clientConnMan->WakeMessageHandler();
+            }
+	    std::cout << "Average verify-amid-execution time of block " << i << ": " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / log[i].txCnt << " us/req" << std::endl; 
         } else {
             break;
-        } 
+	}	
     }
     bool flushed = view.Flush(); // flush to pcoinsTip
     assert(flushed);
     bool executedSomeLogSlot = i - 1 > lastExecutedSeq;
     lastExecutedSeq = i - 1;
 
-    /* Step 2: verify one block belonging to our subgroup. */
-    int lastBlockValidSeqStart = lastBlockValidSeq;
+    /* Step 2: verify one block belonging to our subgroup if we did not execute any blocks in Step 1.  We verify only one block per loop so that the collab msg of the other group have some time to arrive. */
     /* tentative execution view. do not update system state b/c the view will be discarded. */
-    CCoinsViewCache view_tenta(pcoinsTip.get());
-    for (uint j = lastExecutedSeq + 1; j < logSize && log[j].phase == PbftPhase::reply; j++) {
-	if (log[j].blockVerified) {
-	    std::cout << "Tentative executing block " << j << std::endl;
-	    log[j].ppMsg.pbft_block.Execute(j, nullptr, view_tenta);
-	    continue;
+    int blockIdxToBeVerified = -1;
+    if (!executedSomeLogSlot) {
+	CCoinsViewCache view_tenta(pcoinsTip.get());
+	for (uint j = lastExecutedSeq + 1; j < logSize && log[j].phase == PbftPhase::reply; j++) {
+	    if (isBlockInOurVerifyGroup(j) && !log[j].blockVerified.load(std::memory_order_relaxed)){
+		blockIdxToBeVerified = j;
+		break;
+	    }
+
 	}
-        if (isBlockInOurVerifyGroup(j)) {
-            std::cout << "verifying block " << j << " in my subgroup" << std::endl;
-            //totalVerifyCnt += log[j].ppMsg.pbft_block.Verify(j, view_tenta);
-            log[j].ppMsg.pbft_block.Verify(j, view_tenta);
-            log[j].blockVerified = true;
-            lastBlockValidSeq = j;
-	    //std::cout << "Average verifying time: " << totalVerifyTime/totalVerifyCnt 
-            //        << " us/req" << "lastExecutedSeq  = " << lastExecutedSeq  << ", lastBlockValidSeq = " << lastBlockValidSeq << std::endl;
-	    break; // verify only one block per loop, so that we can notify the other subgroup ASAP. 
-        } else if (j+1 < logSize && log[j+1].phase == PbftPhase::reply) {
-	    std::cout << "Tentative executing block " << j << std::endl;
-	    log[j].ppMsg.pbft_block.Execute(j, nullptr, view_tenta);
+	if (blockIdxToBeVerified > -1) {
+	    for (int j = lastExecutedSeq + 1; j < blockIdxToBeVerified; j++) {
+		std::cout << "Tentative executing block " << j << std::endl;
+		gettimeofday(&start_time, NULL);
+		int tx_cnt = log[j].ppMsg.pbft_block.Execute(j, nullptr, view_tenta);
+		gettimeofday(&end_time, NULL);
+		std::cout << "Average tentative exe time of block " << j << ": " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / tx_cnt << " us/req" << std::endl;
+	    }
+
+	    gettimeofday(&start_time, NULL);
+	    int tx_cnt = log[blockIdxToBeVerified].ppMsg.pbft_block.Verify(blockIdxToBeVerified, view_tenta);
+	    gettimeofday(&end_time, NULL);
+	    log[blockIdxToBeVerified].blockVerified.store(true, std::memory_order_relaxed);
+	    lastBlockValidSeq = blockIdxToBeVerified;
+	    AssembleAndSendCollabMsg();
+	    std::cout << "Average verify time of block " << blockIdxToBeVerified << " in my subgroup: " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / tx_cnt << " us/req" << std::endl;
 	}
     }
 
-    if (lastBlockValidSeq != lastBlockValidSeqStart) {
-        /* we have verified at least one block in our subgroup. Anounce the update-to-date 
-         * verifying result to peers in the other subgroup. */
-        AssembleAndSendCollabMsg();
-    }
-    
     /* Step 3: if we did have done nothing, and the next log slot is in the reply state, then we
      * must be blocked by the other subgroup. Verify only the next block. */
-    if (!executedSomeLogSlot && lastBlockValidSeq == lastBlockValidSeqStart && log[lastExecutedSeq + 1].phase == PbftPhase::reply) {
-	std::cout << " verifying block " << lastExecutedSeq + 1 << " belonging to the other subgroup."<< std::endl;
+    if (!executedSomeLogSlot && blockIdxToBeVerified == -1 && log[i].phase == PbftPhase::reply && !log[i].blockVerified.load(std::memory_order_relaxed)) {
+	std::cout << " verifying block " << i << " belonging to the other subgroup."<< std::endl;
 	CCoinsViewCache view_verify(pcoinsTip.get());
-        log[i].ppMsg.pbft_block.Verify(i, view_verify);
-        log[i].blockVerified = true;
+	gettimeofday(&start_time, NULL);
+        int tx_cnt = log[i].ppMsg.pbft_block.Verify(i, view_verify);
+	gettimeofday(&end_time, NULL);
+        log[i].blockVerified.store(true, std::memory_order_relaxed);
+	std::cout << "Average verify time of block " << i << " in the other subgroup: " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / tx_cnt << " us/req" << std::endl;
     }
 
     return lastExecutedSeq;
@@ -385,7 +402,7 @@ void CPbft::UpdateBlockValidity(const CCollabMessage& msg) {
         if (log[i].setCollabPeerID.size() < nFaulty + 1) {
             log[i].setCollabPeerID.insert(msg.peerID);
             if (log[i].setCollabPeerID.size() == nFaulty + 1) {
-                log[i].blockVerified = true;
+                log[i].blockVerified.store(true, std::memory_order_relaxed);
                 std::cout << "seq " << i << " get collab verified." << std::endl;
             }
         }
@@ -417,7 +434,7 @@ void CPbft::AssembleAndSendCollabMsg() {
     toSent.sigSize = toSent.vchSig.size();
 
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-    uint32_t start_peerID = pbftID / CPbft::groupSize; // skip the leader id b/c it is myself
+    uint32_t start_peerID = pbftID / CPbft::groupSize; 
     uint32_t end_peerID = start_peerID + CPbft::groupSize;
     for (uint32_t i = start_peerID; i < end_peerID; i++) {
         if ((i ^ pbftID) & 1) {

@@ -17,6 +17,7 @@
 #include "util.h"
 #include "pbft/pbft_msg.h"
 #include <set>
+#include <atomic>
 
 class CPbftLogEntry{
 public:
@@ -31,7 +32,7 @@ public:
     // execution result for this log entry
     uint32_t txCnt;
 
-    bool blockVerified;
+    std::atomic<bool> blockVerified;
     /* a set of peerId who sent us collab verifying results. */
     std::set<uint32_t> setCollabPeerID;
 

@@ -122,7 +122,7 @@ public:
     CPbftBlock();
     CPbftBlock(std::deque<CMutableTxRef> vReqIn);
     void ComputeHash();
-    uint32_t Verify(const int seq, CCoinsViewCache& view) const;
+    uint32_t Verify(const int seq, CCoinsViewCache& view, bool amidExecution=false, CConnman* connman=nullptr) const;
     uint32_t Execute(const int seq, CConnman* connman, CCoinsViewCache& view) const;
 
     template<typename Stream>
