@@ -28,7 +28,7 @@ int32_t QSizePrintPeriod;
 int32_t maxBlockSize = 2000;
 bool testStarted = false;
 
-CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalVerifyTime(0), totalVerifyCnt(0), totalExeTime(0), lastBlockValidSeq(-1), lastBlockValidSentSeq(-1), privateKey(CKey()) {
+CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalVerifyTime(0), totalVerifyCnt(0), totalExeTime(0), lastBlockValidSeq(-1), lastBlockValidSentSeq(-1), lastReplySentSeq(-1), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
@@ -281,7 +281,7 @@ CPbftMessage CPbft::assembleMsg(uint32_t seq) {
     return toSent;
 }
 
-CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char exe_res) {
+CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char exe_res) const {
     /* 'y' --- execute sucessfully
      * 'n' --- execute fail
      */
@@ -297,6 +297,7 @@ int CPbft::executeLog() {
     struct timeval start_time, end_time;
     /* Step 1: execute all lower-seq tx until this one if possible. */
     CCoinsViewCache view(pcoinsTip.get());
+    int lastExecutedSeqStart = lastExecutedSeq;
     uint i = lastExecutedSeq + 1;
     /* We should go on to execute all log slots that are in reply phase even
      * their seqs are greater than the seq passed in. If we only execute up to
@@ -307,22 +308,15 @@ int CPbft::executeLog() {
 	    gettimeofday(&start_time, NULL);
 	    log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, g_connman.get(), view);
 	    gettimeofday(&end_time, NULL);
+            lastExecutedSeq = i;
 	    nCompletedTx += log[i].txCnt;
 	    std::cout << "Average execution time of block " << i << ": " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / log[i].txCnt << " us/req" << std::endl; 
-		    
-            /* wake up the client-listening thread to send results to clients. The 
-             * client-listening thread is probably already up if the client sends 
-             * request too frequently. 
-             * The following code cause linking errors still not fixed.
-             */
-            if (isLeader()) {
-                clientConnMan->WakeMessageHandler();
-            }
         } else if (log[i].phase == PbftPhase::reply && isBlockInOurVerifyGroup(i) && !log[i].blockVerified.load(std::memory_order_relaxed)){
 	    /* This is a block to be verified by our subgroup. Verify it directly using the real system state. (The Verify call includes executing tx.)*/
 	    gettimeofday(&start_time, NULL);
             log[i].txCnt = log[i].ppMsg.pbft_block.Verify(i, view, true, g_connman.get());
 	    gettimeofday(&end_time, NULL);
+            lastExecutedSeq = i;
 	    nCompletedTx += log[i].txCnt;
             log[i].blockVerified.store(true, std::memory_order_relaxed);
 	    totalVerifyCnt += log[i].txCnt;
@@ -339,8 +333,7 @@ int CPbft::executeLog() {
     }
     bool flushed = view.Flush(); // flush to pcoinsTip
     assert(flushed);
-    bool executedSomeLogSlot = i - 1 > lastExecutedSeq;
-    lastExecutedSeq = i - 1;
+    bool executedSomeLogSlot = lastExecutedSeq > lastExecutedSeqStart;
 
     /* Step 2: verify one block belonging to our subgroup if we did not execute any blocks in Step 1.  We verify only one block per loop so that the collab msg of the other group have some time to arrive. */
     /* tentative execution view. do not update system state b/c the view will be discarded. */
@@ -441,6 +434,20 @@ void CPbft::AssembleAndSendCollabMsg() {
             /* this is a peer in the other subgroup. */
             g_connman->PushMessage(peers[i], msgMaker.Make(NetMsgType::COLLAB_BLOCK_VALID, toSent));
         }
+    }
+}
+
+void CPbft::sendReplies(CConnman* connman, const CNetMsgMaker& msgMaker) {
+    if (lastExecutedSeq > lastReplySentSeq) {
+        /* sent reply msg for only one block per loop b/c we do not want to block receiving msg.*/
+        int seq = lastReplySentSeq + 1;
+        const std::vector<CMutableTxRef>& vReq = log[seq].ppMsg.pbft_block.vReq;
+        for (uint i = 0; i < vReq.size(); i++) {
+            /* hard code execution result as 'y' since we are replaying tx on Bitcoin's chain. */
+            CReply reply = assembleReply(seq, i,'y');
+            connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
+        }
+        lastReplySentSeq++;
     }
 }
 

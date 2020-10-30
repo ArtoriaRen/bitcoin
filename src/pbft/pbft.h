@@ -24,6 +24,7 @@
 #include <condition_variable>
 #include <memory>
 #include <chrono>
+#include "netmessagemaker.h"
 
 extern int32_t pbftID;
 extern int32_t nMaxReqInFly; 
@@ -91,6 +92,7 @@ public:
 
     volatile int lastBlockValidSeq; // the highest block has been verified by our subgroup
     int lastBlockValidSentSeq; // the highest block has been verified by our subgroup and announced to the other group.
+    int lastReplySentSeq; // the highest block we have sent reply to the client. Used only by the msg_hand thread. 
     
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
@@ -104,7 +106,7 @@ public:
 
     CPre_prepare assemblePPMsg(const CPbftBlock& pbft_block);
     CPbftMessage assembleMsg(const uint32_t seq); 
-    CReply assembleReply(const uint32_t seq, const uint32_t idx, const char exe_res);
+    CReply assembleReply(const uint32_t seq, const uint32_t idx, const char exe_res) const;
     bool checkMsg(CPbftMessage* msg);
     /*return the last executed seq */
     int executeLog();
@@ -113,6 +115,7 @@ public:
     void UpdateBlockValidity(const CCollabMessage& msg);
     bool checkCollabMsg(const CCollabMessage& msg);
     void AssembleAndSendCollabMsg();
+    void sendReplies(CConnman* connman, const CNetMsgMaker& msgMaker);
 
     inline void printQueueSize(){
 	    /* log queue size if we have reached the period. */

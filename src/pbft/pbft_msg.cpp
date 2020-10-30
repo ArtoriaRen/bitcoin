@@ -135,9 +135,6 @@ uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view, bool amidExecu
 	for (uint i = 0; i < vReq.size(); i++) {
 	    char exe_res = VerifyTx(vReq[i], seq, view);
 	    txCnt++;
-	    /* only blocks of our group can be verified amid execution. */
-	    CReply reply = g_pbft->assembleReply(seq, i, exe_res);
-	    connman->PushMessage(g_pbft->client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
 	}
     } else {
 	for (uint i = 0; i < vReq.size(); i++) {
