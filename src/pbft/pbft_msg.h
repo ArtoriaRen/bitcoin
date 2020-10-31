@@ -123,6 +123,7 @@ public:
     CPbftBlock(std::deque<CMutableTxRef> vReqIn);
     void ComputeHash();
     uint32_t Execute(const int seq, CCoinsViewCache& view) const;
+    void Clear();
 
     template<typename Stream>
     void Serialize(Stream& s) const{

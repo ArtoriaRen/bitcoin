@@ -16,6 +16,8 @@
 #include <memory>
 #include "netmessagemaker.h"
 #include "init.h"
+#include "streams.h"
+#include "clientversion.h"
 
 extern std::unique_ptr<CConnman> g_connman;
 
@@ -26,6 +28,7 @@ int32_t pbftID;
 int32_t nMaxReqInFly; 
 int32_t QSizePrintPeriod;
 int32_t maxBlockSize = 2000;
+int32_t nWarmUpBlocks;
 bool testStarted = false;
 
 CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalExeTime(0), lastReplySentSeq(-1), privateKey(CKey()) {
@@ -327,6 +330,47 @@ void CPbft::sendReplies(CConnman* connman) {
             CReply reply = assembleReply(seq, i,'y');
             connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
         }
+    }
+}
+
+void CPbft::saveBlocks2File(const int numBlock) const {
+    FILE* file = fsbridge::fopen("pbft_blocks.out", "wb+");
+    if (!file) {
+        std::cerr << "Unable to open PBFT block file to write." << std::endl;
+        return;
+    }
+    CAutoFile fileout(file, SER_DISK, CLIENT_VERSION);
+
+    for (int i = 0; i < numBlock; i++) {
+        log[i].ppMsg.pbft_block.Serialize(fileout);
+    }
+}
+
+void CPbft::readBlocksFromFile(const int numBlock) {
+    FILE* file = fsbridge::fopen("pbft_blocks.out", "rb");
+    if (!file) {
+        std::cerr << "Unable to open PBFT block file to read." << std::endl;
+        return;
+    }
+    CAutoFile filein(file, SER_DISK, CLIENT_VERSION);
+
+    for (int i = 0; i < numBlock; i++) {
+        try {
+            log[i].ppMsg.pbft_block.Unserialize(filein);
+        }
+        catch (const std::exception& e) {
+            std::cerr << "Deserialize or I/O error when reading PBFT block " << i << ": " << e.what() << std::endl;
+        }
+    }
+}
+
+void CPbft::WarmUpMemoryCache() {
+    CCoinsViewCache view_tenta(pcoinsTip.get());
+    readBlocksFromFile(nWarmUpBlocks);
+    for (int i = 0; i < nWarmUpBlocks; i++) {
+        log[i].ppMsg.pbft_block.Execute(i, view_tenta);
+        /* Discard the block to prepare for performance test. */
+        log[i].ppMsg.pbft_block.Clear();
     }
 }
 

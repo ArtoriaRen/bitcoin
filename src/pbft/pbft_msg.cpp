@@ -134,3 +134,9 @@ uint32_t CPbftBlock::Execute(const int seq, CCoinsViewCache& view) const {
     }
     return vReq.size();
 }
+
+void CPbftBlock::Clear() {
+    hash.SetNull();
+    vReq.clear();
+}
+
