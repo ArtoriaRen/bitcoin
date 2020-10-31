@@ -29,7 +29,7 @@ extern int32_t pbftID;
 extern int32_t nMaxReqInFly; 
 extern int32_t reqWaitTimeout;
 extern int32_t maxBlockSize; 
-
+extern int32_t nWarmUpBlocks;
 
 class ThreadSafeQueue {
 public:
@@ -145,6 +145,9 @@ public:
     }
 
 
+    void saveBlocks2File(const int numBlock) const;
+    void readBlocksFromFile(const int numBlock);
+    void WarmUpMemoryCache(CConnman* connman);
 private:
     // private ECDSA key used to sign messages
     CKey privateKey;
