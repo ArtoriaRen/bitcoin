@@ -126,14 +126,12 @@ void CPbftBlock::ComputeHash(){
     hasher.Finalize((unsigned char*)&hash);
 }
 
-uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view, bool amidExecution, CConnman* connman) const {
+uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view, bool amidExecution) const {
     uint32_t txCnt = 0;
     bool isInOurSubgroup = g_pbft->isBlockInOurVerifyGroup(seq);
-    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
     if (amidExecution) {
-	assert(connman != nullptr);
 	for (uint i = 0; i < vReq.size(); i++) {
-	    char exe_res = VerifyTx(vReq[i], seq, view);
+	    VerifyTx(vReq[i], seq, view);
 	    txCnt++;
 	}
     } else {
@@ -150,25 +148,12 @@ uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view, bool amidExecu
     return txCnt;
 }
 
-uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& view) const {
-    if (!connman) {
-        /* this is for tentative execution. */
-        for (uint i = 0; i < vReq.size(); i++) {
-            ExecuteTx(vReq[i], seq, view);
-        }
-        return vReq.size();
-    }
-
-    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-    uint32_t txCnt = 0;
+uint32_t CPbftBlock::Execute(const int seq, CCoinsViewCache& view) const {
+    /* this is for tentative execution. */
     for (uint i = 0; i < vReq.size(); i++) {
-	char exe_res = ExecuteTx(vReq[i], seq, view);
-        CReply reply = g_pbft->assembleReply(seq, i, exe_res);
-        connman->PushMessage(g_pbft->client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
-        txCnt++;
+	ExecuteTx(vReq[i], seq, view);
     }
-
-    return txCnt;
+    return vReq.size();
 }
 
 CCollabMessage::CCollabMessage(): peerID(pbftID), blockValidUpto(-1), sigSize(0), vchSig(){

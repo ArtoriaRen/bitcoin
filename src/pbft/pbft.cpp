@@ -220,7 +220,7 @@ bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
     log[cMsg.seq].commitCount++;
     if (log[cMsg.seq].phase == PbftPhase::commit && log[cMsg.seq].commitCount >= (nFaulty << 1) + 1) {
         // enter reply phase
-        std::cout << "enter reply phase" << std::endl;
+        std::cout << "block " << cMsg.seq << " enters reply phase" << std::endl;
         log[cMsg.seq].phase = PbftPhase::reply;
         /* the log-exe thread will execute blocks in reply phase sequentially. */
     }
@@ -306,7 +306,7 @@ int CPbft::executeLog() {
     for (; i < logSize; i++) {
         if (log[i].phase == PbftPhase::reply && log[i].blockVerified.load(std::memory_order_relaxed)) {
 	    gettimeofday(&start_time, NULL);
-	    log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, g_connman.get(), view);
+	    log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, view);
 	    gettimeofday(&end_time, NULL);
             lastExecutedSeq = i;
 	    nCompletedTx += log[i].txCnt;
@@ -314,7 +314,7 @@ int CPbft::executeLog() {
         } else if (log[i].phase == PbftPhase::reply && isBlockInOurVerifyGroup(i) && !log[i].blockVerified.load(std::memory_order_relaxed)){
 	    /* This is a block to be verified by our subgroup. Verify it directly using the real system state. (The Verify call includes executing tx.)*/
 	    gettimeofday(&start_time, NULL);
-            log[i].txCnt = log[i].ppMsg.pbft_block.Verify(i, view, true, g_connman.get());
+            log[i].txCnt = log[i].ppMsg.pbft_block.Verify(i, view, true);
 	    gettimeofday(&end_time, NULL);
             lastExecutedSeq = i;
 	    nCompletedTx += log[i].txCnt;
@@ -351,7 +351,7 @@ int CPbft::executeLog() {
 	    for (int j = lastExecutedSeq + 1; j < blockIdxToBeVerified; j++) {
 		std::cout << "Tentative executing block " << j << std::endl;
 		gettimeofday(&start_time, NULL);
-		int tx_cnt = log[j].ppMsg.pbft_block.Execute(j, nullptr, view_tenta);
+		int tx_cnt = log[j].ppMsg.pbft_block.Execute(j, view_tenta);
 		gettimeofday(&end_time, NULL);
 		std::cout << "Average tentative exe time of block " << j << ": " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / tx_cnt << " us/req" << std::endl;
 	    }
@@ -437,17 +437,18 @@ void CPbft::AssembleAndSendCollabMsg() {
     }
 }
 
-void CPbft::sendReplies(CConnman* connman, const CNetMsgMaker& msgMaker) {
+void CPbft::sendReplies(CConnman* connman) {
+    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
     if (lastExecutedSeq > lastReplySentSeq) {
         /* sent reply msg for only one block per loop b/c we do not want to block receiving msg.*/
-        int seq = lastReplySentSeq + 1;
-        const std::vector<CMutableTxRef>& vReq = log[seq].ppMsg.pbft_block.vReq;
-        for (uint i = 0; i < vReq.size(); i++) {
+        int seq = ++lastReplySentSeq;
+        const uint num_tx = log[seq].ppMsg.pbft_block.vReq.size();
+	std::cout << "sending reply for block " << seq <<",  lastReplySentSeq = "<<  lastReplySentSeq << std::endl;
+        for (uint i = 0; i < num_tx; i++) {
             /* hard code execution result as 'y' since we are replaying tx on Bitcoin's chain. */
             CReply reply = assembleReply(seq, i,'y');
             connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
         }
-        lastReplySentSeq++;
     }
 }
 

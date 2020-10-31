@@ -24,7 +24,6 @@
 #include <condition_variable>
 #include <memory>
 #include <chrono>
-#include "netmessagemaker.h"
 
 extern int32_t pbftID;
 extern int32_t nMaxReqInFly; 
@@ -115,7 +114,7 @@ public:
     void UpdateBlockValidity(const CCollabMessage& msg);
     bool checkCollabMsg(const CCollabMessage& msg);
     void AssembleAndSendCollabMsg();
-    void sendReplies(CConnman* connman, const CNetMsgMaker& msgMaker);
+    void sendReplies(CConnman* connman);
 
     inline void printQueueSize(){
 	    /* log queue size if we have reached the period. */
