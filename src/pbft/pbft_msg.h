@@ -124,6 +124,7 @@ public:
     void ComputeHash();
     uint32_t Verify(const int seq, CCoinsViewCache& view, bool amidExecution=false) const;
     uint32_t Execute(const int seq, CCoinsViewCache& view) const;
+    void Clear();
 
     template<typename Stream>
     void Serialize(Stream& s) const{

@@ -29,6 +29,7 @@ extern int32_t pbftID;
 extern int32_t nMaxReqInFly; 
 extern int32_t QSizePrintPeriod;
 extern int32_t maxBlockSize; 
+extern int32_t nWarmUpBlocks;
 extern bool testStarted;
 
 class ThreadSafeQueue {
@@ -133,6 +134,9 @@ public:
 	return ((pbftID & 1) ^ (seq & 1)) == 0;
     }
 
+    void saveBlocks2File(const int numBlock) const;
+    void readBlocksFromFile(const int numBlock);
+    void WarmUpMemoryCache();
 private:
     // private ECDSA key used to sign messages
     CKey privateKey;

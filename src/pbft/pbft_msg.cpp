@@ -156,6 +156,11 @@ uint32_t CPbftBlock::Execute(const int seq, CCoinsViewCache& view) const {
     return vReq.size();
 }
 
+void CPbftBlock::Clear() {
+    hash.SetNull();
+    vReq.clear();
+}
+
 CCollabMessage::CCollabMessage(): peerID(pbftID), blockValidUpto(-1), sigSize(0), vchSig(){
     vchSig.reserve(72); // the expected sig size is 72 bytes.
 }

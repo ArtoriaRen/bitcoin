@@ -823,6 +823,10 @@ void InitParameterInteraction()
     if (gArgs.IsArgSet("-qsizeprintperiod")) {
         QSizePrintPeriod = gArgs.GetArg("-qsizeprintperiod", 1000); // in ms
     }
+    /* if warmuppbftblocks = -1, do not warm up memory by tentatively executing blocks.*/
+    if (gArgs.IsArgSet("-warmuppbftblocks")) {
+        nWarmUpBlocks = gArgs.GetArg("-warmuppbftblocks", -1);
+    }
 }
 
 static std::string ResolveErrMsg(const char * const optname, const std::string& strBind)
@@ -1818,5 +1822,8 @@ bool AppInitMain()
     //assignShardAffinity();
     //printShardAffinity();
     //randomPlaceTxInBlock();
+    if (nWarmUpBlocks > 0) {
+        g_pbft->WarmUpMemoryCache();
+    }
     return true;
 }
