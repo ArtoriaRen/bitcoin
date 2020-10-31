@@ -380,10 +380,9 @@ void CPbftBlock::ComputeHash(){
     hasher.Finalize((unsigned char*)&hash);
 }
 
-uint32_t CPbftBlock::Execute(const int seq, CConnman* connman) const {
+uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& view) const {
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
     uint32_t txCnt = 0;
-    CCoinsViewCache view(pcoinsTip.get());
     for (uint i = 0; i < vReq.size(); i++) {
 	struct timeval start_time, end_time;
 	gettimeofday(&start_time, NULL);
@@ -409,8 +408,6 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman) const {
 	    g_pbft->totalExeCount[vReq[i].type]++;
 	}
     }
-    bool flushed = view.Flush(); // flush to pcoinsTip
-    assert(flushed);
     std::cout << "Average execution time: ";
     if (g_pbft->totalExeCount[0] != 0) {
 	std::cout << "TX = " << g_pbft->totalExeTime[0]/g_pbft->totalExeCount[0] << " us/req, " << " TX_cnt = " << g_pbft->totalExeCount[0] << ", ";
@@ -433,5 +430,10 @@ uint256 TypedReq::GetHash() const {
     uint256 result;
     CHash256().Write((const unsigned char*)req_hash.begin(), req_hash.size()).Write((const unsigned char*)type, sizeof(type)).Finalize((unsigned char*)&result);
     return result;
+}
+
+void CPbftBlock::Clear() {
+    hash.SetNull();
+    vReq.clear();
 }
 

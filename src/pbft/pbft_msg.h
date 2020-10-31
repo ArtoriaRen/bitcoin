@@ -332,7 +332,8 @@ public:
     CPbftBlock();
     CPbftBlock(std::deque<TypedReq> vReqIn);
     void ComputeHash();
-    uint32_t Execute(const int seq, CConnman* connman) const;
+    uint32_t Execute(const int seq, CConnman* connman, CCoinsViewCache& view) const;
+    void Clear();
 
     template<typename Stream>
     void Serialize(Stream& s) const{

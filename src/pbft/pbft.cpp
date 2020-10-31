@@ -21,6 +21,8 @@
 #include <memory>
 #include "tx_placement/tx_placer.h"
 #include "netmessagemaker.h"
+#include "streams.h"
+#include "clientversion.h"
 
 bool fIsClient; // if this node is a pbft client.
 std::string leaderAddrString;
@@ -29,6 +31,7 @@ int32_t pbftID;
 int32_t nMaxReqInFly; 
 int32_t reqWaitTimeout;
 int32_t maxBlockSize = 2000;
+int32_t nWarmUpBlocks = 1;
 
 ThreadSafeQueue::ThreadSafeQueue() { }
 
@@ -335,15 +338,18 @@ int CPbft::executeLog(const int seq, CConnman* connman) {
      * their seqs are greater than the seq passed in. If we only execute up to
      * the seq passed in, a slot missing a pbftc msg might permanently block
      * log slots after it to be executed. */
+    CCoinsViewCache view(pcoinsTip.get());
     for (; i < logSize; i++) {
         if (log[i].phase == PbftPhase::reply) {
-	    log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, connman);
+	    log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, connman, view);
 	    nCompletedTx += log[i].txCnt;
 	    std::cout << "Execute block " << log[i].ppMsg.digest.GetHex() << " at log slot = " << i  << ", block size = " << log[i].ppMsg.pbft_block.vReq.size() << ", contains " << log[i].txCnt << " TX or UNLOCK_TO_COMMIT req. current total completed tx = " << nCompletedTx << std::endl;
         } else {
             break;
         }
     }
+    bool flushed = view.Flush(); // flush to pcoinsTip
+    assert(flushed);
     lastExecutedSeq = i - 1;
     /* if lastExecutedIndex is less than seq, we delay sending reply until 
      * the all requsts up to seq has been executed. This may be triggered 
@@ -352,6 +358,46 @@ int CPbft::executeLog(const int seq, CConnman* connman) {
     return lastExecutedSeq;
 }
 
+void CPbft::saveBlocks2File(const int numBlock) const {
+    FILE* file = fsbridge::fopen("pbft_blocks.out", "wb+");
+    if (!file) {
+        std::cerr << "Unable to open PBFT block file to write." << std::endl;
+        return;
+    }
+    CAutoFile fileout(file, SER_DISK, CLIENT_VERSION);
+
+    for (int i = 0; i < numBlock; i++) {
+        log[i].ppMsg.pbft_block.Serialize(fileout);
+    }
+}
+
+void CPbft::readBlocksFromFile(const int numBlock) {
+    FILE* file = fsbridge::fopen("pbft_blocks.out", "rb");
+    if (!file) {
+        std::cerr << "Unable to open PBFT block file to read." << std::endl;
+        return;
+    }
+    CAutoFile filein(file, SER_DISK, CLIENT_VERSION);
+
+    for (int i = 0; i < numBlock; i++) {
+        try {
+            log[i].ppMsg.pbft_block.Unserialize(filein);
+        }
+        catch (const std::exception& e) {
+            std::cerr << "Deserialize or I/O error when reading PBFT block " << i << ": " << e.what() << std::endl;
+        }
+    }
+}
+
+void CPbft::WarmUpMemoryCache(CConnman* connman) {
+    CCoinsViewCache view_tenta(pcoinsTip.get());
+    readBlocksFromFile(nWarmUpBlocks);
+    for (int i = 0; i < nWarmUpBlocks; i++) {
+        log[i].ppMsg.pbft_block.Execute(i, connman, view_tenta);
+        /* Discard the block to prepare for performance test. */
+        log[i].ppMsg.pbft_block.Clear();
+    }
+}
 
 std::unique_ptr<CPbft> g_pbft;
 /* In case we receive an omniledger unlock_to_abort req, store a copy of all locked coins

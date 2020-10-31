@@ -36,6 +36,9 @@
 #include <mutex>
 #include <condition_variable>
 #include <tx_placement/tx_placer.h>
+#include <fstream>
+#include <pbft/pbft.h>
+//extern std::unique_ptr<CPbft> g_pbft;
 
 struct CUpdatedBlock
 {
@@ -654,6 +657,14 @@ UniValue getblockhash(const JSONRPCRequest& request)
     CBlockIndex* pblockindex = chainActive[nHeight];
     return pblockindex->GetBlockHash().GetHex();
 }
+
+UniValue savepbftblocks(const JSONRPCRequest& request)
+{
+    int num_blocks = request.params[0].get_int();
+    assert(num_blocks > 0);
+    g_pbft->saveBlocks2File(num_blocks);
+}
+
 
 UniValue getblockheader(const JSONRPCRequest& request)
 {
@@ -1628,6 +1639,7 @@ static const CRPCCommand commands[] =
     { "blockchain",         "getblockcount",          &getblockcount,          {} },
     { "blockchain",         "getblock",               &getblock,               {"blockhash","verbosity|verbose"} },
     { "blockchain",         "getblockhash",           &getblockhash,           {"height"} },
+    { "blockchain",         "savepbftblocks",         &savepbftblocks,         {"num_blocks"} },
     { "blockchain",         "getblockheader",         &getblockheader,         {"blockhash","verbose"} },
     { "blockchain",         "getchaintips",           &getchaintips,           {} },
     { "blockchain",         "getdifficulty",          &getdifficulty,          {} },
