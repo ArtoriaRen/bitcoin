@@ -3941,7 +3941,6 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
                 pto->vAddrToSend.shrink_to_fit();
         }
 
-        g_pbft->sendReplies(connman, msgMaker);
         // Start block sync
 //        if (pindexBestHeader == nullptr)
 //            pindexBestHeader = chainActive.Tip();

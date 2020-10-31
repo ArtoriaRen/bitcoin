@@ -24,7 +24,6 @@
 #include <condition_variable>
 #include <memory>
 #include <chrono>
-#include "netmessagemaker.h"
 
 extern int32_t pbftID;
 extern int32_t nMaxReqInFly; 
@@ -107,7 +106,7 @@ public:
     bool checkMsg(CPbftMessage* msg);
     /*return the last executed seq */
     int executeLog();
-    void sendReplies(CConnman* connman, const CNetMsgMaker& msgMaker);
+    void sendReplies(CConnman* connman);
 
     inline void printQueueSize(){
 	    /* log queue size if we have reached the period. */

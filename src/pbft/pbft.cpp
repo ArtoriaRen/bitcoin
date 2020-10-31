@@ -217,7 +217,7 @@ bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
     log[cMsg.seq].commitCount++;
     if (log[cMsg.seq].phase == PbftPhase::commit && log[cMsg.seq].commitCount >= (nFaulty << 1) + 1) {
         // enter reply phase
-        std::cout << "enter reply phase" << std::endl;
+        std::cout << "block " << cMsg.seq << " enters reply phase" << std::endl;
         log[cMsg.seq].phase = PbftPhase::reply;
         /* the log-exe thread will execute blocks in reply phase sequentially. */
     }
@@ -301,7 +301,7 @@ int CPbft::executeLog() {
      * the seq passed in, a slot missing a pbftc msg might permanently block
      * log slots after it to be executed. */
     for (; i < logSize && log[i].phase == PbftPhase::reply; i++) {
-	log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, g_connman.get(), view);
+	log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, view);
 	lastExecutedSeq = i;
 	nCompletedTx += log[i].txCnt;
 	std::cout << "Average execution time: " << g_pbft->totalExeTime/nCompletedTx 
@@ -315,17 +315,18 @@ int CPbft::executeLog() {
     return lastExecutedSeq;
 }
 
-void CPbft::sendReplies(CConnman* connman, const CNetMsgMaker& msgMaker) {
+void CPbft::sendReplies(CConnman* connman) {
+    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
     if (lastExecutedSeq > lastReplySentSeq) {
         /* sent reply msg for only one block per loop b/c we do not want to block receiving msg.*/
-        int seq = lastReplySentSeq + 1;
-        const std::vector<CMutableTxRef>& vReq = log[seq].ppMsg.pbft_block.vReq;
-        for (uint i = 0; i < vReq.size(); i++) {
+        int seq = ++lastReplySentSeq;
+        const uint num_tx = log[seq].ppMsg.pbft_block.vReq.size();
+	std::cout << "sending reply for block " << seq <<",  lastReplySentSeq = "<<  lastReplySentSeq << std::endl;
+        for (uint i = 0; i < num_tx; i++) {
             /* hard code execution result as 'y' since we are replaying tx on Bitcoin's chain. */
             CReply reply = assembleReply(seq, i,'y');
             connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
         }
-        lastReplySentSeq++;
     }
 }
 

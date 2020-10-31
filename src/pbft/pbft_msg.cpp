@@ -121,20 +121,16 @@ void CPbftBlock::ComputeHash(){
     hasher.Finalize((unsigned char*)&hash);
 }
 
-uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& view) const {
-    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+uint32_t CPbftBlock::Execute(const int seq, CCoinsViewCache& view) const {
     uint32_t txCnt = 0;
     struct timeval start_time, end_time;
     for (uint i = 0; i < vReq.size(); i++) {
 	gettimeofday(&start_time, NULL);
-	char exe_res = ExecuteTx(vReq[i], seq, view);
+	ExecuteTx(vReq[i], seq, view);
         gettimeofday(&end_time, NULL);
-        CReply reply = g_pbft->assembleReply(seq, i, exe_res);
-        connman->PushMessage(g_pbft->client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
         txCnt++;
         /* update execution time and count */
 	g_pbft->totalExeTime += (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
     }
-
-    return txCnt;
+    return vReq.size();
 }
