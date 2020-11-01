@@ -317,7 +317,7 @@ int CPbft::executeLog() {
         } else if (log[i].phase == PbftPhase::reply && isBlockInOurVerifyGroup(i) && !log[i].blockVerified.load(std::memory_order_relaxed)){
 	    /* This is a block to be verified by our subgroup. Verify it directly using the real system state. (The Verify call includes executing tx.)*/
 	    gettimeofday(&start_time, NULL);
-            log[i].txCnt = log[i].ppMsg.pbft_block.Verify(i, view, true);
+            log[i].txCnt = log[i].ppMsg.pbft_block.Verify(i, view);
 	    gettimeofday(&end_time, NULL);
             lastExecutedSeq = i;
 	    nCompletedTx += log[i].txCnt;
@@ -487,7 +487,7 @@ void CPbft::WarmUpMemoryCache() {
     CCoinsViewCache view_tenta(pcoinsTip.get());
     readBlocksFromFile(nWarmUpBlocks);
     for (int i = 0; i < nWarmUpBlocks; i++) {
-        log[i].ppMsg.pbft_block.Execute(i, view_tenta);
+        log[i].ppMsg.pbft_block.Verify(i, view_tenta);
         /* Discard the block to prepare for performance test. */
         log[i].ppMsg.pbft_block.Clear();
     }

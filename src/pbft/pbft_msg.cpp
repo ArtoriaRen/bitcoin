@@ -126,10 +126,10 @@ void CPbftBlock::ComputeHash(){
     hasher.Finalize((unsigned char*)&hash);
 }
 
-uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view, bool amidExecution) const {
+uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view) const {
     uint32_t txCnt = 0;
     bool isInOurSubgroup = g_pbft->isBlockInOurVerifyGroup(seq);
-    if (amidExecution) {
+    if (isInOurSubgroup) {
 	for (uint i = 0; i < vReq.size(); i++) {
 	    VerifyTx(vReq[i], seq, view);
 	    txCnt++;
@@ -138,7 +138,7 @@ uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view, bool amidExecu
 	for (uint i = 0; i < vReq.size(); i++) {
 	    VerifyTx(vReq[i], seq, view);
 	    txCnt++;
-	    if (!isInOurSubgroup && g_pbft->log[seq].blockVerified.load(std::memory_order_relaxed)) {
+	    if (g_pbft->log[seq].blockVerified.load(std::memory_order_relaxed)) {
 	        /* enough collab msg is received. */
 	        std::cout << "quit verifying block " << seq << " of the other subgroup" << std::endl;
 	        break;
