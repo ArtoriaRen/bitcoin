@@ -122,15 +122,8 @@ void CPbftBlock::ComputeHash(){
 }
 
 uint32_t CPbftBlock::Execute(const int seq, CCoinsViewCache& view) const {
-    uint32_t txCnt = 0;
-    struct timeval start_time, end_time;
     for (uint i = 0; i < vReq.size(); i++) {
-	gettimeofday(&start_time, NULL);
 	ExecuteTx(vReq[i], seq, view);
-        gettimeofday(&end_time, NULL);
-        txCnt++;
-        /* update execution time and count */
-	g_pbft->totalExeTime += (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
     }
     return vReq.size();
 }

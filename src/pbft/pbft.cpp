@@ -240,7 +240,6 @@ bool CPbft::checkMsg(CPbftMessage* msg) {
         std::cerr << "verification sig fail" << std::endl;
         return false;
     }
-    std::cerr << "sig ok" << std::endl;
     // server should be in the view
     if (localView != msg->view) {
         std::cerr << "server view = " << localView << ", but msg view = " << msg->view << std::endl;
@@ -295,6 +294,7 @@ CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char e
 }
 
 int CPbft::executeLog() {
+    struct timeval start_time, end_time;
     /* execute all lower-seq tx until this one if possible. */
     CCoinsViewCache view(pcoinsTip.get());
     int lastExecutedSeqStart = lastExecutedSeq;
@@ -304,14 +304,12 @@ int CPbft::executeLog() {
      * the seq passed in, a slot missing a pbftc msg might permanently block
      * log slots after it to be executed. */
     for (; i < logSize && log[i].phase == PbftPhase::reply; i++) {
+	gettimeofday(&start_time, NULL);
 	log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, view);
+	gettimeofday(&end_time, NULL);
 	lastExecutedSeq = i;
 	nCompletedTx += log[i].txCnt;
-	std::cout << "Average execution time: " << g_pbft->totalExeTime/nCompletedTx 
-		<< " us/req" << ". Executed block " << log[i].ppMsg.digest.GetHex() 
-		<< " at log slot = " << i  << ", block size = " 
-		<< log[i].ppMsg.pbft_block.vReq.size()  
-		<< std::endl;
+	std::cout << "Average combined verify and execution time of block " << i << ": " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / log[i].txCnt << " us/req" << std::endl;
     }
     bool flushed = view.Flush(); // flush to pcoinsTip
     assert(flushed);
