@@ -120,7 +120,7 @@ bool CPbft::ProcessPP(CConnman* connman, CPre_prepare& ppMsg) {
      -----Placeholder: to tolerate faulty nodes, we must check if all prepare msg matches the pre-prepare.
      */
 
-    std::cout << "digest = " << ppMsg.digest.GetHex() << std::endl;
+    //std::cout << "digest = " << ppMsg.digest.GetHex() << std::endl;
 
     /* Enter prepare phase. */
     log[ppMsg.seq].phase = PbftPhase::prepare;
@@ -284,9 +284,9 @@ CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char e
      * 'n' --- execute fail
      */
     CReply toSent(exe_res, log[seq].ppMsg.pbft_block.vReq[idx]->GetHash());
-    uint256 hash;
-    toSent.getHash(hash);
-    privateKey.Sign(hash, toSent.vchSig);
+    //uint256 hash;
+    //toSent.getHash(hash);
+    //privateKey.Sign(hash, toSent.vchSig);
     toSent.sigSize = toSent.vchSig.size();
     return toSent;
 }
