@@ -326,9 +326,6 @@ int CPbft::executeLog() {
             lastBlockValidSeq = i;
 	    /*Anounce the update-to-date verifying result to peers in the other subgroup.*/
 	    AssembleAndSendCollabMsg();
-            if (isLeader()) {
-                clientConnMan->WakeMessageHandler();
-            }
 	    std::cout << "Average verify-amid-execution time of block " << i << ": " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / log[i].txCnt << " us/req" << std::endl; 
         } else {
             break;
