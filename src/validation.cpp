@@ -547,7 +547,7 @@ static bool CheckInputsFromMempoolAndCache(const CTransaction& tx, CValidationSt
         }
     }
 
-    return CheckInputs(tx, state, view, true, flags, cacheSigStore, true, txdata);
+    return CheckInputs(tx, state, view, true, flags, false, false, txdata);
 }
 
 static bool AcceptToMemoryPoolWorker(const CChainParams& chainparams, CTxMemPool& pool, CValidationState& state, const CTransactionRef& ptx,
@@ -1432,6 +1432,7 @@ bool CheckInputs(const CTransaction& tx, CValidationState &state, const CCoinsVi
             if (cacheFullScriptStore && !pvChecks) {
                 // We executed all of the provided scripts, and were told to
                 // cache the result. Do so now.
+		    std::cout << "inserting to script execution cache: " << tx.GetHash().GetHex() << std::endl;
                 scriptExecutionCache.insert(hashCacheEntry);
             }
         }
