@@ -41,7 +41,7 @@ ThreadSafeQueue::ThreadSafeQueue() { }
 
 ThreadSafeQueue::~ThreadSafeQueue() { }
 
-CMutableTxRef& ThreadSafeQueue::front() {
+CTransactionRef& ThreadSafeQueue::front() {
     std::unique_lock<std::mutex> mlock(mutex_);
     while (queue_.empty()) {
         cond_.wait(mlock);
@@ -49,21 +49,21 @@ CMutableTxRef& ThreadSafeQueue::front() {
     return queue_.front();
 }
 
-std::deque<CMutableTxRef> ThreadSafeQueue::get_all() {
+std::deque<CTransactionRef> ThreadSafeQueue::get_all() {
     std::unique_lock<std::mutex> mlock(mutex_);
-    std::deque<CMutableTxRef> ret(queue_);
+    std::deque<CTransactionRef> ret(queue_);
     queue_.clear();
     return ret;
 }
 
-std::deque<CMutableTxRef> ThreadSafeQueue::get_upto(uint32_t upto) {
+std::deque<CTransactionRef> ThreadSafeQueue::get_upto(uint32_t upto) {
     std::unique_lock<std::mutex> mlock(mutex_);
     if (queue_.size() < upto) {
-	std::deque<CMutableTxRef> ret(queue_);
+	std::deque<CTransactionRef> ret(queue_);
 	queue_.clear();
 	return ret;
     } else {
-	std::deque<CMutableTxRef> ret;
+	std::deque<CTransactionRef> ret;
 	ret.insert(ret.end(), queue_.begin(), queue_.begin() + upto);
 	queue_.erase(queue_.begin(), queue_.begin() + upto);
 	return ret;
@@ -78,14 +78,14 @@ void ThreadSafeQueue::pop_front() {
     queue_.pop_front();
 }
 
-void ThreadSafeQueue::push_back(const CMutableTxRef& item) {
+void ThreadSafeQueue::push_back(const CTransactionRef& item) {
     std::unique_lock<std::mutex> mlock(mutex_);
     queue_.push_back(item);
     mlock.unlock(); // unlock before notificiation to minimize mutex con
     cond_.notify_one(); // notify one waiting thread
 }
 
-void ThreadSafeQueue::push_back(CMutableTxRef&& item) {
+void ThreadSafeQueue::push_back(CTransactionRef&& item) {
     std::unique_lock<std::mutex> mlock(mutex_);
     queue_.push_back(std::move(item));
     mlock.unlock(); // unlock before notificiation to minimize mutex con
@@ -112,9 +112,9 @@ bool CPbft::ProcessPP(CConnman* connman, CPre_prepare& ppMsg) {
     }
 
     // check if the digest matches client req
-    ppMsg.pbft_block.ComputeHash();
-    if (ppMsg.digest != ppMsg.pbft_block.hash) {
-	std::cerr << "digest does not match block hash tx. block hash = " << ppMsg.pbft_block.hash.GetHex() << ", but digest = " << ppMsg.digest.GetHex() << std::endl;
+    ppMsg.pPbftBlock->ComputeHash();
+    if (ppMsg.digest != ppMsg.pPbftBlock->hash) {
+	std::cerr << "digest does not match block hash tx. block hash = " << ppMsg.pPbftBlock->hash.GetHex() << ", but digest = " << ppMsg.digest.GetHex() << std::endl;
 	return false;
     }
     // add to log
@@ -258,13 +258,13 @@ bool CPbft::checkMsg(CPbftMessage* msg) {
     return true;
 }
 
-CPre_prepare CPbft::assemblePPMsg(const CPbftBlock& pbft_block) {
+CPre_prepare CPbft::assemblePPMsg(std::shared_ptr<CPbftBlock> pPbftBlockIn) {
     CPre_prepare toSent; // phase is set to Pre_prepare by default.
     toSent.seq = nextSeq++;
     toSent.view = 0;
     localView = 0; // also change the local view, or the sanity check would fail.
-    toSent.pbft_block = pbft_block;
-    toSent.digest = toSent.pbft_block.hash;
+    toSent.pPbftBlock = pPbftBlockIn;
+    toSent.digest = toSent.pPbftBlock->hash;
     uint256 hash;
     toSent.getHash(hash); // this hash is used for signature, so client tx is not included in this hash.
     privateKey.Sign(hash, toSent.vchSig);
@@ -285,7 +285,7 @@ CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char e
     /* 'y' --- execute sucessfully
      * 'n' --- execute fail
      */
-    CReply toSent(exe_res, log[seq].ppMsg.pbft_block.vReq[idx]->GetHash());
+    CReply toSent(exe_res, log[seq].ppMsg.pPbftBlock->vReq[idx]->GetHash());
     //uint256 hash;
     //toSent.getHash(hash);
     //privateKey.Sign(hash, toSent.vchSig);
@@ -305,7 +305,7 @@ int CPbft::executeLog() {
      * log slots after it to be executed. */
     for (; i < logSize && log[i].phase == PbftPhase::reply; i++) {
 	gettimeofday(&start_time, NULL);
-	log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, view);
+	log[i].txCnt = log[i].ppMsg.pPbftBlock->Execute(i, view);
 	gettimeofday(&end_time, NULL);
 	lastExecutedSeq = i;
 	nCompletedTx += log[i].txCnt;
@@ -321,7 +321,7 @@ void CPbft::sendReplies(CConnman* connman) {
     if (lastExecutedSeq > lastReplySentSeq) {
         /* sent reply msg for only one block per loop b/c we do not want to block receiving msg.*/
         int seq = ++lastReplySentSeq;
-        const uint num_tx = log[seq].ppMsg.pbft_block.vReq.size();
+        const uint num_tx = log[seq].ppMsg.pPbftBlock->vReq.size();
 	std::cout << "sending reply for block " << seq <<",  lastReplySentSeq = "<<  lastReplySentSeq << std::endl;
         for (uint i = 0; i < num_tx; i++) {
             /* hard code execution result as 'y' since we are replaying tx on Bitcoin's chain. */
@@ -340,7 +340,7 @@ void CPbft::saveBlocks2File(const int numBlock) const {
     CAutoFile fileout(file, SER_DISK, CLIENT_VERSION);
 
     for (int i = 0; i < numBlock; i++) {
-        log[i].ppMsg.pbft_block.Serialize(fileout);
+        log[i].ppMsg.pPbftBlock->Serialize(fileout);
     }
 }
 
@@ -354,7 +354,8 @@ void CPbft::readBlocksFromFile(const int numBlock) {
 
     for (int i = 0; i < numBlock; i++) {
         try {
-            log[i].ppMsg.pbft_block.Unserialize(filein);
+	    log[i].ppMsg.pPbftBlock = std::make_shared<CPbftBlock>();
+            log[i].ppMsg.pPbftBlock->Unserialize(filein);
         }
         catch (const std::exception& e) {
             std::cerr << "Deserialize or I/O error when reading PBFT block " << i << ": " << e.what() << std::endl;
@@ -366,9 +367,9 @@ void CPbft::WarmUpMemoryCache() {
     CCoinsViewCache view_tenta(pcoinsTip.get());
     readBlocksFromFile(nWarmUpBlocks);
     for (int i = 0; i < nWarmUpBlocks; i++) {
-        log[i].ppMsg.pbft_block.Execute(i, view_tenta);
+        log[i].ppMsg.pPbftBlock->Execute(i, view_tenta);
         /* Discard the block to prepare for performance test. */
-        log[i].ppMsg.pbft_block.Clear();
+        log[i].ppMsg.pPbftBlock.reset();
     }
 }
 

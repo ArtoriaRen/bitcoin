@@ -37,19 +37,19 @@ public:
     ThreadSafeQueue();
     ~ThreadSafeQueue();
 
-    CMutableTxRef& front();
-    std::deque<CMutableTxRef> get_all();
-    std::deque<CMutableTxRef> get_upto(uint32_t upto);
+    CTransactionRef& front();
+    std::deque<CTransactionRef> get_all();
+    std::deque<CTransactionRef> get_upto(uint32_t upto);
     void pop_front();
 
-    void push_back(const CMutableTxRef& item);
-    void push_back(CMutableTxRef&& item);
+    void push_back(const CTransactionRef& item);
+    void push_back(CTransactionRef&& item);
 
     int size();
     bool empty();
 
 private:
-    std::deque<CMutableTxRef> queue_;
+    std::deque<CTransactionRef> queue_;
     std::mutex mutex_;
     std::condition_variable cond_;
 };
@@ -101,7 +101,7 @@ public:
     // Check Commit message signature, add to corresponding log, check if we have accumulated 2f+1 Commit message. If so, execute transactions and reply. 
     bool ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck = true);
 
-    CPre_prepare assemblePPMsg(const CPbftBlock& pbft_block);
+    CPre_prepare assemblePPMsg(std::shared_ptr<CPbftBlock> pPbftBlockIn);
     CPbftMessage assembleMsg(const uint32_t seq); 
     CReply assembleReply(const uint32_t seq, const uint32_t idx, const char exe_res) const;
     bool checkMsg(CPbftMessage* msg);

@@ -20,7 +20,7 @@
 #include "net.h"
 #include "coins.h"
 
-typedef std::shared_ptr<CMutableTransaction> CMutableTxRef;
+//typedef std::shared_ptr<CMutableTransaction> CMutableTxRef;
 
 enum PbftPhase {pre_prepare, prepare, commit, reply, end};
 
@@ -117,41 +117,49 @@ public:
 class CPbftBlock{
 public:
     uint256 hash; 
-    std::vector<CMutableTxRef> vReq;
+    std::vector<CTransactionRef> vReq;
 
     CPbftBlock();
-    CPbftBlock(std::deque<CMutableTxRef> vReqIn);
+    CPbftBlock(std::deque<CTransactionRef> vReqIn);
     void ComputeHash();
     uint32_t Execute(const int seq, CCoinsViewCache& view) const;
     void Clear();
 
-    template<typename Stream>
-    void Serialize(Stream& s) const{
-	uint block_size = vReq.size();
-	s.write((char*)&block_size, sizeof(block_size));
-	for (uint i = 0; i < vReq.size(); i++) {
-	    vReq[i]->Serialize(s);
-	}
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action) {
+        READWRITE(vReq);
     }
 
-    template<typename Stream>
-    void Unserialize(Stream& s) {
-	uint block_size;
-	s.read((char*)&block_size, sizeof(block_size));
-	vReq.resize(block_size);
-	for (uint i = 0; i < vReq.size(); i++) {
-	    vReq[i].reset(new CMutableTransaction);
-	    vReq[i]->Unserialize(s);
-	}
-    }
+    //template<typename Stream>
+    //void Serialize(Stream& s) const{
+    //    uint block_size = vReq.size();
+    //    s.write((char*)&block_size, sizeof(block_size));
+    //    for (uint i = 0; i < vReq.size(); i++) {
+    //        vReq[i]->Serialize(s);
+    //    }
+    //}
+
+    //template<typename Stream>
+    //void Unserialize(Stream& s) {
+    //    uint block_size;
+    //    s.read((char*)&block_size, sizeof(block_size));
+    //    vReq.resize(block_size);
+    //    for (uint i = 0; i < vReq.size(); i++) {
+    //        vReq[i].reset(new CMutableTransaction);
+    //        vReq[i]->Unserialize(s);
+    //    }
+    //}
 };
 
 class CPre_prepare : public CPbftMessage{
 public:
-    CPbftBlock pbft_block;
-   
-    CPre_prepare():CPbftMessage(), pbft_block() { }
-    CPre_prepare(const CPbftMessage& pbftMsg, const CPbftBlock& blockIn):CPbftMessage(pbftMsg), pbft_block(blockIn) { }
+    std::shared_ptr<CPbftBlock> pPbftBlock;
+
+    CPre_prepare();
+    CPre_prepare(std::shared_ptr<CPbftBlock> pPbftBlockIn):CPbftMessage(), pPbftBlock(pPbftBlockIn) { }
+    CPre_prepare(const CPbftMessage& pbftMsg, std::shared_ptr<CPbftBlock> pPbftBlockIn):CPbftMessage(pbftMsg), pPbftBlock(pPbftBlockIn) { }
     
     CPre_prepare(const CPre_prepare& msg);
     CPre_prepare(const CPbftMessage& msg);
@@ -159,13 +167,13 @@ public:
     template<typename Stream>
     void Serialize(Stream& s) const{
 	CPbftMessage::Serialize(s);
-	pbft_block.Serialize(s);
+	pPbftBlock->Serialize(s);
     }
     
     template<typename Stream>
     void Unserialize(Stream& s) {
 	CPbftMessage::Unserialize(s);
-	pbft_block.Unserialize(s);
+	pPbftBlock->Unserialize(s);
     }
 };
 

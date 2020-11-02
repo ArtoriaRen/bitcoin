@@ -1898,7 +1898,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     }
 
     else if (strCommand == NetMsgType::PBFT_PP) {
-        CPre_prepare ppMsg;
+	std::shared_ptr<CPbftBlock> p_pbft_block = std::make_shared<CPbftBlock>();
+        CPre_prepare ppMsg(p_pbft_block);
         vRecv >> ppMsg;
 	if(!pbft->ProcessPP(connman, ppMsg)) {
 	    std::cout << __func__ << ": process ppMsg failed" <<std::endl;
@@ -2983,10 +2984,10 @@ bool PeerLogicValidation::SendPPMessages(){
 
     if (pbft->isLeader() && pbft->reqQueue.size() >= maxBlockSize) {
 	pbft->printQueueSize(); // only log queue size here cuz it will not change anywhere else
-	CPbftBlock pbftblock(pbft->reqQueue.get_upto(static_cast<uint32_t>(maxBlockSize)));
-	pbftblock.ComputeHash();
-	std::cout << __func__ << ": block size = " << pbftblock.vReq.size() << " client reqs" << std::endl;
-	CPre_prepare ppMsg = pbft->assemblePPMsg(pbftblock);
+	std::shared_ptr<CPbftBlock> p_pbft_block = std::make_shared<CPbftBlock>(pbft->reqQueue.get_upto(static_cast<uint32_t>(maxBlockSize)));
+	p_pbft_block->ComputeHash();
+	std::cout << __func__ << ": block size = " << p_pbft_block->vReq.size() << " client reqs" << std::endl;
+	CPre_prepare ppMsg = pbft->assemblePPMsg(p_pbft_block);
 	pbft->log[ppMsg.seq].ppMsg = ppMsg;
 	pbft->log[ppMsg.seq].phase = PbftPhase::prepare;
 	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
@@ -3480,8 +3481,8 @@ bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CD
     else if (strCommand == NetMsgType::PBFT_TX) {
         CTransactionRef ptx;
         vRecv >> ptx;
-        CMutableTxRef pMutabletx = std::make_shared<CMutableTransaction>(*ptx);
-        pbft->reqQueue.push_back(pMutabletx);
+        //CMutableTxRef pMutabletx = std::make_shared<CMutableTransaction>(*ptx);
+        pbft->reqQueue.push_back(ptx);
         g_connman->WakeMessageHandler();
 //        std::cout << __func__ << ": push to req queue tx = " << ptx->GetHash().GetHex().substr(0, 10) << std::endl;
     }

@@ -32,15 +32,15 @@ void CPbftMessage::getHash(uint256& result){
 	    .Finalize((unsigned char*)&result);
 }
 
-CPre_prepare::CPre_prepare(const CPre_prepare& msg): CPbftMessage(msg), pbft_block(msg.pbft_block) { }
+CPre_prepare::CPre_prepare(): CPbftMessage(), pPbftBlock() { }
 
-CPre_prepare::CPre_prepare(const CPbftMessage& msg): CPbftMessage(msg) { }
+CPre_prepare::CPre_prepare(const CPre_prepare& msg): CPbftMessage(msg), pPbftBlock(msg.pPbftBlock) { }
+
+CPre_prepare::CPre_prepare(const CPbftMessage& msg): CPbftMessage(msg), pPbftBlock() { }
 
 
-
-char ExecuteTx(CMutableTxRef tx_mutable, const int seq, CCoinsViewCache& view) {
+char ExecuteTx(const CTransaction& tx, const int seq, CCoinsViewCache& view) {
     /* -------------logic from Bitcoin code for tx processing--------- */
-    CTransaction tx(*tx_mutable);
     CValidationState state;
     if(!tx.IsCoinBase()) {
         bool fScriptChecks = true;
@@ -108,7 +108,7 @@ CPbftBlock::CPbftBlock(){
     vReq.clear();
 }
 
-CPbftBlock::CPbftBlock(std::deque<CMutableTxRef> vReqIn) {
+CPbftBlock::CPbftBlock(std::deque<CTransactionRef> vReqIn) {
     hash.SetNull();
     vReq.insert(vReq.end(), vReqIn.begin(), vReqIn.end());
 }
@@ -123,7 +123,7 @@ void CPbftBlock::ComputeHash(){
 
 uint32_t CPbftBlock::Execute(const int seq, CCoinsViewCache& view) const {
     for (uint i = 0; i < vReq.size(); i++) {
-	ExecuteTx(vReq[i], seq, view);
+	ExecuteTx(*vReq[i], seq, view);
     }
     return vReq.size();
 }
