@@ -32,15 +32,16 @@ void CPbftMessage::getHash(uint256& result){
 	    .Finalize((unsigned char*)&result);
 }
 
-CPre_prepare::CPre_prepare(const CPre_prepare& msg): CPbftMessage(msg), pbft_block(msg.pbft_block) { }
+CPre_prepare::CPre_prepare(): CPbftMessage(), pPbftBlock() { }
 
-CPre_prepare::CPre_prepare(const CPbftMessage& msg): CPbftMessage(msg) { }
+CPre_prepare::CPre_prepare(const CPre_prepare& msg): CPbftMessage(msg), pPbftBlock(msg.pPbftBlock) { }
+
+CPre_prepare::CPre_prepare(const CPbftMessage& msg): CPbftMessage(msg), pPbftBlock() { }
 
 
 
-static char VerifyTx(CMutableTxRef tx_mutable, const int seq, CCoinsViewCache& view) {
+static char VerifyTx(const CTransaction& tx, const int seq, CCoinsViewCache& view) {
     /* -------------logic from Bitcoin code for tx processing--------- */
-    CTransaction tx(*tx_mutable);
     CValidationState state;
     if(!tx.IsCoinBase()) {
         bool fScriptChecks = true;
@@ -80,8 +81,7 @@ static char VerifyTx(CMutableTxRef tx_mutable, const int seq, CCoinsViewCache& v
     return 'y';
 }
 
-static char ExecuteTx(CMutableTxRef tx_mutable, const int seq, CCoinsViewCache& view) {
-    CTransaction tx(*tx_mutable);
+static char ExecuteTx(const CTransaction& tx, const int seq, CCoinsViewCache& view) {
 //	    CTxUndo undoDummy;
 //	    if (i > 0) {
 //		blockundo.vtxundo.push_back(CTxUndo());
@@ -113,7 +113,7 @@ CPbftBlock::CPbftBlock(){
     vReq.clear();
 }
 
-CPbftBlock::CPbftBlock(std::deque<CMutableTxRef> vReqIn) {
+CPbftBlock::CPbftBlock(std::deque<CTransactionRef> vReqIn) {
     hash.SetNull();
     vReq.insert(vReq.end(), vReqIn.begin(), vReqIn.end());
 }
@@ -131,12 +131,12 @@ uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view) const {
     bool isInOurSubgroup = g_pbft->isBlockInOurVerifyGroup(seq);
     if (isInOurSubgroup) {
 	for (uint i = 0; i < vReq.size(); i++) {
-	    VerifyTx(vReq[i], seq, view);
+	    VerifyTx(*vReq[i], seq, view);
 	    txCnt++;
 	}
     } else {
 	for (uint i = 0; i < vReq.size(); i++) {
-	    VerifyTx(vReq[i], seq, view);
+	    VerifyTx(*vReq[i], seq, view);
 	    txCnt++;
 	    if (g_pbft->log[seq].blockVerified.load(std::memory_order_relaxed)) {
 	        /* enough collab msg is received. */
@@ -151,7 +151,7 @@ uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view) const {
 uint32_t CPbftBlock::Execute(const int seq, CCoinsViewCache& view) const {
     /* this is for tentative execution. */
     for (uint i = 0; i < vReq.size(); i++) {
-	ExecuteTx(vReq[i], seq, view);
+	ExecuteTx(*vReq[i], seq, view);
     }
     return vReq.size();
 }
