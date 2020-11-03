@@ -51,7 +51,8 @@ void WaitForShutdown()
     while (!fShutdown)
     {
 	g_pbft->sendReplies(g_connman.get());
-        MilliSleep(200);
+	g_pbft->AssembleAndSendCollabMsg();
+        MilliSleep(10);
         fShutdown = ShutdownRequested();
     }
     Interrupt();

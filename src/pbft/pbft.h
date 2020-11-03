@@ -109,7 +109,7 @@ public:
     CReply assembleReply(const uint32_t seq, const uint32_t idx, const char exe_res) const;
     bool checkMsg(CPbftMessage* msg);
     /*return the last executed seq */
-    int executeLog();
+    int executeLog(struct timeval& start_process_first_block);
     /* when received collab msg from the other subgroup, update our block valid bit.
      * Called by the net_processing theread. */
     void UpdateBlockValidity(const CCollabMessage& msg);

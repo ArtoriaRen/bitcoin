@@ -296,7 +296,7 @@ CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char e
     return toSent;
 }
 
-int CPbft::executeLog() {
+int CPbft::executeLog(struct timeval& start_process_first_block) {
     struct timeval start_time, end_time;
     /* Step 1: execute all lower-seq tx until this one if possible. */
     CCoinsViewCache view(pcoinsTip.get());
@@ -314,6 +314,14 @@ int CPbft::executeLog() {
             lastExecutedSeq = i;
 	    nCompletedTx += log[i].txCnt;
 	    std::cout << "Average execution time of block " << i << ": " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / log[i].txCnt << " us/req" << std::endl; 
+	    if (i == 0) {
+		gettimeofday(&start_process_first_block, NULL);
+	    }
+	    if (i == 24) {
+		unsigned long time_us = (end_time.tv_sec -  start_process_first_block.tv_sec) * 1000000 + (end_time.tv_usec -  start_process_first_block.tv_usec);
+		long completedTxForMeasure = nCompletedTx - log[0].txCnt;
+		std::cout << "Process " << completedTxForMeasure << " tx in " << time_us << " us. Throughput = " << 1000000 * completedTxForMeasure / time_us  << " tx/sec."  << std::endl;
+	    }
         } else if (log[i].phase == PbftPhase::reply && isBlockInOurVerifyGroup(i) && !log[i].blockVerified.load(std::memory_order_relaxed)){
 	    /* This is a block to be verified by our subgroup. Verify it directly using the real system state. (The Verify call includes executing tx.)*/
 	    gettimeofday(&start_time, NULL);
@@ -325,8 +333,15 @@ int CPbft::executeLog() {
 	    totalVerifyCnt += log[i].txCnt;
             lastBlockValidSeq = i;
 	    /*Anounce the update-to-date verifying result to peers in the other subgroup.*/
-	    AssembleAndSendCollabMsg();
 	    std::cout << "Average verify-amid-execution time of block " << i << ": " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / log[i].txCnt << " us/req" << std::endl; 
+	    if (i == 0) {
+		gettimeofday(&start_process_first_block, NULL);
+	    }
+	    if (i == 24) {
+		unsigned long time_us = (end_time.tv_sec -  start_process_first_block.tv_sec) * 1000000 + (end_time.tv_usec -  start_process_first_block.tv_usec);
+		long completedTxForMeasure = nCompletedTx - log[0].txCnt;
+		std::cout << "Process " << completedTxForMeasure << " tx in " << time_us << " us. Throughput = " << 1000000 * completedTxForMeasure / time_us  << " tx/sec."  << std::endl;
+	    }
         } else {
             break;
 	}	
@@ -339,7 +354,6 @@ int CPbft::executeLog() {
     /* tentative execution view. do not update system state b/c the view will be discarded. */
     int blockIdxToBeVerified = -1;
     if (!executedSomeLogSlot) {
-	CCoinsViewCache view_tenta(pcoinsTip.get());
 	for (uint j = lastExecutedSeq + 1; j < logSize && log[j].phase == PbftPhase::reply; j++) {
 	    if (isBlockInOurVerifyGroup(j) && !log[j].blockVerified.load(std::memory_order_relaxed)){
 		blockIdxToBeVerified = j;
@@ -348,8 +362,8 @@ int CPbft::executeLog() {
 
 	}
 	if (blockIdxToBeVerified > -1) {
+	    CCoinsViewCache view_tenta(pcoinsTip.get());
 	    for (int j = lastExecutedSeq + 1; j < blockIdxToBeVerified; j++) {
-		std::cout << "Tentative executing block " << j << std::endl;
 		gettimeofday(&start_time, NULL);
 		int tx_cnt = log[j].ppMsg.pPbftBlock->Execute(j, view_tenta);
 		gettimeofday(&end_time, NULL);
@@ -361,7 +375,6 @@ int CPbft::executeLog() {
 	    gettimeofday(&end_time, NULL);
 	    log[blockIdxToBeVerified].blockVerified.store(true, std::memory_order_relaxed);
 	    lastBlockValidSeq = blockIdxToBeVerified;
-	    AssembleAndSendCollabMsg();
 	    std::cout << "Average verify time of block " << blockIdxToBeVerified << " in my subgroup: " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / tx_cnt << " us/req" << std::endl;
 	}
     }
@@ -369,7 +382,6 @@ int CPbft::executeLog() {
     /* Step 3: if we did have done nothing, and the next log slot is in the reply state, then we
      * must be blocked by the other subgroup. Verify only the next block. */
     if (!executedSomeLogSlot && blockIdxToBeVerified == -1 && log[i].phase == PbftPhase::reply && !log[i].blockVerified.load(std::memory_order_relaxed)) {
-	std::cout << " verifying block " << i << " belonging to the other subgroup."<< std::endl;
 	CCoinsViewCache view_verify(pcoinsTip.get());
 	gettimeofday(&start_time, NULL);
         int tx_cnt = log[i].ppMsg.pPbftBlock->Verify(i, view_verify);
@@ -419,21 +431,24 @@ bool CPbft::checkCollabMsg(const CCollabMessage& msg) {
 }
 
 void CPbft::AssembleAndSendCollabMsg() {
-    CCollabMessage toSent; 
-    toSent.blockValidUpto = lastBlockValidSeq; 
-    uint256 hash;
-    toSent.getHash(hash);
-    privateKey.Sign(hash, toSent.vchSig);
-    toSent.sigSize = toSent.vchSig.size();
+    if (lastBlockValidSeq > lastBlockValidSentSeq) {
+	CCollabMessage toSent; 
+	toSent.blockValidUpto = lastBlockValidSeq; 
+	uint256 hash;
+	toSent.getHash(hash);
+	privateKey.Sign(hash, toSent.vchSig);
+	toSent.sigSize = toSent.vchSig.size();
 
-    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-    uint32_t start_peerID = pbftID / CPbft::groupSize; 
-    uint32_t end_peerID = start_peerID + CPbft::groupSize;
-    for (uint32_t i = start_peerID; i < end_peerID; i++) {
-        if ((i ^ pbftID) & 1) {
-            /* this is a peer in the other subgroup. */
-            g_connman->PushMessage(peers[i], msgMaker.Make(NetMsgType::COLLAB_BLOCK_VALID, toSent));
-        }
+	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+	uint32_t start_peerID = pbftID / CPbft::groupSize; 
+	uint32_t end_peerID = start_peerID + CPbft::groupSize;
+	for (uint32_t i = start_peerID; i < end_peerID; i++) {
+	    if ((i ^ pbftID) & 1) {
+		/* this is a peer in the other subgroup. */
+		g_connman->PushMessage(peers[i], msgMaker.Make(NetMsgType::COLLAB_BLOCK_VALID, toSent));
+	    }
+	} 
+	lastBlockValidSentSeq = lastBlockValidSeq; 
     }
 }
 
@@ -496,8 +511,9 @@ void CPbft::WarmUpMemoryCache() {
 
 void ThreadConsensusLogExe() {
     RenameThread("bitcoin-logexe");
+    struct timeval start_process_first_block = {0, 0};
     while (!ShutdownRequested()) {
-        g_pbft->executeLog();
+        g_pbft->executeLog(start_process_first_block);
         MilliSleep(50);
     }
 }
