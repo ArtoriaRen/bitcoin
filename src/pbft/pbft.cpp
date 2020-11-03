@@ -293,7 +293,7 @@ CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char e
     return toSent;
 }
 
-int CPbft::executeLog() {
+int CPbft::executeLog(struct timeval& start_process_first_block) {
     struct timeval start_time, end_time;
     /* execute all lower-seq tx until this one if possible. */
     CCoinsViewCache view(pcoinsTip.get());
@@ -304,12 +304,19 @@ int CPbft::executeLog() {
      * the seq passed in, a slot missing a pbftc msg might permanently block
      * log slots after it to be executed. */
     for (; i < logSize && log[i].phase == PbftPhase::reply; i++) {
+	if (i==0) {
+	    gettimeofday(&start_process_first_block, NULL);
+	}
 	gettimeofday(&start_time, NULL);
 	log[i].txCnt = log[i].ppMsg.pPbftBlock->Execute(i, view);
 	gettimeofday(&end_time, NULL);
 	lastExecutedSeq = i;
 	nCompletedTx += log[i].txCnt;
 	std::cout << "Average combined verify and execution time of block " << i << ": " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / log[i].txCnt << " us/req" << std::endl;
+	if (i == 25) {
+	    unsigned long time_us = (end_time.tv_sec -  start_process_first_block.tv_sec) * 1000000 + (end_time.tv_usec -  start_process_first_block.tv_usec);
+	std::cout << "Process " << nCompletedTx  << " tx in " << time_us << " us. Throughput = " << 1000000 * (long)nCompletedTx / time_us  << " tx/sec."  << std::endl;
+	}
     }
     bool flushed = view.Flush(); // flush to pcoinsTip
     assert(flushed);
@@ -375,8 +382,9 @@ void CPbft::WarmUpMemoryCache() {
 
 void ThreadConsensusLogExe() {
     RenameThread("bitcoin-logexe");
+    struct timeval start_process_first_block;
     while (!ShutdownRequested()) {
-        g_pbft->executeLog();
+        g_pbft->executeLog(start_process_first_block);
         MilliSleep(50);
     }
 }
