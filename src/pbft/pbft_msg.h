@@ -122,7 +122,7 @@ public:
     CPbftBlock();
     CPbftBlock(std::deque<CTransactionRef> vReqIn);
     void ComputeHash();
-    uint32_t Verify(const int seq, CCoinsViewCache& view) const;
+    uint32_t Verify(const int seq, CCoinsViewCache& view, bool* quit = nullptr) const;
     uint32_t Execute(const int seq, CCoinsViewCache& view) const;
     void Clear();
 

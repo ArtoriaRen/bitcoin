@@ -50,10 +50,11 @@ void WaitForShutdown()
     // Tell the main threads to shutdown.
     while (!fShutdown)
     {
-	g_pbft->sendReplies(g_connman.get());
 	g_pbft->AssembleAndSendCollabMsg();
-        MilliSleep(10);
+	g_pbft->sendReplies(g_connman.get());
         fShutdown = ShutdownRequested();
+	std::unique_lock<std::mutex> lock(g_pbft->mutexSendCollabOrReply);
+	g_pbft->condSendCollabOrReply.wait_for(lock, std::chrono::milliseconds(100));
     }
     Interrupt();
 }

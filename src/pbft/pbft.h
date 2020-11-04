@@ -90,9 +90,12 @@ public:
     unsigned long totalVerifyCnt; // in us
     unsigned long totalExeTime; // in us
 
-    volatile int lastBlockValidSeq; // the highest block has been verified by our subgroup
+    int lastBlockValidSeq; // the highest block has been verified by our subgroup
     int lastBlockValidSentSeq; // the highest block has been verified by our subgroup and announced to the other group.
     int lastReplySentSeq; // the highest block we have sent reply to the client. Used only by the msg_hand thread. 
+
+    std::mutex mutexSendCollabOrReply;
+    std::condition_variable condSendCollabOrReply;
     
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
@@ -134,9 +137,28 @@ public:
 	return ((pbftID & 1) ^ (seq & 1)) == 0;
     }
 
+    inline void WakeCollabMsgSender(int lastBlockValidSeqIn) {
+	{
+	    std::lock_guard<std::mutex> lock(mutexSendCollabOrReply);
+	    lastBlockValidSeq = lastBlockValidSeqIn;
+	}
+	condSendCollabOrReply.notify_one();
+    }
+
     void saveBlocks2File(const int numBlock) const;
     void readBlocksFromFile(const int numBlock);
     void WarmUpMemoryCache();
+
+    inline void logServerSideThruput(struct timeval& start_process_first_block, struct timeval& end_time, int seq) {
+	if (seq == 0) {
+	    start_process_first_block = end_time;
+	} else if (seq == nWarmUpBlocks - 2) {
+	    unsigned long time_us = (end_time.tv_sec - start_process_first_block.tv_sec) * 1000000 + (end_time.tv_usec -  start_process_first_block.tv_usec);
+	    unsigned long completedTxForMeasure = nCompletedTx - log[0].txCnt;
+	    std::cout << "Process " << completedTxForMeasure << " tx in " << time_us << " us. Throughput = " << 1000000 * completedTxForMeasure / time_us  << " tx/sec."  << std::endl;
+	}
+    }
+
 private:
     // private ECDSA key used to sign messages
     CKey privateKey;
