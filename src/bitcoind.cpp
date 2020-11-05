@@ -46,6 +46,7 @@ extern std::unique_ptr<CConnman> g_connman;
 
 void WaitForShutdown()
 {
+    const struct timespec sleep_length = {0, 10000}; // sleep 10 us
     bool fShutdown = ShutdownRequested();
     // Tell the main threads to shutdown.
     while (!fShutdown)
@@ -53,8 +54,7 @@ void WaitForShutdown()
 	g_pbft->AssembleAndSendCollabMsg();
 	g_pbft->sendReplies(g_connman.get());
         fShutdown = ShutdownRequested();
-	std::unique_lock<std::mutex> lock(g_pbft->mutexSendCollabOrReply);
-	g_pbft->condSendCollabOrReply.wait_for(lock, std::chrono::milliseconds(100));
+	nanosleep(&sleep_length, NULL);
     }
     Interrupt();
 }

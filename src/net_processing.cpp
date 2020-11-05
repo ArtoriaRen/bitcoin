@@ -2985,7 +2985,7 @@ bool PeerLogicValidation::SendPPMessages(){
 	pbft->printQueueSize(); // only log queue size here cuz it will not change anywhere else
 	std::shared_ptr<CPbftBlock> p_pbft_block = std::make_shared<CPbftBlock>(pbft->reqQueue.get_upto(static_cast<uint32_t>(maxBlockSize)));
 	p_pbft_block->ComputeHash();
-	std::cout << __func__ << ": block size = " << p_pbft_block->vReq.size() << " client reqs" << std::endl;
+	//std::cout << __func__ << ": block size = " << p_pbft_block->vReq.size() << " client reqs" << std::endl;
 	CPre_prepare ppMsg = pbft->assemblePPMsg(p_pbft_block);
 	pbft->log[ppMsg.seq].ppMsg = ppMsg;
 	pbft->log[ppMsg.seq].phase = PbftPhase::prepare;

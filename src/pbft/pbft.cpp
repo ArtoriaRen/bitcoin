@@ -318,10 +318,10 @@ int CPbft::executeLog(struct timeval& start_process_first_block) {
 	gettimeofday(&start_time, NULL);
 	log[i].txCnt = log[i].ppMsg.pPbftBlock->Verify(i, *pcoinsTip);
 	gettimeofday(&end_time, NULL);
+	lastBlockValidSeq = i;
 	lastExecutedSeq = i;
 	nCompletedTx += log[i].txCnt;
         /*Anounce the update-to-date verifying result to peers in the other subgroup.*/
-	WakeCollabMsgSender(i);
         std::cout << "Average verify-amid-execution time of block " << i << ": " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / log[i].txCnt << " us/req" << std::endl;
 	logServerSideThruput(start_process_first_block, end_time, i);
     }
@@ -351,8 +351,8 @@ int CPbft::executeLog(struct timeval& start_process_first_block) {
 	    gettimeofday(&start_time, NULL);
 	    log[blockIdxToBeVerified].txCnt = log[blockIdxToBeVerified].ppMsg.pPbftBlock->Verify(blockIdxToBeVerified, view_tenta);
 	    gettimeofday(&end_time, NULL);
+	    lastBlockValidSeq = blockIdxToBeVerified;
 	    log[blockIdxToBeVerified].blockVerified.store(true, std::memory_order_relaxed);
-	    WakeCollabMsgSender(blockIdxToBeVerified);
 	    std::cout << "Average verify time of block " << blockIdxToBeVerified << " in my subgroup: " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / log[blockIdxToBeVerified].txCnt << " us/req" << std::endl;
 	}
     }

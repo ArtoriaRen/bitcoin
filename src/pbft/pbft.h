@@ -90,13 +90,10 @@ public:
     unsigned long totalVerifyCnt; // in us
     unsigned long totalExeTime; // in us
 
-    int lastBlockValidSeq; // the highest block has been verified by our subgroup
+    volatile int lastBlockValidSeq; // the highest block has been verified by our subgroup
     int lastBlockValidSentSeq; // the highest block has been verified by our subgroup and announced to the other group.
     int lastReplySentSeq; // the highest block we have sent reply to the client. Used only by the msg_hand thread. 
 
-    std::mutex mutexSendCollabOrReply;
-    std::condition_variable condSendCollabOrReply;
-    
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
     bool ProcessPP(CConnman* connman, CPre_prepare& ppMsg);
@@ -135,14 +132,6 @@ public:
 
     inline bool isBlockInOurVerifyGroup(uint32_t seq){
 	return ((pbftID & 1) ^ (seq & 1)) == 0;
-    }
-
-    inline void WakeCollabMsgSender(int lastBlockValidSeqIn) {
-	{
-	    std::lock_guard<std::mutex> lock(mutexSendCollabOrReply);
-	    lastBlockValidSeq = lastBlockValidSeqIn;
-	}
-	condSendCollabOrReply.notify_one();
     }
 
     void saveBlocks2File(const int numBlock) const;
