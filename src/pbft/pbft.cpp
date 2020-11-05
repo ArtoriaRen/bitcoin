@@ -296,7 +296,6 @@ CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char e
 int CPbft::executeLog(struct timeval& start_process_first_block) {
     struct timeval start_time, end_time;
     /* execute all lower-seq tx until this one if possible. */
-    CCoinsViewCache view(pcoinsTip.get());
     int lastExecutedSeqStart = lastExecutedSeq;
     uint i = lastExecutedSeq + 1;
     /* We should go on to execute all log slots that are in reply phase even
@@ -304,22 +303,21 @@ int CPbft::executeLog(struct timeval& start_process_first_block) {
      * the seq passed in, a slot missing a pbftc msg might permanently block
      * log slots after it to be executed. */
     for (; i < logSize && log[i].phase == PbftPhase::reply; i++) {
-	if (i==0) {
-	    gettimeofday(&start_process_first_block, NULL);
-	}
 	gettimeofday(&start_time, NULL);
-	log[i].txCnt = log[i].ppMsg.pPbftBlock->Execute(i, view);
+	log[i].txCnt = log[i].ppMsg.pPbftBlock->Execute(i, *pcoinsTip);
 	gettimeofday(&end_time, NULL);
 	lastExecutedSeq = i;
 	nCompletedTx += log[i].txCnt;
 	std::cout << "Average combined verify and execution time of block " << i << ": " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / log[i].txCnt << " us/req" << std::endl;
-	if (i == 25) {
+	if (i==0) {
+	    start_process_first_block = end_time;
+	}
+	if (i == nWarmUpBlocks - 2) {
 	    unsigned long time_us = (end_time.tv_sec -  start_process_first_block.tv_sec) * 1000000 + (end_time.tv_usec -  start_process_first_block.tv_usec);
-	std::cout << "Process " << nCompletedTx  << " tx in " << time_us << " us. Throughput = " << 1000000 * (long)nCompletedTx / time_us  << " tx/sec."  << std::endl;
+	    unsigned long completedTxForMeasure = nCompletedTx - log[0].txCnt;
+	    std::cout << "Process " << completedTxForMeasure << " tx in " << time_us << " us. Throughput = " << 1000000 * completedTxForMeasure / time_us  << " tx/sec."  << std::endl;
 	}
     }
-    bool flushed = view.Flush(); // flush to pcoinsTip
-    assert(flushed);
     return lastExecutedSeq;
 }
 
