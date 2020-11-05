@@ -321,10 +321,10 @@ int CPbft::executeLog(struct timeval& start_process_first_block) {
     return lastExecutedSeq;
 }
 
-void CPbft::sendReplies(CConnman* connman) {
+bool CPbft::sendReplies(CConnman* connman) {
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
     if (lastExecutedSeq > lastReplySentSeq) {
-        /* sent reply msg for only one block per loop b/c we do not want to block receiving msg.*/
+        /* sent reply msg for only one block per loop .*/
         int seq = ++lastReplySentSeq;
         const uint num_tx = log[seq].ppMsg.pPbftBlock->vReq.size();
 	std::cout << "sending reply for block " << seq <<",  lastReplySentSeq = "<<  lastReplySentSeq << std::endl;
@@ -333,6 +333,9 @@ void CPbft::sendReplies(CConnman* connman) {
             CReply reply = assembleReply(seq, i,'y');
             connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
         }
+	return true;
+    } else {
+	return false;
     }
 }
 

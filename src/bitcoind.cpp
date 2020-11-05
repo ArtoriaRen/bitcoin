@@ -47,11 +47,14 @@ extern std::unique_ptr<CConnman> g_connman;
 void WaitForShutdown()
 {
     bool fShutdown = ShutdownRequested();
+    bool sentSomething = false;
     // Tell the main threads to shutdown.
     while (!fShutdown)
     {
-	g_pbft->sendReplies(g_connman.get());
-        MilliSleep(200);
+	sentSomething = g_pbft->sendReplies(g_connman.get());
+	if (!sentSomething) {
+	    MilliSleep(10);
+	}
         fShutdown = ShutdownRequested();
     }
     Interrupt();

@@ -107,7 +107,7 @@ public:
     bool checkMsg(CPbftMessage* msg);
     /*return the last executed seq */
     int executeLog(struct timeval& start_process_first_block);
-    void sendReplies(CConnman* connman);
+    bool sendReplies(CConnman* connman);
 
     inline void printQueueSize(){
 	    /* log queue size if we have reached the period. */
