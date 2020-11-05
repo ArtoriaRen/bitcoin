@@ -48,13 +48,16 @@ void WaitForShutdown()
 {
     const struct timespec sleep_length = {0, 10000}; // sleep 10 us
     bool fShutdown = ShutdownRequested();
+    bool sentSomething = false;
     // Tell the main threads to shutdown.
     while (!fShutdown)
     {
-	g_pbft->AssembleAndSendCollabMsg();
-	g_pbft->sendReplies(g_connman.get());
+	sentSomething = g_pbft->AssembleAndSendCollabMsg();
+	sentSomething |= g_pbft->sendReplies(g_connman.get());
+	if (!sentSomething) {
+	    nanosleep(&sleep_length, NULL);
+	}
         fShutdown = ShutdownRequested();
-	nanosleep(&sleep_length, NULL);
     }
     Interrupt();
 }

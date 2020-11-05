@@ -114,8 +114,8 @@ public:
      * Called by the net_processing theread. */
     void UpdateBlockValidity(const CCollabMessage& msg);
     bool checkCollabMsg(const CCollabMessage& msg);
-    void AssembleAndSendCollabMsg();
-    void sendReplies(CConnman* connman);
+    bool AssembleAndSendCollabMsg();
+    bool sendReplies(CConnman* connman);
 
     inline void printQueueSize(){
 	    /* log queue size if we have reached the period. */
