@@ -128,22 +128,30 @@ void CPbftBlock::ComputeHash(){
 
 uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view, bool* quit) const {
     uint32_t txCnt = 0;
-    bool isInOurSubgroup = g_pbft->isBlockInOurVerifyGroup(seq);
-    if (isInOurSubgroup) {
+    if (quit == nullptr) {
+	/* During memory page cache warm up, quit is nullptr for blocks of the other subgroup. */
 	for (uint i = 0; i < vReq.size(); i++) {
 	    VerifyTx(*vReq[i], seq, view);
 	    txCnt++;
 	}
     } else {
-	for (uint i = 0; i < vReq.size(); i++) {
+	uint i = 0;
+	for (; i < vReq.size() && !(*quit); i++) {
+	    /* the block is not yet collab verified. We have to verify tx.*/
 	    VerifyTx(*vReq[i], seq, view);
 	    txCnt++;
 	    if (g_pbft->log[seq].blockVerified.load(std::memory_order_relaxed)) {
-	        /* enough collab msg is received. */ 
+		/* enough collab msg is received. */ 
 		*quit = true;
-	        std::cout << "quit verifying block " << seq << " of the other subgroup" << std::endl;
-	        break;
-	    }     
+		std::cout << "quit verifying block " << seq << " of the other subgroup" << std::endl;
+	    }
+	}
+	if (*quit) {
+	    /* the block is collab verified. We execute remaining tx without verification. */
+	    for (; i < vReq.size(); i++) {
+		ExecuteTx(*vReq[i], seq, view);
+		txCnt++;
+	    }
 	}
     }
     return txCnt;

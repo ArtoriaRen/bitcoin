@@ -94,6 +94,10 @@ public:
     int lastBlockValidSentSeq; // the highest block has been verified by our subgroup and announced to the other group.
     int lastReplySentSeq; // the highest block we have sent reply to the client. Used only by the msg_hand thread. 
 
+    std::unique_ptr<CCoinsViewCache> pviewTenta;
+    int lastTentaExecutedSeq; 
+
+
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
     bool ProcessPP(CConnman* connman, CPre_prepare& ppMsg);

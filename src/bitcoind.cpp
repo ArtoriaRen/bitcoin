@@ -55,7 +55,8 @@ void WaitForShutdown()
 	sentSomething = g_pbft->AssembleAndSendCollabMsg();
 	sentSomething |= g_pbft->sendReplies(g_connman.get());
 	if (!sentSomething) {
-	    nanosleep(&sleep_length, NULL);
+	    MilliSleep(10);
+	    //nanosleep(&sleep_length, NULL);
 	}
         fShutdown = ShutdownRequested();
     }
