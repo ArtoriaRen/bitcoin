@@ -96,12 +96,12 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
     }
     std::cout << __func__ << ": sending " << block.vtx.size() << " tx in block " << block_height << std::endl;
 
-    const struct timespec sleep_length = {0, txSendPeriod * 1000};
+    const struct timespec sleep_length = {0, txSendPeriod};
     uint32_t cnt = 0;
     for (uint j = 0; j < block.vtx.size(); j++) {
 	sendTx(block.vtx[j], j, block_height);
 	cnt++;
-	nanosleep(&sleep_length, NULL);
+	//nanosleep(&sleep_length, NULL);
 
 	/* send one aborted tx every four tx */
 	if ((j & 0x04) == 0) {
@@ -149,7 +149,7 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	//assert((tx->IsCoinBase() && shards.size() == 1) || (!tx->IsCoinBase() && shards.size() >= 2)); // there must be at least one output shard and one input shard for non-coinbase tx.
 	//std::cout << idx << "-th" << " tx "  <<  hashTx.GetHex().substr(0, 10) << " : ";
-	std::cout << idx << "-th" << " tx "  <<  hashTx.GetHex().substr(0, 10) << std::endl;
+	//std::cout << idx << "-th" << " tx "  <<  hashTx.GetHex().substr(0, 10) << std::endl;
 	//for (int shard : shards)
 	//    std::cout << shard << ", ";
 	//std::cout << std::endl;

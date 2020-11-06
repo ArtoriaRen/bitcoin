@@ -7,7 +7,7 @@
 #include <pbft/pbft.h>
 #include "tx_placement/tx_placer.h"
 int32_t pbftID;
-uint32_t thruInterval; // calculate throughput once every "thruInterval" seconds
+struct timeval thruInterval; // calculate throughput once every "thruInterval" 
 
 TxBlockInfo::TxBlockInfo(): blockHeight(0), n(0) { }
 TxBlockInfo::TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn): tx(txIn), blockHeight(blockHeightIn), n(nIn) { }
@@ -66,10 +66,12 @@ CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), nLastCompletedTx(
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     latencyFile.open ("/home/l27ren/collab_verify/latency.out");
+    thruputFile.open ("/home/l27ren/collab_verify/thruput.out");
 }
 
 CPbft::~CPbft() {
     latencyFile.close();
+    thruputFile.close();
 }
 
 bool CPbft::checkReplySig(const CReply* pReply) const {
@@ -91,20 +93,19 @@ bool CPbft::checkReplySig(const CReply* pReply) const {
 void CPbft::logThruput(struct timeval& endTime) {
     if (testStartTime.tv_sec == 0) {
 	/* test just started. log the start time */
-	std::cout << "At time " << endTime.tv_sec << "." << endTime.tv_usec << ", sending tx starts. This is the initial throughput log. " << std::endl;
+	thruputFile << endTime.tv_sec << "." << endTime.tv_usec << ", sending tx starts.\n" ;
 	testStartTime = endTime;
-	/* log when thruInterval seconds has passed by  */
-	nextLogTime.tv_sec = endTime.tv_sec + thruInterval;
-	nextLogTime.tv_usec = endTime.tv_usec;
+	/* log when thruInterval has passed by  */
+	nextLogTime = endTime + thruInterval;
 	return;
     }
     uint32_t nCompletedTxCopy = nCompletedTx.load(std::memory_order_relaxed); 
-    double thruput = (nCompletedTxCopy - nLastCompletedTx) / ((endTime.tv_sec - nextLogTime.tv_sec + thruInterval) + (endTime.tv_usec - nextLogTime.tv_usec) * 0.000001);
-    /* log when thruInterval seconds has passed by  */
-    nextLogTime.tv_sec = endTime.tv_sec + thruInterval;
-    nextLogTime.tv_usec = endTime.tv_usec;
+    struct timeval timeElapsed = endTime - (nextLogTime - thruInterval);
+    double thruput = (nCompletedTxCopy - nLastCompletedTx) / (timeElapsed.tv_sec + timeElapsed.tv_usec * 0.000001);
+
+    nextLogTime = endTime + thruInterval;
     nLastCompletedTx = nCompletedTxCopy;
-    std::cout << "At time " << endTime.tv_sec << "." << endTime.tv_usec << ", completed " <<  nCompletedTxCopy << " tx" << ": throughput = " << thruput << std::endl;
+    thruputFile << endTime.tv_sec << "." << endTime.tv_usec << "," <<  nCompletedTxCopy << "," << thruput << std::endl;
 }
 
 

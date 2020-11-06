@@ -1865,9 +1865,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		TxStat& stat = g_pbft->mapTxStartTime[reply.digest]; 
 		    
 		assert (stat.type == TxType::SINGLE_SHARD); 
-		std::cout << "tx " << reply.digest.GetHex().substr(0,10);
+		//std::cout << "tx " << reply.digest.GetHex().substr(0,10);
 		if (reply.reply == 'y') {
-			std::cout << ", SUCCEED, " << std::endl;
+			//std::cout << ", SUCCEED, " << std::endl;
 			g_pbft->txInFly.erase(reply.digest);
 			nLocalCompletedTxPerInterval++;
 		} else if (reply.reply == 'n') {

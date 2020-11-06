@@ -55,8 +55,7 @@ void WaitForShutdown()
 		&& pbft.nCompletedTx.load(std::memory_order_relaxed) + pbft.nTotalFailedTx.load(std::memory_order_relaxed) < pbft.nTotalSentTx; // test has not yet finished
 	struct timeval currentTime;
 	gettimeofday(&currentTime, NULL);
-	long time_elapsed = (currentTime.tv_sec - pbft.nextLogTime.tv_sec) * 1000000 + (currentTime.tv_usec - pbft.nextLogTime.tv_usec); 
-	if (testIsRunning && time_elapsed >= thruInterval) {
+	if (testIsRunning && currentTime >= pbft.nextLogTime) {
 	    pbft.logThruput(currentTime);
 	}
 

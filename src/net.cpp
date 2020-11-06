@@ -2004,6 +2004,8 @@ void CConnman::ThreadMessageHandler(uint threadIdx)
     struct timeval lastGlobalStateUpdateTime;
     gettimeofday(&lastGlobalStateUpdateTime, NULL);
     uint32_t nLocalCompletedTxPerInterval = 0, nLocalTotalFailedTxPerInterval = 0;
+    uint32_t globalCntUpdateThreshold = 100;
+
     while (!flagInterruptMsgProc)
     {
         std::vector<CNode*> vNodesCopy;
@@ -2045,13 +2047,13 @@ void CConnman::ThreadMessageHandler(uint threadIdx)
 
 	struct timeval currentTime;
 	gettimeofday(&currentTime, NULL);
-	long time_elapsed = (currentTime.tv_sec - lastGlobalStateUpdateTime.tv_sec) * 1000000 + (currentTime.tv_usec - lastGlobalStateUpdateTime.tv_usec); 
-	if (time_elapsed >= thruInterval) {
+	struct timeval time_elapsed = currentTime - lastGlobalStateUpdateTime; 
+	if (time_elapsed >= thruInterval || nLocalCompletedTxPerInterval >= globalCntUpdateThreshold) {
 	    /* update global statistics */
 	    pbft.nCompletedTx.fetch_add(nLocalCompletedTxPerInterval, std::memory_order_relaxed); 
-	    pbft.nTotalFailedTx.fetch_add(nLocalTotalFailedTxPerInterval, std::memory_order_relaxed);
+	    //pbft.nTotalFailedTx.fetch_add(nLocalTotalFailedTxPerInterval, std::memory_order_relaxed);
 	    nLocalCompletedTxPerInterval = 0;
-	    nLocalTotalFailedTxPerInterval = 0;
+	    //nLocalTotalFailedTxPerInterval = 0;
 	    lastGlobalStateUpdateTime = currentTime; 	
 	}
 
