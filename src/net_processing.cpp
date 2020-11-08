@@ -1495,17 +1495,6 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, const std::ve
     return true;
 }
 
-void static addCommittedTxIndex(const uint256& txid, std::vector<TxIndexOnChain>& vCommittedTxIndex){
-    const TxBlockInfo& txInfo = g_pbft->txInFly[txid];
-    vCommittedTxIndex.emplace_back(txInfo.blockHeight, txInfo.n);
-    if (vCommittedTxIndex.size() == localCommittedTxCapacity) {
-	/* append to the global data structure */
-	    std::cout << __func__ << ": vCommittedTxIndex size = " << vCommittedTxIndex.size() << ", append to global data structure. " << std::endl;
-	g_pbft->committedTxIndex.insert_back(vCommittedTxIndex);
-	vCommittedTxIndex.clear();
-    }
-}
-
 bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman* connman, const std::atomic<bool>& interruptMsgProc, uint32_t& nLocalCompletedTxPerInterval, uint32_t& nLocalTotalFailedTxPerInterval, const uint threadIdx, std::vector<TxIndexOnChain>& vCommittedTxIndex)
 {
     //std::cout << __func__ << ": " << strCommand << std::endl;
@@ -1863,7 +1852,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	//if (!g_pbft->checkReplySig(&reply)) {
 	//    std::cout << strCommand << " from " << reply.peerID << " sig verification fail"  << std::endl;
 	//}
-	//std::cout << __func__ << ": received PBFT_REPLY for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
+	std::cout << __func__ << ": received PBFT_REPLY for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
+	std::cout << "replyMap[reply.digest].size() = " << g_pbft->replyMap[reply.digest].size() << std::endl;
 	g_pbft->replyMap[reply.digest].emplace(pfrom->GetAddrName());
 	if (g_pbft->replyMap[reply.digest].size() == 2 * CPbft::nFaulty + 1) {
 	    struct timeval endTime;
@@ -1876,10 +1866,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		TxStat& stat = g_pbft->mapTxStartTime[reply.digest]; 
 		    
 		assert (stat.type == TxType::SINGLE_SHARD); 
-		//std::cout << "tx " << reply.digest.GetHex().substr(0,10);
+		std::cout << "tx " << reply.digest.GetHex().substr(0,10);
 		if (reply.reply == 'y') {
 			std::cout << ", SUCCEED, " << std::endl;
-			addCommittedTxIndex(reply.digest, vCommittedTxIndex);
 			g_pbft->txInFly.erase(reply.digest);
 			nLocalCompletedTxPerInterval++;
 		} else if (reply.reply == 'n') {
@@ -1902,7 +1891,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 			 * printing info more than once for a tx. 
 			 */
 			std::cout << ", COMMITTED, ";
-			addCommittedTxIndex(txid, vCommittedTxIndex);
 			g_pbft->txInFly.erase(txid);
 			nLocalCompletedTxPerInterval++;
 		} else if (reply.reply == 'y' && inputShardRplMap[txid].decision == 'a') {

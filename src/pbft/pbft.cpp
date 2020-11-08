@@ -67,7 +67,7 @@ void CommittedTxDeque::insert_back(const std::vector<TxIndexOnChain>& localCommi
 }
 
 size_t CommittedTxDeque::updateGreatestConsecutive(){
-    TxIndexOnChain LCCTx = g_pbft->latestConsecutiveCommittedTx.load(std::memory_order_relaxed);
+    TxIndexOnChain LCCTx = g_pbft->latestConsecutiveSentTx.load(std::memory_order_relaxed);
     std::unique_lock<std::mutex> mlock(mutex_);
     if (deque_.empty())
 	return 0;
@@ -80,7 +80,8 @@ size_t CommittedTxDeque::updateGreatestConsecutive(){
 	deque_.clear();
 	size_t ret = deque_.size(); 
 	mlock.unlock();
-	g_pbft->latestConsecutiveCommittedTx.store(newLCCTx, std::memory_order_relaxed);
+	g_pbft->latestConsecutiveSentTx.store(newLCCTx, std::memory_order_relaxed);
+	std::cout << "latest consecutive commited tx = " << newLCCTx.ToString() << std::endl;
 	return ret;
     }
     /* the first element is below or equal to the new LCCTx, the last element is 
@@ -101,7 +102,8 @@ size_t CommittedTxDeque::updateGreatestConsecutive(){
     deque_.erase(deque_.begin(), deque_.begin() + right);
     size_t ret = deque_.size(); 
     mlock.unlock();
-    g_pbft->latestConsecutiveCommittedTx.store(newLCCTx, std::memory_order_relaxed);
+    g_pbft->latestConsecutiveSentTx.store(newLCCTx, std::memory_order_relaxed);
+    std::cout << "latest consecutive commited tx = " << newLCCTx.ToString() << std::endl;
     return ret;
 }
 
@@ -117,7 +119,7 @@ bool CommittedTxDeque::empty() {
     return deque_.empty();
 }
 
-CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), latestConsecutiveCommittedTx(TxIndexOnChain(600999, 2932)), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nTotalSentTx(0), privateKey(CKey()) {
+CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), latestConsecutiveSentTx(TxIndexOnChain(600999, 2932)), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nTotalSentTx(0), privateKey(CKey()) {
     testStartTime = {0, 0};
     nextLogTime = {0, 0};
     privateKey.MakeNewKey(false);

@@ -44,20 +44,17 @@ void WaitForShutdown()
 {
     bool fShutdown = ShutdownRequested();
     CPbft& pbft = *g_pbft;
-    size_t lastCommittedTxDequeSize = 0;
     bool testStarted = false, testFinished = false;
+    struct timeval currentTime;
     // Tell the main threads to shutdown.
     while (!fShutdown)
     {
-        MilliSleep(200);
+        MilliSleep(10);
 
-	if (pbft.committedTxIndex.size() != lastCommittedTxDequeSize) {
-	    lastCommittedTxDequeSize = pbft.committedTxIndex.updateGreatestConsecutive();
-	}
+	pbft.sentTxIndex.updateGreatestConsecutive();
 
 	/* print throughput */
 	/* log throughput if enough long time has elapsed. */
-	struct timeval currentTime;
 	gettimeofday(&currentTime, NULL);
 	if (testStarted && !testFinished && currentTime >= pbft.nextLogTime) {
 	    pbft.logThruput(currentTime);

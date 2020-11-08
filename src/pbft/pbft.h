@@ -214,8 +214,8 @@ public:
 
     std::ofstream latencyFile;
     std::ofstream thruputFile;
-    std::atomic<TxIndexOnChain> latestConsecutiveCommittedTx;
-    CommittedTxDeque committedTxIndex;
+    std::atomic<TxIndexOnChain> latestConsecutiveSentTx;
+    CommittedTxDeque sentTxIndex;
     
     /* <txid, tx_start_time>
      * This map includes both single-shard and cross-shard tx.

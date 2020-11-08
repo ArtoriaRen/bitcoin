@@ -1024,7 +1024,9 @@ UniValue sendrawtransaction(const JSONRPCRequest& request)
     //    pnode->PushInventory(inv);
     //});
 
-    sendTx(tx, 0, 601000);
+
+    std::vector<TxIndexOnChain> vSentTx;
+    sendTx(tx, 0, 601000, vSentTx);
     g_pbft->txInFly.insert(std::make_pair(hashTx, std::move(TxBlockInfo(tx, 601000, 0, TxIndexOnChain()))));
 
     return hashTx.GetHex();
