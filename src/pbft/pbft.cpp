@@ -107,6 +107,15 @@ size_t CommittedTxDeque::updateGreatestConsecutive(){
     return ret;
 }
 
+bool CommittedTxDeque::haveTx(const TxIndexOnChain& txIdx) {
+    std::unique_lock<std::mutex> mlock(mutex_);
+    if (std::find(deque_.begin(), deque_.end(), txIdx) != deque_.end()) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
 size_t CommittedTxDeque::size() {
     std::unique_lock<std::mutex> mlock(mutex_);
     size_t size = deque_.size();
