@@ -157,7 +157,6 @@ public:
      * Need to know block sizes, which is available through chainActive. 
      */
     size_t updateGreatestConsecutive();
-    bool haveTx(const TxIndexOnChain& tx);
 
     size_t size();
     bool empty();

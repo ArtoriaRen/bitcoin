@@ -131,7 +131,7 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
 
 	    /* check the priority queue.  */
 	    localLatestConsecutiveSentTx = g_pbft->latestConsecutiveSentTx.load(std::memory_order_relaxed);
-	    while (!pqDependency.empty() && (pqDependency.top().latest_prereq_tx <= localLatestConsecutiveSentTx || g_pbft->sentTxIndex.haveTx(pqDependency.top().latest_prereq_tx))) {
+	    while (!pqDependency.empty() && pqDependency.top().latest_prereq_tx <= localLatestConsecutiveSentTx) {
 		    std::cout << "dependency queue top tx = (" << pqDependency.top().blockHeight << ", " << pqDependency.top().n <<"), prereq tx = " << pqDependency.top().latest_prereq_tx.ToString() << ",  localLatestConsecutiveSentTx = " << localLatestConsecutiveSentTx.ToString() << std::endl;
 		    sendTx(pqDependency.top().tx, pqDependency.top().n, pqDependency.top().blockHeight, vSentTxIndex);
 		    pqDependency.pop();
@@ -177,7 +177,7 @@ static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const 
     for (uint j = start_tx; j < end_tx; j++) {
 	TxIndexOnChain txIdx(block_height,j);
 	std::map<TxIndexOnChain, TxIndexOnChain>::const_iterator it = mapDependency.find(txIdx);
-	if (it != mapDependency.end() && it->second > localLCCTx && !g_pbft->sentTxIndex.haveTx(it->second)) {
+	if (it != mapDependency.end() && it->second > localLCCTx) {
 	    /* enqueue and send later */
 	    pqDependency.emplace(block.vtx[j], block_height, j, it->second);
 	    continue;

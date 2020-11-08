@@ -49,7 +49,7 @@ void WaitForShutdown()
     // Tell the main threads to shutdown.
     while (!fShutdown)
     {
-        MilliSleep(1);
+        MilliSleep(10);
 
 	pbft.sentTxIndex.updateGreatestConsecutive();
 
