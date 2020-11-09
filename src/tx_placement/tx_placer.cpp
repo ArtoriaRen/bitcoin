@@ -143,9 +143,9 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
 	    }
 
 	    /* update global vSentTxIndex */
-	    if (vSentTxIndex.size()) {
+	    if (!vSentTxIndex.empty()) {
 		std::cout << __func__ << ": vSentTxIndex size = " << vSentTxIndex.size() << ", append to global data structure. " << std::endl;
-		g_pbft->sentTxIndex.insert_back(vSentTxIndex);
+		g_pbft->sentTxIndex.push(vSentTxIndex);
 		g_pbft->nTotalSentTx.fetch_add(cnt, std::memory_order_relaxed);;
 		vSentTxIndex.clear();
 		totalTxSentByThisThread += cnt;
@@ -167,13 +167,14 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
 	    std::cout << "tail tx. dependency queue top tx = (" << pqDependency.top().blockHeight << ", " << pqDependency.top().n <<"), prereq tx = " << pqDependency.top().latest_prereq_tx.ToString() << ",  localLatestConsecutiveSentTx = " << localLatestConsecutiveSentTx.ToString() << std::endl;
 	while (!pqDependency.empty() && pqDependency.top().latest_prereq_tx <= localLatestConsecutiveSentTx) {
 		sendTx(pqDependency.top().tx, pqDependency.top().n, pqDependency.top().blockHeight, vSentTxIndex);
+		nanosleep(&sleep_length, NULL);
 		pqDependency.pop();
 		cnt++;
 	}
 	/* update global vSentTxIndex */
-	if (vSentTxIndex.size()) {
+	if (!vSentTxIndex.empty()) {
 	    std::cout << __func__ << ": vSentTxIndex size = " << vSentTxIndex.size() << ", append to global data structure. " << std::endl;
-	    g_pbft->sentTxIndex.insert_back(vSentTxIndex);
+	    g_pbft->sentTxIndex.push(vSentTxIndex);
 	    g_pbft->nTotalSentTx.fetch_add(cnt, std::memory_order_relaxed);;
 	    vSentTxIndex.clear();
 	    totalTxSentByThisThread += cnt;
@@ -289,27 +290,27 @@ TxIndexOnChain TxIndexOnChain::operator+(const unsigned int oprand) {
     }
 }
 
-bool operator<(TxIndexOnChain a, TxIndexOnChain b)
+bool operator<(const TxIndexOnChain& a, const TxIndexOnChain& b)
 {
     return a.block_height < b.block_height || 
 	    (a.block_height == b.block_height && a.offset_in_block < b.offset_in_block);
 }
 
-bool operator>(TxIndexOnChain a, TxIndexOnChain b)
+bool operator>(const TxIndexOnChain& a, const TxIndexOnChain& b)
 {
     return a.block_height > b.block_height || 
 	    (a.block_height == b.block_height && a.offset_in_block > b.offset_in_block);
 }
 
-bool operator==(TxIndexOnChain a, TxIndexOnChain b) {
+bool operator==(const TxIndexOnChain& a, const TxIndexOnChain& b) {
     return a.block_height == b.block_height && a.offset_in_block == b.offset_in_block;
 }
 
-bool operator!=(TxIndexOnChain a, TxIndexOnChain b) {
+bool operator!=(const TxIndexOnChain& a, const TxIndexOnChain& b) {
     return ! (a == b);
 }
 
-bool operator<=(TxIndexOnChain a, TxIndexOnChain b) {
+bool operator<=(const TxIndexOnChain& a, const TxIndexOnChain& b) {
     return a.block_height < b.block_height || 
 	    (a.block_height == b.block_height && a.offset_in_block <= b.offset_in_block);
 }

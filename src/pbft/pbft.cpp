@@ -60,65 +60,38 @@ bool ThreadSafeQueue::empty() {
     return queue_.empty();
 }
 
-void CommittedTxDeque::insert_back(const std::vector<TxIndexOnChain>& localCommittedTx) {
+void SentTxHeap::push(const std::vector<TxIndexOnChain>& localSentTx) {
     std::unique_lock<std::mutex> mlock(mutex_);
-    deque_.insert(deque_.end(), localCommittedTx.begin(), localCommittedTx.end());
-    std::cout << "after inserted, deque_ size = " << deque_.size() << std::endl;
-    mlock.unlock();
+    for (const TxIndexOnChain& txIdx: localSentTx) {
+	pq_.push(txIdx);
+    }
+    std::cout << "after inserted, pq_ size = " << pq_.size() << std::endl;
     updateGreatestConsecutive();
 }
 
-size_t CommittedTxDeque::updateGreatestConsecutive(){
+size_t SentTxHeap::updateGreatestConsecutive(){
     TxIndexOnChain LCCTx = g_pbft->latestConsecutiveSentTx.load(std::memory_order_relaxed);
-    std::unique_lock<std::mutex> mlock(mutex_);
-    if (deque_.empty())
-	return 0;
-    std::sort(deque_.begin(), deque_.end());
-    //std::cout << "after sorting, deque_.front() = "<< deque_.front().ToString() << ", deque_.back()" << deque_.back().ToString() << ", LCCTx = " << LCCTx.ToString() << std::endl;
-    if (deque_.front() != LCCTx + 1)
-	return deque_.size();
-    if (deque_.back() == LCCTx + deque_.size()) {
-	TxIndexOnChain newLCCTx = deque_.back();
-	deque_.clear();
-	size_t ret = deque_.size(); 
-	mlock.unlock();
-	g_pbft->latestConsecutiveSentTx.store(newLCCTx, std::memory_order_relaxed);
-	std::cout << "latest consecutive commited tx = " << newLCCTx.ToString() << std::endl;
-	return ret;
+    int i = 1;
+    while (!pq_.empty() && pq_.top() == LCCTx + i) {
+	pq_.pop();
+	i++;
     }
-    /* the first element is below or equal to the new LCCTx, the last element is 
-     * greater than the new LCCTx. Binary search to find the new LCCTx. */
-    unsigned int left = 0; 
-    unsigned int right = deque_.size() - 1;
-    while (left + 1 < right) {
-	unsigned int mid = (left + right) >> 1;
-	if (deque_[mid] == LCCTx + mid + 1){
-	    left = mid;
-	}
-	if (deque_[mid] > LCCTx + mid + 1){
-	    right = mid;
-	}
-    }
-    assert(left + 1 == right && deque_[left] == LCCTx + left + 1 && deque_[right] > LCCTx + right + 1);
-    TxIndexOnChain newLCCTx = deque_[left];
-    deque_.erase(deque_.begin(), deque_.begin() + right);
-    size_t ret = deque_.size(); 
-    mlock.unlock();
-    g_pbft->latestConsecutiveSentTx.store(newLCCTx, std::memory_order_relaxed);
-    std::cout << "latest consecutive commited tx = " << newLCCTx.ToString() << std::endl;
-    return ret;
+    LCCTx = LCCTx + (i - 1);
+    g_pbft->latestConsecutiveSentTx.store(LCCTx, std::memory_order_relaxed);
+    std::cout << "latest consecutive commited tx = " << LCCTx.ToString() << std::endl;
+    return pq_.size();
 }
 
-size_t CommittedTxDeque::size() {
+size_t SentTxHeap::size() {
     std::unique_lock<std::mutex> mlock(mutex_);
-    size_t size = deque_.size();
+    size_t size = pq_.size();
     mlock.unlock();
     return size;
 }
 
-bool CommittedTxDeque::empty() {
+bool SentTxHeap::empty() {
     std::unique_lock<std::mutex> mlock(mutex_);
-    return deque_.empty();
+    return pq_.empty();
 }
 
 CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), latestConsecutiveSentTx(TxIndexOnChain(600999, 2932)), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nTotalSentTx(0), nonTailCnt(0), tailStartTime({0, 0}), privateKey(CKey()) {
@@ -169,12 +142,12 @@ void CPbft::logThruput(struct timeval& endTime) {
     thruputFile << endTime.tv_sec << "." << endTime.tv_usec << "," <<  nCompletedTxCopy << "," << thruput << std::endl;
 }
 
-bool operator<(TxBlockInfo a, TxBlockInfo b)
+bool operator<(const TxBlockInfo& a, const TxBlockInfo& b)
 {
     return a.latest_prereq_tx < b.latest_prereq_tx;
 }
 
-bool operator>(TxBlockInfo a, TxBlockInfo b)
+bool operator>(const TxBlockInfo& a, const TxBlockInfo& b)
 {
     return a.latest_prereq_tx > b.latest_prereq_tx;
 }
