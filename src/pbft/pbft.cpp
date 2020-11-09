@@ -64,6 +64,8 @@ void CommittedTxDeque::insert_back(const std::vector<TxIndexOnChain>& localCommi
     std::unique_lock<std::mutex> mlock(mutex_);
     deque_.insert(deque_.end(), localCommittedTx.begin(), localCommittedTx.end());
     std::cout << "after inserted, deque_ size = " << deque_.size() << std::endl;
+    mlock.unlock();
+    updateGreatestConsecutive();
 }
 
 size_t CommittedTxDeque::updateGreatestConsecutive(){
@@ -119,7 +121,7 @@ bool CommittedTxDeque::empty() {
     return deque_.empty();
 }
 
-CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), latestConsecutiveSentTx(TxIndexOnChain(600999, 2932)), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nTotalSentTx(0), privateKey(CKey()) {
+CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), latestConsecutiveSentTx(TxIndexOnChain(600999, 2932)), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nTotalSentTx(0), nonTailCnt(0), tailStartTime({0, 0}), privateKey(CKey()) {
     testStartTime = {0, 0};
     nextLogTime = {0, 0};
     privateKey.MakeNewKey(false);

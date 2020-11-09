@@ -107,10 +107,12 @@ void TxPlacer::loadDependencyGraph (){
     dependencyFileStream.close();
 }
 
+/* */
 void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thread_idx, const uint32_t num_threads, const int txSendPeriod) {
     RenameThread(("sendTx" + std::to_string(thread_idx)).c_str());
-    uint32_t cnt = 0;
+    uint32_t cnt = 0, totalTxSentByThisThread = 0;
     const uint32_t jump_length = num_threads * txChunkSize;
+    const struct timespec sleep_length = {0, txSendPeriod};
     std::priority_queue<TxBlockInfo, std::vector<TxBlockInfo>, std::greater<TxBlockInfo>> pqDependency;
     TxPlacer txPlacer;
     txPlacer.loadDependencyGraph();
@@ -124,6 +126,7 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
 	}
 	std::cout << " block_height = " << block_height  << ", thread_idx = " << thread_idx << ", block vtx size = " << block.vtx.size() << std::endl;
 	for (size_t i = thread_idx * txChunkSize; i < block.vtx.size(); i += jump_length){
+	    /* send one chunk */
 	    std::cout << __func__ << ": thread " << thread_idx << " sending No." << i << " tx in block " << block_height << std::endl;
 	    uint32_t actual_chunk_size = sendTxChunk(block, block_height, i, txSendPeriod, txPlacer.mapDependency, pqDependency, localLatestConsecutiveSentTx, vSentTxIndex);
 	    cnt += actual_chunk_size;
@@ -134,6 +137,7 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
 	    while (!pqDependency.empty() && pqDependency.top().latest_prereq_tx <= localLatestConsecutiveSentTx) {
 		    std::cout << "dependency queue top tx = (" << pqDependency.top().blockHeight << ", " << pqDependency.top().n <<"), prereq tx = " << pqDependency.top().latest_prereq_tx.ToString() << ",  localLatestConsecutiveSentTx = " << localLatestConsecutiveSentTx.ToString() << std::endl;
 		    sendTx(pqDependency.top().tx, pqDependency.top().n, pqDependency.top().blockHeight, vSentTxIndex);
+		    nanosleep(&sleep_length, NULL);
 		    pqDependency.pop();
 		    cnt++;
 	    }
@@ -142,14 +146,21 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
 	    if (vSentTxIndex.size()) {
 		std::cout << __func__ << ": vSentTxIndex size = " << vSentTxIndex.size() << ", append to global data structure. " << std::endl;
 		g_pbft->sentTxIndex.insert_back(vSentTxIndex);
+		g_pbft->nTotalSentTx.fetch_add(cnt, std::memory_order_relaxed);;
 		vSentTxIndex.clear();
+		totalTxSentByThisThread += cnt;
+		cnt = 0;
 	    }
 	}
     }
+
+    if (g_pbft->nonTailCnt.load(std::memory_order_relaxed) == 0) {
+	g_pbft->nonTailCnt.store(g_pbft->nTotalSentTx, std::memory_order_relaxed);
+	gettimeofday(&g_pbft->tailStartTime, NULL);
+    }
+
     /* send all remaining tx in the queue.  */
     while (!pqDependency.empty()) {
-	/* sleep for a while to give depended tx enough time to finish. */
-	usleep(100);
 	if (ShutdownRequested())
 		break;
 	localLatestConsecutiveSentTx = g_pbft->latestConsecutiveSentTx.load(std::memory_order_relaxed);
@@ -163,11 +174,13 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
 	if (vSentTxIndex.size()) {
 	    std::cout << __func__ << ": vSentTxIndex size = " << vSentTxIndex.size() << ", append to global data structure. " << std::endl;
 	    g_pbft->sentTxIndex.insert_back(vSentTxIndex);
+	    g_pbft->nTotalSentTx.fetch_add(cnt, std::memory_order_relaxed);;
 	    vSentTxIndex.clear();
+	    totalTxSentByThisThread += cnt;
+	    cnt = 0;
 	}
     }
-    std::cout << __func__ << ": thread " << thread_idx << " sent " << cnt << " tx in total" << std::endl;
-    //count.set_value(cnt);
+    std::cout << __func__ << ": thread " << thread_idx << " sent " << totalTxSentByThisThread << " tx in total" << std::endl;
 }
 
 static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, int txSendPeriod, const std::map<TxIndexOnChain, TxIndexOnChain>& mapDependency, std::priority_queue<TxBlockInfo, std::vector<TxBlockInfo>, std::greater<TxBlockInfo>>& pqDependency, const TxIndexOnChain& localLCCTx, std::vector<TxIndexOnChain>& vSentTxIndex) {
@@ -200,26 +213,6 @@ static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const 
 	}
     }
 
-    return cnt;
-}
-
-uint32_t sendAllTailTx(int txSendPeriod) {
-    /* We have sent all tx but those waiting for prerequisite tx. Poll the 
-     * queue to see if some dependent tx are ready until we sent all tx. */
-    std::cout << "sending " << g_pbft->txResendQueue.size() << " tail tx ... " << std::endl;
-    const struct timespec sleep_length = {0, txSendPeriod * 1000};
-    uint32_t cnt = 0;
-    std::vector<TxIndexOnChain> vSentTxIndex;
-    while (!g_pbft->txResendQueue.empty()) {
-	TxBlockInfo& txInfo = g_pbft->txResendQueue.front();
-	sendTx(txInfo.tx, txInfo.n, txInfo.blockHeight, vSentTxIndex);
-	g_pbft->txResendQueue.pop_front();
-	cnt++;
-	/* still sleep for a while to give depended tx enough time to finish. */
-	nanosleep(&sleep_length, NULL);
-	if (ShutdownRequested())
-		break;
-    }
     return cnt;
 }
 

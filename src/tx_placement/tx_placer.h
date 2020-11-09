@@ -70,7 +70,6 @@ public:
 };
 
 void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thread_idx, const uint32_t num_threads, const int txSendPeriod);
-uint32_t sendAllTailTx(int txSendPeriod);
 
 /* return true if the tx is sent, false if the tx is queued. */
 bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height, std::vector<TxIndexOnChain>& vSentTxIndex);

@@ -51,7 +51,7 @@ void WaitForShutdown()
     {
         MilliSleep(10);
 
-	pbft.sentTxIndex.updateGreatestConsecutive();
+	//pbft.sentTxIndex.updateGreatestConsecutive();
 
 	/* print throughput */
 	/* log throughput if enough long time has elapsed. */
@@ -60,10 +60,10 @@ void WaitForShutdown()
 	    pbft.logThruput(currentTime);
 	}
 	if (!testStarted) {
-	    testStarted = pbft.nTotalSentTx > 0;  // test has started
+	    testStarted = pbft.nTotalSentTx.load(std::memory_order_relaxed) > 0;  // test has started
 	}
 	if (testStarted && !testFinished) {
-	    testFinished = pbft.nCompletedTx.load(std::memory_order_relaxed) + pbft.nTotalFailedTx.load(std::memory_order_relaxed) >= pbft.nTotalSentTx; // test has finished
+	    testFinished = pbft.nCompletedTx.load(std::memory_order_relaxed) + pbft.nTotalFailedTx.load(std::memory_order_relaxed) >= pbft.nTotalSentTx.load(std::memory_order_relaxed) ; // test has finished
 	}
         fShutdown = ShutdownRequested();
     }
