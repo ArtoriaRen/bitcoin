@@ -87,8 +87,7 @@ void TxPlacer::printPlaceResult(){
     }
 }
 
-//uint32_t sendTxInBlock(uint32_t block_height, struct timeval& expected_last_send_time, int txSendPeriod) {
-uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
+uint32_t sendTxInBlock(uint32_t block_height, int noop_count) {
     CBlock block;
     CBlockIndex* pblockindex = chainActive[block_height];
     if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
@@ -96,12 +95,20 @@ uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod) {
     }
     std::cout << __func__ << ": sending " << block.vtx.size() << " tx in block " << block_height << std::endl;
 
-    const struct timespec sleep_length = {0, txSendPeriod};
     uint32_t cnt = 0;
     for (uint j = 0; j < block.vtx.size(); j++) {
 	sendTx(block.vtx[j], j, block_height);
 	cnt++;
-	//nanosleep(&sleep_length, NULL);
+	/* delay by doing noop. */
+	int k = 0; 
+	uint oprand = noop_count;
+
+	for (; k < noop_count; k++) {
+	    if (ShutdownRequested())
+	    	return cnt;
+	    oprand ^= k;
+	}
+	std::cout << "loop noop for " << k << " times. oprand becomes " << oprand << std::endl;
 
 	/* send one aborted tx every four tx */
 	if ((j & 0x04) == 0) {

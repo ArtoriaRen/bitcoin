@@ -1461,14 +1461,13 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
 
     int txStartBlock = request.params[0].get_int();
     int txEndBlock = request.params[1].get_int();
-    int txSendRate = request.params[2].get_int();
-    int txSendPeriod = 1000000000 / txSendRate; // in ns
+    int noopCount = request.params[2].get_int();
     struct timeval startTime, tailStartTime, tailEndTime;
     uint32_t txCnt = 0, nonTailCnt = 0;
     gettimeofday(&startTime, NULL); 
     g_pbft->logThruput(startTime);
     for (int i = txStartBlock; i < txEndBlock; i++) {
-	txCnt += sendTxInBlock(i, txSendPeriod);
+	txCnt += sendTxInBlock(i, noopCount);
 	std::cout << txCnt << " tx upto block " << i << " are sent. " << std::endl;
     }
     nonTailCnt = txCnt;
