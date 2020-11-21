@@ -196,7 +196,7 @@ void randomPlaceTxInBlock(const uint32_t block_height){
     uint32_t nMoreThan4InputSingleShard = 0, nMoreThan4InputCrossShard = 0;
     for(auto entry: shardCntMap) {
         /* count single-shard tx*/
-        if (entry.first < 4) {
+        if (entry.first <= 4) {
             std::cout << "; " << entry.first << "-input_UTXO tx" << ": single-shard tx count = " << entry.second[1];
         } else {
             nMoreThan4InputSingleShard += entry.second[1];
@@ -207,7 +207,7 @@ void randomPlaceTxInBlock(const uint32_t block_height){
 	for (auto p : entry.second) {
             nCrossShardTx += p.first == 1 ? 0 : p.second;
 	}
-        if (entry.first < 4) {
+        if (entry.first <= 4) {
             std::cout << ", cross-shard tx count = " << nCrossShardTx;
         } else {
             nMoreThan4InputCrossShard += nCrossShardTx;
@@ -256,3 +256,4 @@ int32_t getShardAffinityForTx(const CTransaction& tx) {
 	}
 	return shardAffinity;
 }
+
