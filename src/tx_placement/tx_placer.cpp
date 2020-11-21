@@ -176,14 +176,14 @@ void printChainAffinity(){
 //    }
 //}
 
-void randomPlaceTxInBlock(){
-    std::cout << "RANDOM place block " << blockStart << std::endl;
+void randomPlaceTxInBlock(const uint32_t block_height){
+    std::cout << "RANDOM place block " << block_height;
     TxPlacer txPlacer;
     std::map<uint, std::map<uint, uint>> shardCntMap; // < input_utxo_count, shard_count, tx_count>
     uint totalTxNum = 0;
 
     CBlock block;
-    CBlockIndex* pblockindex = chainActive[blockStart];
+    CBlockIndex* pblockindex = chainActive[block_height];
     if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
 	std::cerr << "Block not found on disk" << std::endl;
     }
@@ -192,14 +192,29 @@ void randomPlaceTxInBlock(){
     for (uint j = 1; j < block.vtx.size(); j++) {
 	shardCntMap[block.vtx[j]->vin.size()][txPlacer.randomPlaceTxid(block.vtx[j])]++;
     }
-    std::cout << "total tx num = " << totalTxNum << std::endl;
-    std::cout << "tx shard num stats : " << std::endl;
+    std::cout << ", total tx num (excluding coinbase) = " << totalTxNum;
+    uint32_t nMoreThan4InputSingleShard = 0, nMoreThan4InputCrossShard = 0;
     for(auto entry: shardCntMap) {
-	std::cout << "\t" <<  entry.first << "-input_UTXO tx: " << std::endl;
+        /* count single-shard tx*/
+        if (entry.first < 4) {
+            std::cout << "; " << entry.first << "-input_UTXO tx" << ": single-shard tx count = " << entry.second[1];
+        } else {
+            nMoreThan4InputSingleShard += entry.second[1];
+        }
+
+        /* count cross-shard tx*/
+        uint32_t nCrossShardTx = 0;
 	for (auto p : entry.second) {
-	    std::cout << "\t\t" << p.first << "-shard tx count = " << p.second << std::endl;
+            nCrossShardTx += p.first == 1 ? 0 : p.second;
 	}
+        if (entry.first < 4) {
+            std::cout << ", cross-shard tx count = " << nCrossShardTx;
+        } else {
+            nMoreThan4InputCrossShard += nCrossShardTx;
+        }
     }
+    std::cout << "; more-input_UTXO tx" << ": single-shard tx count = " << nMoreThan4InputSingleShard << ", cross-shard tx count = " << nMoreThan4InputCrossShard << std::endl;
+
 }
 
 void smartPlaceTxInBlock(const std::shared_ptr<const CBlock> pblock){

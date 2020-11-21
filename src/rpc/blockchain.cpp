@@ -35,6 +35,7 @@
 
 #include <mutex>
 #include <condition_variable>
+#include <tx_placement/tx_placer.h>
 
 struct CUpdatedBlock
 {
@@ -652,6 +653,38 @@ UniValue getblockhash(const JSONRPCRequest& request)
 
     CBlockIndex* pblockindex = chainActive[nHeight];
     return pblockindex->GetBlockHash().GetHex();
+}
+
+UniValue randomplacetxinblocks(const JSONRPCRequest& request)
+{
+    if (request.fHelp || request.params.size() != 2)
+        throw std::runtime_error(
+            "getblockhash height\n"
+            "\nReturns hash of block in best-block-chain at height provided.\n"
+            "\nArguments:\n"
+            "1. height         (numeric, required) The height index\n"
+            "\nResult:\n"
+            "\"hash\"         (string) The block hash\n"
+            "\nExamples:\n"
+            + HelpExampleCli("getblockhash", "1000")
+            + HelpExampleRpc("getblockhash", "1000")
+        );
+
+    LOCK(cs_main);
+
+    int nHeightStart = request.params[0].get_int();
+    if (nHeightStart < 0 || nHeightStart > chainActive.Height())
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Block height out of range");
+
+    int nHeightEnd = request.params[1].get_int();
+    if (nHeightEnd < 0 || nHeightEnd > chainActive.Height())
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Block height out of range");
+
+    for (int i = nHeightStart; i < nHeightEnd; i++) {
+        randomPlaceTxInBlock(i);
+    }
+
+    return NullUniValue;
 }
 
 UniValue getblockheader(const JSONRPCRequest& request)
@@ -1637,6 +1670,8 @@ static const CRPCCommand commands[] =
     { "blockchain",         "verifychain",            &verifychain,            {"checklevel","nblocks"} },
 
     { "blockchain",         "preciousblock",          &preciousblock,          {"blockhash"} },
+    { "blockchain",         "randomplacetxinblocks",  &randomplacetxinblocks,  {"height_start","height_end"} },
+ 
 
     /* Not shown in help */
     { "hidden",             "invalidateblock",        &invalidateblock,        {"blockhash"} },

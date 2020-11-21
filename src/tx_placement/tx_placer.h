@@ -35,7 +35,7 @@ public:
 /* place tx in the blockStart specified in conf file. This only work for 
  * existing blocks already on the chain.
  */
-void randomPlaceTxInBlock();
+void randomPlaceTxInBlock(const uint32_t block_height);
 void assignShardAffinity();
 void printChainAffinity();
 //void smartPlaceTxInBlocks();

@@ -1760,7 +1760,7 @@ bool AppInitMain()
 #endif
 
     //assignShardAffinity();
-    printChainAffinity();
+    //printChainAffinity();
     //randomPlaceTxInBlock();
     return true;
 }
