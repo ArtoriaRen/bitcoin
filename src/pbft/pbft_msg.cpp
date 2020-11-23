@@ -388,11 +388,13 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman) const {
 	struct timeval start_time, end_time;
 	gettimeofday(&start_time, NULL);
 	char exe_res = vReq[i].pReq->Execute(seq, view);
-	gettimeofday(&end_time, NULL);
 	if (vReq[i].type == ClientReqType::LOCK) {
 	    CInputShardReply reply = g_pbft->assembleInputShardReply(seq, i, exe_res, ((LockReq*)vReq[i].pReq.get())->totalValueInOfShard);
 	    connman->PushMessage(g_pbft->client, msgMaker.Make(NetMsgType::OMNI_LOCK_REPLY, reply));
+	    gettimeofday(&end_time, NULL);
 	} else {
+	    gettimeofday(&end_time, NULL);
+	    /* sending reply for only performance measurement, so we do not count the time as part of single-shard or cross-shard tx processing time. */
 	    CReply reply = g_pbft->assembleReply(seq, i, exe_res);
 	    connman->PushMessage(g_pbft->client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
 	    if (vReq[i].type == ClientReqType::TX || vReq[i].type == ClientReqType::UNLOCK_TO_COMMIT) {
