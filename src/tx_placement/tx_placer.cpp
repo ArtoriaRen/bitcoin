@@ -608,8 +608,8 @@ TxIndexOnChain TxIndexOnChain::operator+(const unsigned int oprand) {
 	uint32_t cur_block = block_height + 1;
 	uint32_t cur_oprand = oprand - (cur_block_size - offset_in_block);
 	while (cur_oprand >= chainActive[cur_block]->nTx) {
-	    cur_block++;
 	    cur_oprand -= chainActive[cur_block]->nTx;
+	    cur_block++;
 	}
 	return TxIndexOnChain(cur_block, cur_oprand);
     }
