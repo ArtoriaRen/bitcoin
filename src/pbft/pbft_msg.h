@@ -138,6 +138,7 @@ public:
     CClientReq(const CTransaction& tx);
     void UpdateHash();
     const uint256& GetHash() const;
+    bool IsCoinBase() const;
     
     /* we did not put serialization methods here because c++ does not allow
      * virtual template method.
