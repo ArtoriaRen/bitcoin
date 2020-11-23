@@ -73,6 +73,10 @@ const uint256& CClientReq::GetHash() const {
     return hash;
 }
 
+bool CClientReq::IsCoinBase() const {
+    return (tx_mutable.vin.size() == 1 && tx_mutable.vin[0].prevout.IsNull());
+}
+
 char TxReq::Execute(const int seq, CCoinsViewCache& view) const {
     /* -------------logic from Bitcoin code for tx processing--------- */
     CTransaction tx(tx_mutable);
@@ -397,9 +401,11 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman) const {
 	    }
 	}
 
-	/* update execution time and count */
-	g_pbft->totalExeTime[vReq[i].type] += (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
-	g_pbft->totalExeCount[vReq[i].type]++;
+	/* update execution time and count. Only count non-coinbase tx.*/
+	if (!vReq[i].pReq->IsCoinBase()) {
+	    g_pbft->totalExeTime[vReq[i].type] += (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
+	    g_pbft->totalExeCount[vReq[i].type]++;
+	}
     }
     bool flushed = view.Flush(); // flush to pcoinsTip
     assert(flushed);
