@@ -1861,11 +1861,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     {
 	CReply reply;
 	vRecv >> reply;
-	if (!g_pbft->checkReplySig(&reply)) {
-	    std::cout << strCommand << " from " << reply.peerID << " sig verification fail"  << std::endl;
-	} else {
-	    std::cout << strCommand << " sig ok" << std::endl;
-	}
+	//if (!g_pbft->checkReplySig(&reply)) {
+	//    std::cout << strCommand << " from " << reply.peerID << " sig verification fail"  << std::endl;
+	//} 
 	std::cout << __func__ << ": received PBFT_REPLY for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
 	g_pbft->replyMap[reply.digest].emplace(pfrom->GetAddrName());
 	if (g_pbft->replyMap[reply.digest].size() == 2 * CPbft::nFaulty + 1) {
