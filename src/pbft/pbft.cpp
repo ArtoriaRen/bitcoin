@@ -308,9 +308,9 @@ CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char e
      * 'n' --- execute fail
      */
     CReply toSent(exe_res, log[seq].ppMsg.pbft_block.vReq[idx].pReq->GetDigest());
-    uint256 hash;
-    toSent.getHash(hash);
-    privateKey.Sign(hash, toSent.vchSig);
+    //uint256 hash;
+    //toSent.getHash(hash);
+    //privateKey.Sign(hash, toSent.vchSig);
     toSent.sigSize = toSent.vchSig.size();
     return toSent;
 }
