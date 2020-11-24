@@ -31,6 +31,11 @@ extern int32_t reqWaitTimeout;
 extern int32_t maxBlockSize; 
 extern int32_t nWarmUpBlocks;
 
+enum  STEP {TX_UTXO_EXIST_AND_VALUE = 0, TX_SIG_CHECK, TX_DB_UPDATE,
+                LOCK_UTXO_EXIST, LOCK_SIG_CHECK, LOCK_UTXO_SPEND, LOCK_RES_SIGN, LOCK_RES_SEND, LOCK_INPUT_COPY, 
+                COMMIT_SIG_CHECK, COMMIT_VALUE_CHECK, COMMIT_UTXO_ADD,
+                NUM_STEPS};
+
 class ThreadSafeQueue {
 public:
     ThreadSafeQueue();
@@ -94,6 +99,9 @@ public:
      * For avg execution time calculation. */
     unsigned long totalExeTime[4]; // in us
     uint32_t totalExeCount[4];
+
+    /* detailed execution time and count*/
+    unsigned long detailTime[STEP::NUM_STEPS];
     
     CPbft();
     // Check Pre-prepare message signature and send Prepare message

@@ -77,44 +77,57 @@ bool CClientReq::IsCoinBase() const {
 char TxReq::Execute(const int seq, CCoinsViewCache& view) const {
     /* -------------logic from Bitcoin code for tx processing--------- */
     CTransaction tx(tx_mutable);
-    
-    CValidationState state;
-    if(!tx.IsCoinBase()) {
-	bool fScriptChecks = true;
-	unsigned int flags = SCRIPT_VERIFY_NONE; // only verify pay to public key hash
-	CAmount txfee = 0;
-	/* We use  INT_MAX as block height, so that we never fail coinbase 
-	 * maturity check. */
-	if (!Consensus::CheckTxInputs(tx, state, view, INT_MAX, txfee)) {
-	    std::cerr << __func__ << ": Consensus::CheckTxInputs: " << tx.GetHash().ToString() << ", " << FormatStateMessage(state) << std::endl;
-	    return 'n';
-	}
-
-	// GetTransactionSigOpCost counts 3 types of sigops:
-	// * legacy (always)
-	// * p2sh (when P2SH enabled in flags and excludes coinbase)
-	// * witness (when witness enabled in flags and excludes coinbase)
-	int64_t nSigOpsCost = 0;
-	nSigOpsCost += GetTransactionSigOpCost(tx, view, flags);
-	if (nSigOpsCost > MAX_BLOCK_SIGOPS_COST) { 
-	    std::cerr << __func__ << ": ConnectBlock(): too many sigops" << std::endl;
-	    return 'n';
-	}
-
-	PrecomputedTransactionData txdata(tx);
-	std::vector<CScriptCheck> vChecks;
-	bool fCacheResults = false; /* Don't cache results if we're actually connecting blocks (still consult the cache, though) */
-	if (!CheckInputs(tx, state, view, fScriptChecks, flags, fCacheResults, fCacheResults, txdata, nullptr)) {  // do not use multithreads to check scripts
-	    std::cerr << __func__ << ": ConnectBlock(): CheckInputs on " 
-		    << tx.GetHash().ToString() 
-		    << " failed with " << FormatStateMessage(state)
-		    << std::endl;
-	    return 'n';
-	}
+    if(tx.IsCoinBase()) {
+        UpdateCoins(tx, view, g_pbft->getBlockHeight(seq));
+        std::cout << __func__ << ": excuted coinbase tx " << tx.GetHash().ToString()
+                << " at log slot " << seq << std::endl;
+        return 'y';
     }
 
+    struct timeval start_time, end_time;
+    gettimeofday(&start_time, NULL);
+    CValidationState state;
+    bool fScriptChecks = true;
+    unsigned int flags = SCRIPT_VERIFY_NONE; // only verify pay to public key hash
+    CAmount txfee = 0;
+    /* We use  INT_MAX as block height, so that we never fail coinbase 
+     * maturity check. */
+    if (!Consensus::CheckTxInputs(tx, state, view, INT_MAX, txfee)) {
+        std::cerr << __func__ << ": Consensus::CheckTxInputs: " << tx.GetHash().ToString() << ", " << FormatStateMessage(state) << std::endl;
+        return 'n';
+    }
+    gettimeofday(&end_time, NULL);
+    g_pbft->detailTime[STEP::TX_UTXO_EXIST_AND_VALUE] += (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
+
+    // GetTransactionSigOpCost counts 3 types of sigops:
+    // * legacy (always)
+    // * p2sh (when P2SH enabled in flags and excludes coinbase)
+    // * witness (when witness enabled in flags and excludes coinbase)
+    gettimeofday(&start_time, NULL);
+    int64_t nSigOpsCost = 0;
+    nSigOpsCost += GetTransactionSigOpCost(tx, view, flags);
+    if (nSigOpsCost > MAX_BLOCK_SIGOPS_COST) { 
+        std::cerr << __func__ << ": ConnectBlock(): too many sigops" << std::endl;
+        return 'n';
+    }
+
+    PrecomputedTransactionData txdata(tx);
+    std::vector<CScriptCheck> vChecks;
+    bool fCacheResults = false; /* Don't cache results if we're actually connecting blocks (still consult the cache, though) */
+    if (!CheckInputs(tx, state, view, fScriptChecks, flags, fCacheResults, fCacheResults, txdata, nullptr)) {  // do not use multithreads to check scripts
+        std::cerr << __func__ << ": ConnectBlock(): CheckInputs on " 
+                << tx.GetHash().ToString() 
+                << " failed with " << FormatStateMessage(state)
+                << std::endl;
+        return 'n';
+    }
+    gettimeofday(&end_time, NULL);
+    g_pbft->detailTime[STEP::TX_SIG_CHECK] += (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
+
+    gettimeofday(&start_time, NULL);
     UpdateCoins(tx, view, g_pbft->getBlockHeight(seq));
-    /* -------------logic from Bitcoin code for tx processing--------- */
+    gettimeofday(&end_time, NULL);
+    g_pbft->detailTime[STEP::TX_DB_UPDATE] += (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
 
     std::cout << __func__ << ": excuted tx " << tx.GetHash().ToString()
 	    << " at log slot " << seq << std::endl;
@@ -135,7 +148,8 @@ char LockReq::Execute(const int seq, CCoinsViewCache& view) const {
 
     /* -------------logic from Bitcoin code for tx processing--------- */
     CTransaction tx(tx_mutable);
-    
+    struct timeval start_time, end_time;
+    gettimeofday(&start_time, NULL);
     CValidationState state;
     bool fScriptChecks = true;
 //	    CBlockUndo blockundo;
@@ -147,6 +161,8 @@ char LockReq::Execute(const int seq, CCoinsViewCache& view) const {
 	std::cerr << __func__ << ": Consensus::CheckTxInputs: " << tx.GetHash().ToString() << ", " << FormatStateMessage(state) << std::endl;
 	return 'n';
     }
+    gettimeofday(&end_time, NULL);
+    g_pbft->detailTime[STEP::LOCK_UTXO_EXIST] += (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
 
     /* Step 2: count sig ops. Do this in the output shard. */
     // GetTransactionSigOpCost counts 3 types of sigops:
@@ -161,6 +177,7 @@ char LockReq::Execute(const int seq, CCoinsViewCache& view) const {
 //    }
 
     /* Step 3: check sigScript for input UTXOs in our shard.*/
+    gettimeofday(&start_time, NULL);
     PrecomputedTransactionData txdata(tx);
     std::vector<CScriptCheck> vChecks;
     bool fCacheResults = false; /* Don't cache results if we're actually connecting blocks (still consult the cache, though) */
@@ -171,12 +188,20 @@ char LockReq::Execute(const int seq, CCoinsViewCache& view) const {
 		<< std::endl;
 	return 'n';
     }
+    gettimeofday(&end_time, NULL);
+    g_pbft->detailTime[STEP::LOCK_SIG_CHECK] += (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
 
     /* Step 4: spent the input coins in our shard and store them in the global map 
      * for possibly future UnlockToAbort processing. */
+    gettimeofday(&start_time, NULL);
     CTxUndo txUndo;
     UpdateLockCoins(tx, view, txUndo, g_pbft->getBlockHeight(seq));
+    gettimeofday(&end_time, NULL);
+    g_pbft->detailTime[STEP::LOCK_UTXO_SPEND] += (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
+    gettimeofday(&start_time, NULL);
     mapTxUndo.insert(std::make_pair(tx.GetHash(), txUndo));
+    gettimeofday(&end_time, NULL);
+    g_pbft->detailTime[STEP::LOCK_INPUT_COPY] += (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
     /* -------------logic from Bitcoin code for tx processing--------- */
     std::cout << __func__ << ": locked input UTXOs for tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << std::endl;
     return 'y';
@@ -220,10 +245,14 @@ uint256 UnlockToCommitReq::GetDigest() const {
 bool checkInputShardReplySigs(const std::vector<CInputShardReply>& vReplies);
 
 char UnlockToCommitReq::Execute(const int seq, CCoinsViewCache& view) const {
+    struct timeval start_time, end_time;
+    gettimeofday(&start_time, NULL);
     if (!checkInputShardReplySigs(vInputShardReply)) {
         std::cout << __func__ << ": verify sigs fail!" << std::endl;
 	return 'n';
     }
+    gettimeofday(&end_time, NULL);
+    g_pbft->detailTime[STEP::COMMIT_SIG_CHECK] += (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
 
     /* -------------logic from Bitcoin code for tx processing--------- */
     CTransaction tx(tx_mutable);
@@ -236,6 +265,7 @@ char UnlockToCommitReq::Execute(const int seq, CCoinsViewCache& view) const {
      * value of UTXOs not in our shard. 
      * We use INT_MAX as block height, so that we never fail coinbase maturity check.
      */
+    gettimeofday(&start_time, NULL);
     uint sigsPerInputShard = 2 * CPbft::nFaulty + 1;
     CAmount totalInputValue = 0;
     for (uint i = 0; i < vInputShardReply.size(); i += sigsPerInputShard) {
@@ -246,6 +276,8 @@ char UnlockToCommitReq::Execute(const int seq, CCoinsViewCache& view) const {
 	std::cerr << __func__ << ": Consensus::CheckTxInputs: " << tx.GetHash().ToString() << ", " << FormatStateMessage(state) << std::endl;
 	return 'n';
     }
+    gettimeofday(&end_time, NULL);
+    g_pbft->detailTime[STEP::COMMIT_VALUE_CHECK] += (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
 
     /* Step 2: count sig ops. Do this in the output shard. */
     // GetTransactionSigOpCost counts 3 types of sigops:
@@ -266,7 +298,10 @@ char UnlockToCommitReq::Execute(const int seq, CCoinsViewCache& view) const {
      * for possibly future UnlockToAbort processing. 
      * 2) In output shard: add output coins to coinsview.
      */
+    gettimeofday(&start_time, NULL);
     UpdateUnlockCommitCoins(tx, view, g_pbft->getBlockHeight(seq));
+    gettimeofday(&end_time, NULL);
+    g_pbft->detailTime[STEP::COMMIT_UTXO_ADD] += (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
     /* -------------logic from Bitcoin code for tx processing--------- */
     std::cout << __func__ << ":  commit tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << std::endl;
     return 'y';
@@ -368,12 +403,18 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& 
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
     uint32_t txCnt = 0;
     for (uint i = 0; i < vReq.size(); i++) {
-	struct timeval start_time, end_time;
+	struct timeval start_time, end_time, detail_start_time, detail_end_time;
 	gettimeofday(&start_time, NULL);
 	char exe_res = vReq[i].pReq->Execute(seq, view);
 	if (vReq[i].type == ClientReqType::LOCK) {
+            gettimeofday(&detail_start_time, NULL);
 	    CInputShardReply reply = g_pbft->assembleInputShardReply(seq, i, exe_res, ((LockReq*)vReq[i].pReq.get())->totalValueInOfShard);
+            gettimeofday(&detail_end_time, NULL);
+            g_pbft->detailTime[STEP::LOCK_RES_SIGN] += (detail_end_time.tv_sec - detail_start_time.tv_sec) * 1000000 + (detail_end_time.tv_usec - detail_start_time.tv_usec);
+            gettimeofday(&detail_start_time, NULL);
 	    connman->PushMessage(g_pbft->client, msgMaker.Make(NetMsgType::OMNI_LOCK_REPLY, reply));
+            gettimeofday(&detail_end_time, NULL);
+            g_pbft->detailTime[STEP::LOCK_RES_SEND] += (detail_end_time.tv_sec - detail_start_time.tv_sec) * 1000000 + (detail_end_time.tv_usec - detail_start_time.tv_usec);
 	    gettimeofday(&end_time, NULL);
 	} else {
 	    gettimeofday(&end_time, NULL);
@@ -394,13 +435,25 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& 
     }
     std::cout << "Average execution time: ";
     if (g_pbft->totalExeCount[0] != 0) {
-	std::cout << "TX = " << g_pbft->totalExeTime[0]/g_pbft->totalExeCount[0] << " us/req, " << " TX_cnt = " << g_pbft->totalExeCount[0] << ", ";
+	std::cout << "TX = " << g_pbft->totalExeTime[0]/g_pbft->totalExeCount[0] << " us/req, " << " TX_cnt = " << g_pbft->totalExeCount[0] 
+                << ". Detail time: TX_UTXO_EXIST_AND_VALUE = " << g_pbft->detailTime[STEP::TX_UTXO_EXIST_AND_VALUE]/g_pbft->totalExeCount[0] 
+                << ", TX_SIG_CHECK = " << g_pbft->detailTime[STEP::TX_SIG_CHECK]/g_pbft->totalExeCount[0]
+                << ", TX_DB_UPDATE = " << g_pbft->detailTime[STEP::TX_DB_UPDATE]/g_pbft->totalExeCount[0] << ". ";
     }
     if (g_pbft->totalExeCount[1] != 0) {
-	std::cout << "LOCK = " << g_pbft->totalExeTime[1]/g_pbft->totalExeCount[1] << " us/req, " << " LOCK_cnt = " << g_pbft->totalExeCount[1] << ", ";
+	std::cout << "LOCK = " << g_pbft->totalExeTime[1]/g_pbft->totalExeCount[1] << " us/req, " << " LOCK_cnt = " << g_pbft->totalExeCount[1]  
+                << ". Detail time: LOCK_UTXO_EXIST = " << g_pbft->detailTime[STEP::LOCK_UTXO_EXIST]/g_pbft->totalExeCount[1] 
+                << ", LOCK_SIG_CHECK = " << g_pbft->detailTime[STEP::LOCK_SIG_CHECK]/g_pbft->totalExeCount[1] 
+                << ", LOCK_UTXO_SPEND = " << g_pbft->detailTime[STEP::LOCK_UTXO_SPEND]/g_pbft->totalExeCount[1] 
+                << ", LOCK_RES_SIGN = " << g_pbft->detailTime[STEP::LOCK_RES_SIGN]/g_pbft->totalExeCount[1] 
+                << ", LOCK_RES_SEND = " << g_pbft->detailTime[STEP::LOCK_RES_SEND]/g_pbft->totalExeCount[1] 
+                << ", LOCK_INPUT_COPY = " << g_pbft->detailTime[STEP::LOCK_INPUT_COPY]/g_pbft->totalExeCount[1] << ". ";
     }
     if (g_pbft->totalExeCount[2] != 0) {
-	std::cout << "COMMIT = " << g_pbft->totalExeTime[2]/g_pbft->totalExeCount[2] << " us/req, " << " COMMIT_cnt = " << g_pbft->totalExeCount[2] << ", ";
+	std::cout << "COMMIT = " << g_pbft->totalExeTime[2]/g_pbft->totalExeCount[2] << " us/req, " << " COMMIT_cnt = " << g_pbft->totalExeCount[2] 
+                << ". Detail time: COMMIT_SIG_CHECK = " << g_pbft->detailTime[STEP::COMMIT_SIG_CHECK]/g_pbft->totalExeCount[2] 
+                << ", COMMIT_VALUE_CHECK = " << g_pbft->detailTime[STEP::COMMIT_VALUE_CHECK]/g_pbft->totalExeCount[2] 
+                << ", COMMIT_UTXO_ADD = " << g_pbft->detailTime[STEP::COMMIT_UTXO_ADD]/g_pbft->totalExeCount[2] << ". ";
     }
     if (g_pbft->totalExeCount[3] != 0) {
 	std::cout << "ABORT = " << g_pbft->totalExeTime[3]/g_pbft->totalExeCount[3] << " us/req, " << " ABORT_cnt = " << g_pbft->totalExeCount[3] << ", ";
