@@ -1463,7 +1463,7 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
 
     const int txStartBlock = request.params[0].get_int();
     const int txEndBlock = request.params[1].get_int();
-    const int txSendRate = request.params[2].get_int();
+    int noopCount = request.params[2].get_int();
     const uint num_threads = request.params[3].get_int();
     assert(num_threads >= 1);
     std::vector<std::thread> vThread;
@@ -1473,7 +1473,6 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
     //    fut[i] = counter[i].get_future();
     //}
 
-    int txSendPeriod = 1000000 / txSendRate; // in us
     struct timeval startTime, tailStartTime, tailEndTime;
     uint32_t txCnt = 0, nonTailCnt = 0;
     gettimeofday(&startTime, NULL); 
@@ -1482,7 +1481,7 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
     /* creat threads to send tx.*/
     for (uint i = 0; i < num_threads; i++) {
 	//vThread.emplace_back(sendTxOfThread, vBlocksToSend, txStartBlock, i, num_threads, txSendPeriod, std::move(counter[i]));
-	vThread.emplace_back(sendTxOfThread, txStartBlock, txEndBlock, i, num_threads, txSendPeriod);
+	vThread.emplace_back(sendTxOfThread, txStartBlock, txEndBlock, i, num_threads, noopCount);
     }
 
     for (int i = txStartBlock; i < txEndBlock; i++) {
