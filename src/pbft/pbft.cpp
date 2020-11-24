@@ -343,7 +343,7 @@ int CPbft::executeLog(const int seq, CConnman* connman) {
         if (log[i].phase == PbftPhase::reply) {
 	    log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, connman, view);
 	    nCompletedTx += log[i].txCnt;
-	    std::cout << "Execute block " << log[i].ppMsg.digest.GetHex() << " at log slot = " << i  << ", block size = " << log[i].ppMsg.pbft_block.vReq.size() << ", contains " << log[i].txCnt << " TX or UNLOCK_TO_COMMIT req. current total completed tx = " << nCompletedTx << std::endl;
+	    std::cout << "Execute block " << log[i].ppMsg.digest.GetHex().substr(0,10) << " at log slot = " << i  << ", block size = " << log[i].ppMsg.pbft_block.vReq.size() << ", contains " << log[i].txCnt << " TX or UNLOCK_TO_COMMIT req. current total completed tx = " << nCompletedTx << std::endl;
         } else {
             break;
         }
