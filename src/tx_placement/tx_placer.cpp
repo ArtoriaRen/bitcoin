@@ -51,7 +51,7 @@ void ShardInfo::print() const {
 }
 
 TxPlacer::TxPlacer():totalTxNum(0), vTxCnt(num_committees, 0){ }
-static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, int txSendPeriod, const TxPlacer& txplacer, std::priority_queue<TxBlockInfo, std::vector<TxBlockInfo>, std::greater<TxBlockInfo>>& pqDependency, const TxIndexOnChain& localLCCTx);
+static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, int noop_count, const TxPlacer& txplacer, std::priority_queue<TxBlockInfo, std::vector<TxBlockInfo>, std::greater<TxBlockInfo>>& pqDependency, const TxIndexOnChain& localLCCTx);
 
 /* all output UTXOs of a tx is stored in one shard. */
 std::vector<int32_t> TxPlacer::randomPlace(const CTransaction& tx){
@@ -377,7 +377,7 @@ void printShardAffinity(){
 //}
 
 
-void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thread_idx, const uint32_t num_threads, const int txSendPeriod) {
+void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thread_idx, const uint32_t num_threads, const int noop_count) {
     RenameThread(("sendTx" + std::to_string(thread_idx)).c_str());
     uint32_t cnt = 0;
     TxPlacer txplacer;
@@ -397,7 +397,7 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
 
 	for (size_t i = thread_idx * txChunkSize; i < block.vtx.size(); i += jump_length){
 	    std::cout << __func__ << ": thread " << thread_idx << " sending No." << i << " tx in block " << block_height << std::endl;
-	    uint32_t actual_chunk_size = sendTxChunk(block, block_height, i, txSendPeriod, txPlacer, pqDependency, localLatestConsecutiveCommittedTx);
+	    uint32_t actual_chunk_size = sendTxChunk(block, block_height, i, noop_count, txPlacer, pqDependency, localLatestConsecutiveCommittedTx);
 	    cnt += actual_chunk_size;
 	    std::cout << __func__ << ": thread " << thread_idx << " sent " << actual_chunk_size << " tx in block " << block_height << std::endl;
 	}
@@ -429,8 +429,7 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
     //count.set_value(cnt);
 }
 
-static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, int txSendPeriod, const TxPlacer& txplacer, std::priority_queue<TxBlockInfo, std::vector<TxBlockInfo>, std::greater<TxBlockInfo>>& pqDependency, const TxIndexOnChain& localLCCTx) {
-    const struct timespec sleep_length = {0, txSendPeriod * 1000};
+static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, int noop_count, const TxPlacer& txplacer, std::priority_queue<TxBlockInfo, std::vector<TxBlockInfo>, std::greater<TxBlockInfo>>& pqDependency, const TxIndexOnChain& localLCCTx) {
     uint32_t cnt = 0;
     uint32_t end_tx = std::min(start_tx + txChunkSize, block.vtx.size());
     for (uint j = start_tx; j < end_tx; j++) {
@@ -443,7 +442,16 @@ static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const 
 	}
 	txplacer.sendTx(block.vtx[j], j, block_height);
 	cnt++;
-	nanosleep(&sleep_length, NULL);
+	/* delay by doing noop. */
+	int k = 0;
+	uint oprand = noop_count;
+
+	for (; k < noop_count; k++) {
+	    if (ShutdownRequested())
+	    	return cnt;
+	    oprand ^= k;
+	}
+	std::cerr << "loop noop for " << k << " times. oprand becomes " << oprand << std::endl;
 
 	/* send one aborted tx every four tx */
 	if ((j & 0x04) == 0) {
@@ -462,21 +470,26 @@ static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const 
     return cnt;
 }
 
-uint32_t TxPlacer::sendAllTailTx(int txSendPeriod) {
+uint32_t TxPlacer::sendAllTailTx(int noop_count) {
     /* We have sent all tx but those waiting for prerequisite tx. Poll the 
      * queue to see if some dependent tx are ready until we sent all tx. */
     std::cout << "sending " << g_pbft->txResendQueue.size() << " tail tx ... " << std::endl;
-    const struct timespec sleep_length = {0, txSendPeriod * 1000};
     uint32_t cnt = 0;
     while (!g_pbft->txResendQueue.empty()) {
 	TxBlockInfo& txInfo = g_pbft->txResendQueue.front();
 	sendTx(txInfo.tx, txInfo.n, txInfo.blockHeight);
 	g_pbft->txResendQueue.pop_front();
 	cnt++;
-	/* still sleep for a while to give depended tx enough time to finish. */
-	nanosleep(&sleep_length, NULL);
-	if (ShutdownRequested())
-		break;
+	/* delay by doing noop. */
+	int k = 0;
+	uint oprand = noop_count;
+
+	for (; k < noop_count; k++) {
+	    if (ShutdownRequested())
+	    	return cnt;
+	    oprand ^= k;
+	}
+	std::cerr << "loop noop for " << k << " times. oprand becomes " << oprand << std::endl;
     }
     return cnt;
 }

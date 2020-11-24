@@ -162,8 +162,8 @@ void smartPlaceTxInBlock(const std::shared_ptr<const CBlock> pblock);
 inline std::string getShardInfoFilename(int block_height) {
     return "/home/l27ren/shard_info_files/" + std::to_string(num_committees) + "committees/"+ std::to_string(block_height) + "_shardinfo.out";
 }
-void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thread_idx, const uint32_t num_threads, const int txSendPeriod);
-uint32_t sendAllTailTx(int txSendPeriod);
+void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thread_idx, const uint32_t num_threads, const int noop_count);
+uint32_t sendAllTailTx(int noop_count);
 
 extern TxPlacer g_txplacer;
 
