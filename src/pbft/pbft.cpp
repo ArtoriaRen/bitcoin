@@ -108,6 +108,9 @@ CPbft::CPbft() : localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq
 	totalExeTime[i] = 0;
 	totalExeCount[i] = 0;
     }
+    for (int i = 0; i < STEP::NUM_STEPS; i++) {
+        detailTime[i] = 0;
+    }
 }
 
 
