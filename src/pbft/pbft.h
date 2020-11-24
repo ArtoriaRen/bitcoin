@@ -61,11 +61,11 @@ public:
 
     TxIndexOnChain operator+(const unsigned int oprand);
 
-    friend bool operator<(TxIndexOnChain a, TxIndexOnChain b);
-    friend bool operator>(TxIndexOnChain a, TxIndexOnChain b);
-    friend bool operator==(TxIndexOnChain a, TxIndexOnChain b);
-    friend bool operator!=(TxIndexOnChain a, TxIndexOnChain b);
-    friend bool operator<=(TxIndexOnChain a, TxIndexOnChain b);
+    friend bool operator<(const TxIndexOnChain& a, const TxIndexOnChain& b);
+    friend bool operator>(const TxIndexOnChain& a, const TxIndexOnChain& b);
+    friend bool operator==(const TxIndexOnChain& a, const TxIndexOnChain& b);
+    friend bool operator!=(const TxIndexOnChain& a, const TxIndexOnChain& b);
+    friend bool operator<=(const TxIndexOnChain& a, const TxIndexOnChain& b);
 
     std::string ToString() const;
 };
@@ -79,8 +79,8 @@ public:
     
     TxBlockInfo();
     TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn, TxIndexOnChain latest_prereq_tx_in);
-    friend bool operator<(TxBlockInfo a, TxBlockInfo b);
-    friend bool operator>(TxBlockInfo a, TxBlockInfo b);
+    friend bool operator<(const TxBlockInfo& a, const TxBlockInfo& b);
+    friend bool operator>(const TxBlockInfo& a, const TxBlockInfo& b);
 };
 
 class ThreadSafeQueue {
@@ -144,10 +144,11 @@ private:
 };
 
 
-class CommittedTxDeque{
+/*Thread-safe min heap*/
+class CommittedTxHeap{
 public:
 
-    void insert_back(const std::vector<TxIndexOnChain>& localCommittedTx);
+    void push(const std::vector<TxIndexOnChain>& localCommittedTx);
 
     /* Sort the underlying deque and find the greatest element whose value equals 
      * its index + latestConsecutiveCommittedTx.
@@ -160,7 +161,7 @@ public:
     bool empty();
 
 private:
-    std::deque<TxIndexOnChain> deque_;
+    std::priority_queue<TxIndexOnChain, std::deque<TxIndexOnChain>, std::greater<TxIndexOnChain>> pq_;
     std::mutex mutex_;
     std::condition_variable cond_;
 };
@@ -211,7 +212,7 @@ public:
     ThreadSafeQueue txResendQueue;
 
     std::atomic<TxIndexOnChain> latestConsecutiveCommittedTx;
-    CommittedTxDeque committedTxIndex;
+    CommittedTxHeap committedTxIndex;
     
     /* <txid, tx_start_time>
      * This map includes both single-shard and cross-shard tx.

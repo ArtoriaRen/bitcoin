@@ -1498,10 +1498,10 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, const std::ve
 void static addCommittedTxIndex(const uint256& txid, std::vector<TxIndexOnChain>& vCommittedTxIndex){
     const TxBlockInfo& txInfo = g_pbft->txInFly[txid];
     vCommittedTxIndex.emplace_back(txInfo.blockHeight, txInfo.n);
-    if (vCommittedTxIndex.size() == localCommittedTxCapacity) {
+    if (!vCommittedTxIndex.empty()) {
 	/* append to the global data structure */
 	    std::cout << __func__ << ": vCommittedTxIndex size = " << vCommittedTxIndex.size() << ", append to global data structure. " << std::endl;
-	g_pbft->committedTxIndex.insert_back(vCommittedTxIndex);
+	g_pbft->committedTxIndex.push(vCommittedTxIndex);
 	vCommittedTxIndex.clear();
     }
 }

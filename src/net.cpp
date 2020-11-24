@@ -2059,7 +2059,7 @@ void CConnman::ThreadMessageHandler(uint threadIdx)
 
 	    if (!vCommittedTxIndex.empty()) {
 		/* append to the global data structure */
-		g_pbft->committedTxIndex.insert_back(vCommittedTxIndex);
+		g_pbft->committedTxIndex.push(vCommittedTxIndex);
 		vCommittedTxIndex.clear();
 	    }
 

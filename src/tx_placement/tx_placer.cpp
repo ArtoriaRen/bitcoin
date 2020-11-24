@@ -291,27 +291,27 @@ TxIndexOnChain TxIndexOnChain::operator+(const unsigned int oprand) {
     }
 }
 
-bool operator<(TxIndexOnChain a, TxIndexOnChain b)
+bool operator<(const TxIndexOnChain& a, const TxIndexOnChain& b)
 {
     return a.block_height < b.block_height || 
 	    (a.block_height == b.block_height && a.offset_in_block < b.offset_in_block);
 }
 
-bool operator>(TxIndexOnChain a, TxIndexOnChain b)
+bool operator>(const TxIndexOnChain& a, const TxIndexOnChain& b)
 {
     return a.block_height > b.block_height || 
 	    (a.block_height == b.block_height && a.offset_in_block > b.offset_in_block);
 }
 
-bool operator==(TxIndexOnChain a, TxIndexOnChain b) {
+bool operator==(const TxIndexOnChain& a, const TxIndexOnChain& b) {
     return a.block_height == b.block_height && a.offset_in_block == b.offset_in_block;
 }
 
-bool operator!=(TxIndexOnChain a, TxIndexOnChain b) {
+bool operator!=(const TxIndexOnChain& a, const TxIndexOnChain& b) {
     return ! (a == b);
 }
 
-bool operator<=(TxIndexOnChain a, TxIndexOnChain b) {
+bool operator<=(const TxIndexOnChain& a, const TxIndexOnChain& b) {
     return a.block_height < b.block_height || 
 	    (a.block_height == b.block_height && a.offset_in_block <= b.offset_in_block);
 }
