@@ -1831,7 +1831,9 @@ bool AppInitMain()
     //randomPlaceTxInBlock();
     //extractRawTxInBlock();
     if (nWarmUpBlocks > 0) {
+	std::cout << "start warmming up." << std::endl;
         g_pbft->WarmUpMemoryCache(g_connman.get());
+	std::cout << "warmming up ended." << std::endl;
     }
     return true;
 }
