@@ -35,10 +35,7 @@ std::vector<int32_t> TxPlacer::randomPlace(const CTransaction& tx){
     /* add the input shard ids to the set */
     for(uint32_t i = 0; i < tx.vin.size(); i++) {
 	if (!tx.vin[i].prevout.IsNull()) { // do not calculate shard for dummy coinbase input.
-	    arith_uint256 txid = UintToArith256(tx.vin[i].prevout.hash);
-	    arith_uint256 quotient = txid / num_committees;
-	    arith_uint256 inShardId = txid - quotient * num_committees;
-	    inputShardIds.insert((int)(inShardId.GetLow64()));
+	    inputShardIds.insert(tx.vin[i].prevout.hash.GetCheapHash() % num_committees);
 	}
     }
 
@@ -49,10 +46,8 @@ std::vector<int32_t> TxPlacer::randomPlace(const CTransaction& tx){
 //    std::cout << std::endl;
 
     /* get output shard id */
-    arith_uint256 txid = UintToArith256(tx.GetHash());
-    arith_uint256 quotient = txid / num_committees;
-    arith_uint256 outShardId = txid - quotient * num_committees;
-    if (inputShardIds.find((int)(outShardId.GetLow64())) != inputShardIds.end()) {
+    int32_t outShardId = tx.GetHash().GetCheapHash() % num_committees;
+    if (inputShardIds.find(outShardId) != inputShardIds.end()) {
 	/* inputShardIds.size() is the shard span of this tx. */
 	shardCntMap[tx.vin.size()][inputShardIds.size()]++;
     } else {
@@ -61,16 +56,13 @@ std::vector<int32_t> TxPlacer::randomPlace(const CTransaction& tx){
     }
     
     std::vector<int32_t> ret(inputShardIds.size() + 1);
-    ret[0] = (int32_t)(outShardId.GetLow64());// put the outShardIt as the first element
+    ret[0] = outShardId;// put the outShardIt as the first element
     std::copy(inputShardIds.begin(), inputShardIds.end(), ret.begin() + 1);
     return ret;
 }
 
 int32_t TxPlacer::randomPlaceUTXO(const uint256& txid) {
-	arith_uint256 txid_arth = UintToArith256(txid);
-	arith_uint256 quotient = txid_arth / num_committees;
-	arith_uint256 inShardId = txid_arth - quotient * num_committees;
-	return (int32_t)(inShardId.GetLow64());
+    return txid.GetCheapHash() % num_committees;
 }
 
 int32_t TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCache& cache){
