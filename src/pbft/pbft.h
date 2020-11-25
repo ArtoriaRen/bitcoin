@@ -37,6 +37,16 @@ enum  STEP {TX_UTXO_EXIST_AND_VALUE = 0, TX_SIG_CHECK, TX_DB_UPDATE,
                 COMMIT_SIG_CHECK, COMMIT_VALUE_CHECK, COMMIT_UTXO_ADD,
                 NUM_STEPS};
 
+enum  INPUT_CNT {TX_INPUT_CNT = 0, LOCK_INPUT_CNT,   
+                NUM_INPUT_CNTS};
+
+enum  SQUARE_SUM {TX_TIME_SS = 0, LOCK_TIME_SS, COMMIT_TIME_SS, ABORT_TIME_SS,
+                TX_UTXO_EXIST_AND_VALUE_SS, TX_SIG_CHECK_SS, TX_DB_UPDATE_SS,
+                LOCK_UTXO_EXIST_SS, LOCK_SIG_CHECK_SS, LOCK_UTXO_SPEND_SS, LOCK_RES_SIGN_SS, LOCK_RES_SEND_SS, LOCK_INPUT_COPY_SS, 
+                COMMIT_SIG_CHECK_SS, COMMIT_VALUE_CHECK_SS, COMMIT_UTXO_ADD_SS,
+                TX_INPUT_CNT_SS, LOCK_INPUT_CNT_SS,   
+                NUM_SQ_SUMS};
+
 class ThreadSafeQueue {
 public:
     ThreadSafeQueue();
@@ -103,6 +113,9 @@ public:
 
     /* detailed execution time and count*/
     unsigned long detailTime[STEP::NUM_STEPS];
+    unsigned long inputCount[INPUT_CNT::NUM_INPUT_CNTS];
+    unsigned long squareSum[SQUARE_SUM::NUM_SQ_SUMS];
+        
     
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
