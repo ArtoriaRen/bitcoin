@@ -1608,8 +1608,7 @@ bool CheckLockInputs(const CTransaction& tx, CValidationState &state, const CCoi
                     return state.DoS(100,false, REJECT_INVALID, strprintf("mandatory-script-verify-flag-failed (%s)", ScriptErrorString(check.GetScriptError())));
                 }
             }
-	    g_pbft->inputCount[INPUT_CNT::LOCK_INPUT_CNT] += inputUTXOInMyShard;
-	    g_pbft->squareSum[SQUARE_SUM::LOCK_INPUT_CNT_SS] += inputUTXOInMyShard * inputUTXOInMyShard;
+	    g_pbft->inputCount[INPUT_CNT::LOCK_INPUT_CNT] = inputUTXOInMyShard;
 
             if (cacheFullScriptStore && !pvChecks) {
                 // We executed all of the provided scripts, and were told to
