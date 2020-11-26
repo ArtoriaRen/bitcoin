@@ -1559,6 +1559,9 @@ bool CheckLockInputs(const CTransaction& tx, const std::vector<uint32_t>& vInput
                     return state.DoS(100,false, REJECT_INVALID, strprintf("mandatory-script-verify-flag-failed (%s)", ScriptErrorString(check.GetScriptError())));
                 }
             }
+	    int32_t inputUTXOInMyShard = vInputUtxoIdxToLock.size();
+	    g_pbft->inputCount[INPUT_CNT::LOCK_INPUT_CNT] += inputUTXOInMyShard;
+	    g_pbft->squareSum[SQUARE_SUM::LOCK_INPUT_CNT_SS] += inputUTXOInMyShard * inputUTXOInMyShard;
 
             if (cacheFullScriptStore && !pvChecks) {
                 // We executed all of the provided scripts, and were told to

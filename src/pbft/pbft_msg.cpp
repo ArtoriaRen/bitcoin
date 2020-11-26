@@ -160,9 +160,6 @@ char LockReq::Execute(const int seq, CCoinsViewCache& view) const {
 
     /* -------------logic from Bitcoin code for tx processing--------- */
     CTransaction tx(tx_mutable);
-    uint32_t nInput = tx.vin.size();
-    g_pbft->inputCount[INPUT_CNT::LOCK_INPUT_CNT] += nInput;
-    g_pbft->squareSum[SQUARE_SUM::LOCK_INPUT_CNT_SS] += nInput * nInput;
     struct timeval start_time, end_time;
     uint64_t timeElapsed = 0;
     gettimeofday(&start_time, NULL);
@@ -486,27 +483,27 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& 
     }
     std::cout << "Average execution time: ";
     if (g_pbft->totalExeCount[0] != 0) {
-	std::cout << "TX = " << g_pbft->totalExeTime[0]/g_pbft->totalExeCount[0] << " us/req (ss = " << g_pbft->squareSum[0] << "). TX_cnt = " << g_pbft->totalExeCount[0] 
+	std::cout << "TX = " << g_pbft->totalExeTime[0]/g_pbft->totalExeCount[0] << " us/req (ss = " << g_pbft->squareSum[0] << "), TX_cnt = " << g_pbft->totalExeCount[0] 
                 << ". Detail time: TX_UTXO_EXIST_AND_VALUE = " << g_pbft->detailTime[STEP::TX_UTXO_EXIST_AND_VALUE]/g_pbft->totalExeCount[0] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::TX_UTXO_EXIST_AND_VALUE_SS] 
                 << "), TX_SIG_CHECK = " << g_pbft->detailTime[STEP::TX_SIG_CHECK]/g_pbft->totalExeCount[0] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::TX_SIG_CHECK_SS]
-                << "), TX_DB_UPDATE = " << g_pbft->detailTime[STEP::TX_DB_UPDATE]/g_pbft->totalExeCount[0] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::TX_DB_UPDATE_SS] 
-                << "), TX_INPUT_UTXO_NUM = " << g_pbft->inputCount[INPUT_CNT::TX_INPUT_CNT]/g_pbft->totalExeCount[0] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::TX_INPUT_CNT_SS] << ").";
+                << "), TX_DB_UPDATE = " << (double)g_pbft->detailTime[STEP::TX_DB_UPDATE]/g_pbft->totalExeCount[0] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::TX_DB_UPDATE_SS] 
+                << "), TX_INPUT_UTXO_NUM = " << (double)g_pbft->inputCount[INPUT_CNT::TX_INPUT_CNT]/g_pbft->totalExeCount[0] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::TX_INPUT_CNT_SS] << "). ";
     }
     if (g_pbft->totalExeCount[1] != 0) {
-	std::cout << "LOCK = " << g_pbft->totalExeTime[1]/g_pbft->totalExeCount[1] << " us/req, (ss = " << g_pbft->squareSum[1] << "). LOCK_cnt = " << g_pbft->totalExeCount[1]  
+	std::cout << "LOCK = " << g_pbft->totalExeTime[1]/g_pbft->totalExeCount[1] << " us/req, (ss = " << g_pbft->squareSum[1] << "), LOCK_cnt = " << g_pbft->totalExeCount[1]  
                 << ". Detail time: LOCK_UTXO_EXIST = " << g_pbft->detailTime[STEP::LOCK_UTXO_EXIST]/g_pbft->totalExeCount[1] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::LOCK_UTXO_EXIST_SS] 
                 << "), LOCK_SIG_CHECK = " << g_pbft->detailTime[STEP::LOCK_SIG_CHECK]/g_pbft->totalExeCount[1] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::LOCK_SIG_CHECK_SS]
-                << "), LOCK_UTXO_SPEND = " << g_pbft->detailTime[STEP::LOCK_UTXO_SPEND]/g_pbft->totalExeCount[1] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::LOCK_UTXO_SPEND_SS] 
+                << "), LOCK_UTXO_SPEND = " << (double)g_pbft->detailTime[STEP::LOCK_UTXO_SPEND]/g_pbft->totalExeCount[1] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::LOCK_UTXO_SPEND_SS] 
                 << "), LOCK_RES_SIGN = " << g_pbft->detailTime[STEP::LOCK_RES_SIGN]/g_pbft->totalExeCount[1] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::LOCK_RES_SIGN_SS]
                 << "), LOCK_RES_SEND = " << g_pbft->detailTime[STEP::LOCK_RES_SEND]/g_pbft->totalExeCount[1] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::LOCK_RES_SEND_SS]
-                << "), LOCK_INPUT_COPY = " << g_pbft->detailTime[STEP::LOCK_INPUT_COPY]/g_pbft->totalExeCount[1] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::LOCK_INPUT_COPY_SS] 
-                << "), LOCK_INPUT_UTXO_NUM = " << g_pbft->inputCount[INPUT_CNT::LOCK_INPUT_CNT]/g_pbft->totalExeCount[1] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::LOCK_INPUT_CNT_SS] << ").";
+                << "), LOCK_INPUT_COPY = " << (double)g_pbft->detailTime[STEP::LOCK_INPUT_COPY]/g_pbft->totalExeCount[1] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::LOCK_INPUT_COPY_SS] 
+                << "), LOCK_INPUT_UTXO_NUM = " << (double)g_pbft->inputCount[INPUT_CNT::LOCK_INPUT_CNT]/g_pbft->totalExeCount[1] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::LOCK_INPUT_CNT_SS] << ").";
     }
     if (g_pbft->totalExeCount[2] != 0) {
-	std::cout << "COMMIT = " << g_pbft->totalExeTime[2]/g_pbft->totalExeCount[2] << " us/req, (ss = " << g_pbft->squareSum[2] << "). COMMIT_cnt = " << g_pbft->totalExeCount[2] 
-                << "). Detail time: COMMIT_SIG_CHECK = " << g_pbft->detailTime[STEP::COMMIT_SIG_CHECK]/g_pbft->totalExeCount[2] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::COMMIT_SIG_CHECK_SS] 
-                << "), COMMIT_VALUE_CHECK = " << g_pbft->detailTime[STEP::COMMIT_VALUE_CHECK]/g_pbft->totalExeCount[2] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::COMMIT_VALUE_CHECK_SS]
-                << "), COMMIT_UTXO_ADD = " << g_pbft->detailTime[STEP::COMMIT_UTXO_ADD]/g_pbft->totalExeCount[2] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::COMMIT_UTXO_ADD_SS] << "). ";
+	std::cout << "COMMIT = " << g_pbft->totalExeTime[2]/g_pbft->totalExeCount[2] << " us/req, (ss = " << g_pbft->squareSum[2] << "), COMMIT_cnt = " << g_pbft->totalExeCount[2] 
+                << ". Detail time: COMMIT_SIG_CHECK = " << g_pbft->detailTime[STEP::COMMIT_SIG_CHECK]/g_pbft->totalExeCount[2] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::COMMIT_SIG_CHECK_SS] 
+                << "), COMMIT_VALUE_CHECK = " << (double)g_pbft->detailTime[STEP::COMMIT_VALUE_CHECK]/g_pbft->totalExeCount[2] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::COMMIT_VALUE_CHECK_SS]
+                << "), COMMIT_UTXO_ADD = " << (double)g_pbft->detailTime[STEP::COMMIT_UTXO_ADD]/g_pbft->totalExeCount[2] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::COMMIT_UTXO_ADD_SS] << "). ";
     }
     if (g_pbft->totalExeCount[3] != 0) {
 	std::cout << "ABORT = " << g_pbft->totalExeTime[3]/g_pbft->totalExeCount[3] << " us/req, " << " ABORT_cnt = " << g_pbft->totalExeCount[3] << ", ";
