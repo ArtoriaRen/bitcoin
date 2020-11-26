@@ -114,10 +114,6 @@ CPbft::CPbft() : localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq
     for (int i = 0; i < INPUT_CNT::NUM_INPUT_CNTS; i++) {
         inputCount[i] = 0;
     }
-    for (int i = 0; i < SQUARE_SUM::NUM_SQ_SUMS; i++) {
-        squareSum[i] = 0;
-    }
- 
 }
 
 

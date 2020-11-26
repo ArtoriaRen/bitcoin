@@ -87,8 +87,7 @@ char TxReq::Execute(const int seq, CCoinsViewCache& view) const {
         return 'y';
     }
     uint32_t nInput = tx.vin.size();
-    g_pbft->inputCount[INPUT_CNT::TX_INPUT_CNT] += nInput;
-    g_pbft->squareSum[SQUARE_SUM::TX_INPUT_CNT_SS] += nInput * nInput;
+    g_pbft->inputCount[INPUT_CNT::TX_INPUT_CNT] = nInput;
     struct timeval start_time, end_time;
     uint64_t timeElapsed = 0;
     gettimeofday(&start_time, NULL);
@@ -104,8 +103,7 @@ char TxReq::Execute(const int seq, CCoinsViewCache& view) const {
     }
     gettimeofday(&end_time, NULL);
     timeElapsed = (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec); // in us
-    g_pbft->detailTime[STEP::TX_UTXO_EXIST_AND_VALUE] += timeElapsed;
-    g_pbft->squareSum[SQUARE_SUM::TX_UTXO_EXIST_AND_VALUE_SS] += timeElapsed * timeElapsed;
+    g_pbft->detailTime[STEP::TX_UTXO_EXIST_AND_VALUE] = timeElapsed;
 
     // GetTransactionSigOpCost counts 3 types of sigops:
     // * legacy (always)
@@ -131,15 +129,12 @@ char TxReq::Execute(const int seq, CCoinsViewCache& view) const {
     }
     gettimeofday(&end_time, NULL);
     timeElapsed = (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec); // in us
-    g_pbft->detailTime[STEP::TX_SIG_CHECK] += timeElapsed;
-    g_pbft->squareSum[SQUARE_SUM::TX_SIG_CHECK_SS] += timeElapsed * timeElapsed;
-
+    g_pbft->detailTime[STEP::TX_SIG_CHECK] = timeElapsed;
     gettimeofday(&start_time, NULL);
     UpdateCoins(tx, view, g_pbft->getBlockHeight(seq));
     gettimeofday(&end_time, NULL);
     timeElapsed = (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec); // in us
-    g_pbft->detailTime[STEP::TX_DB_UPDATE] += timeElapsed;
-    g_pbft->squareSum[SQUARE_SUM::TX_DB_UPDATE_SS] += timeElapsed * timeElapsed;
+    g_pbft->detailTime[STEP::TX_DB_UPDATE] = timeElapsed;
 
     std::cout << __func__ << ": excuted tx " << tx.GetHash().ToString()
 	    << " at log slot " << seq << std::endl;
@@ -181,8 +176,7 @@ char LockReq::Execute(const int seq, CCoinsViewCache& view) const {
     }
     gettimeofday(&end_time, NULL);
     timeElapsed = (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec); // in us
-    g_pbft->detailTime[STEP::LOCK_UTXO_EXIST] += timeElapsed;
-    g_pbft->squareSum[SQUARE_SUM::LOCK_UTXO_EXIST_SS] += timeElapsed * timeElapsed;
+    g_pbft->detailTime[STEP::LOCK_UTXO_EXIST] = timeElapsed;
 
     /* Step 2: count sig ops. Do this in the output shard. */
     // GetTransactionSigOpCost counts 3 types of sigops:
@@ -210,8 +204,7 @@ char LockReq::Execute(const int seq, CCoinsViewCache& view) const {
     }
     gettimeofday(&end_time, NULL);
     timeElapsed = (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec); // in us
-    g_pbft->detailTime[STEP::LOCK_SIG_CHECK] += timeElapsed;
-    g_pbft->squareSum[SQUARE_SUM::LOCK_SIG_CHECK_SS] += timeElapsed * timeElapsed;
+    g_pbft->detailTime[STEP::LOCK_SIG_CHECK] = timeElapsed;
 
     /* Step 4: spent the input coins in our shard and store them in the global map 
      * for possibly future UnlockToAbort processing. */
@@ -220,14 +213,12 @@ char LockReq::Execute(const int seq, CCoinsViewCache& view) const {
     UpdateLockCoins(tx, vInputUtxoIdxToLock, view, undoInfo, g_pbft->getBlockHeight(seq));
     gettimeofday(&end_time, NULL);
     timeElapsed = (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec); // in us
-    g_pbft->detailTime[STEP::LOCK_UTXO_SPEND] += timeElapsed;
-    g_pbft->squareSum[SQUARE_SUM::LOCK_UTXO_SPEND_SS] += timeElapsed * timeElapsed;
+    g_pbft->detailTime[STEP::LOCK_UTXO_SPEND] = timeElapsed;
     gettimeofday(&start_time, NULL);
     mapTxUndo.insert(std::make_pair(tx.GetHash(), undoInfo));
     gettimeofday(&end_time, NULL);
     timeElapsed = (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec); // in us
-    g_pbft->detailTime[STEP::LOCK_INPUT_COPY] += timeElapsed;
-    g_pbft->squareSum[SQUARE_SUM::LOCK_INPUT_COPY_SS] += timeElapsed * timeElapsed;
+    g_pbft->detailTime[STEP::LOCK_INPUT_COPY] = timeElapsed;
     /* -------------logic from Bitcoin code for tx processing--------- */
     std::cout << __func__ << ": locked input UTXOs for tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << std::endl;
     return 'y';
@@ -288,8 +279,7 @@ char UnlockToCommitReq::Execute(const int seq, CCoinsViewCache& view) const {
     }
     gettimeofday(&end_time, NULL);
     timeElapsed = (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec); // in us
-    g_pbft->detailTime[STEP::COMMIT_SIG_CHECK] += timeElapsed;
-    g_pbft->squareSum[SQUARE_SUM::COMMIT_SIG_CHECK_SS] += timeElapsed * timeElapsed;
+    g_pbft->detailTime[STEP::COMMIT_SIG_CHECK] = timeElapsed;
 
     /* -------------logic from Bitcoin code for tx processing--------- */
     CTransaction tx(tx_mutable);
@@ -315,8 +305,7 @@ char UnlockToCommitReq::Execute(const int seq, CCoinsViewCache& view) const {
     }
     gettimeofday(&end_time, NULL);
     timeElapsed = (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec); // in us
-    g_pbft->detailTime[STEP::COMMIT_VALUE_CHECK] += timeElapsed;
-    g_pbft->squareSum[SQUARE_SUM::COMMIT_VALUE_CHECK_SS] += timeElapsed * timeElapsed;
+    g_pbft->detailTime[STEP::COMMIT_VALUE_CHECK] = timeElapsed;
 
     /* Step 2: count sig ops. Do this in the output shard. */
     // GetTransactionSigOpCost counts 3 types of sigops:
@@ -341,8 +330,7 @@ char UnlockToCommitReq::Execute(const int seq, CCoinsViewCache& view) const {
     UpdateUnlockCommitCoins(tx, view, g_pbft->getBlockHeight(seq));
     gettimeofday(&end_time, NULL);
     timeElapsed = (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec); // in us
-    g_pbft->detailTime[STEP::COMMIT_UTXO_ADD] += timeElapsed;
-    g_pbft->squareSum[SQUARE_SUM::COMMIT_UTXO_ADD_SS] += timeElapsed * timeElapsed;
+    g_pbft->detailTime[STEP::COMMIT_UTXO_ADD] = timeElapsed;
     /* -------------logic from Bitcoin code for tx processing--------- */
     std::cout << __func__ << ":  commit tx " << tx.GetHash().GetHex().substr(0, 10) << " at log slot " << seq << std::endl;
     return 'y';
@@ -453,15 +441,13 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& 
 	    CInputShardReply reply = g_pbft->assembleInputShardReply(seq, i, exe_res, ((LockReq*)vReq[i].pReq.get())->totalValueInOfShard);
             gettimeofday(&detail_end_time, NULL);
             timeElapsed = (detail_end_time.tv_sec - detail_start_time.tv_sec) * 1000000 + (detail_end_time.tv_usec - detail_start_time.tv_usec);
-            g_pbft->detailTime[STEP::LOCK_RES_SIGN] += timeElapsed;
-            g_pbft->squareSum[SQUARE_SUM::LOCK_RES_SIGN_SS] += timeElapsed * timeElapsed;
+            g_pbft->detailTime[STEP::LOCK_RES_SIGN] = timeElapsed;
             gettimeofday(&detail_start_time, NULL);
 	    connman->PushMessage(g_pbft->client, msgMaker.Make(NetMsgType::OMNI_LOCK_REPLY, reply));
             gettimeofday(&detail_end_time, NULL);
 	    gettimeofday(&end_time, NULL);
             timeElapsed = (detail_end_time.tv_sec - detail_start_time.tv_sec) * 1000000 + (detail_end_time.tv_usec - detail_start_time.tv_usec);
-            g_pbft->detailTime[STEP::LOCK_RES_SEND] += timeElapsed;
-            g_pbft->squareSum[SQUARE_SUM::LOCK_RES_SEND_SS] += timeElapsed * timeElapsed;
+            g_pbft->detailTime[STEP::LOCK_RES_SEND] = timeElapsed;
 	} else {
 	    gettimeofday(&end_time, NULL);
 	    /* sending reply for only performance measurement, so we do not count the time as part of single-shard or cross-shard tx processing time. */
@@ -476,39 +462,39 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& 
 	/* update execution time and count. Only count non-coinbase tx.*/
 	if (!vReq[i].pReq->IsCoinBase()) {
             timeElapsed = (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
-	    g_pbft->totalExeTime[vReq[i].type] += timeElapsed;
-            g_pbft->squareSum[vReq[i].type] += timeElapsed * timeElapsed;
+	    g_pbft->totalExeTime[vReq[i].type] = timeElapsed;
 	    g_pbft->totalExeCount[vReq[i].type]++;
+            if (vReq[i].type == ClientReqType::TX) {
+                std::cout << "TX_STAT. Overall time = " << g_pbft->totalExeTime[0]  
+                        << ". Detail time: TX_UTXO_EXIST_AND_VALUE = " << g_pbft->detailTime[STEP::TX_UTXO_EXIST_AND_VALUE]
+                        << ", TX_SIG_CHECK = " << g_pbft->detailTime[STEP::TX_SIG_CHECK] 
+                        << ", TX_DB_UPDATE = " << g_pbft->detailTime[STEP::TX_DB_UPDATE] 
+                        << ", TX_INPUT_UTXO_NUM = " << g_pbft->inputCount[INPUT_CNT::TX_INPUT_CNT]
+                        << ", TX_cnt = " << g_pbft->totalExeCount[0] << std::endl;
+
+            } else if (vReq[i].type == ClientReqType::LOCK) {
+                std::cout << "LOCK_STAT. Overall time = " << g_pbft->totalExeTime[1]  
+                        << ". Detail time: LOCK_UTXO_EXIST = " << g_pbft->detailTime[STEP::LOCK_UTXO_EXIST] 
+                        << ", LOCK_SIG_CHECK = " << g_pbft->detailTime[STEP::LOCK_SIG_CHECK]
+                        << ", LOCK_UTXO_SPEND = " << g_pbft->detailTime[STEP::LOCK_UTXO_SPEND] 
+                        << ", LOCK_RES_SIGN = " << g_pbft->detailTime[STEP::LOCK_RES_SIGN]
+                        << ", LOCK_RES_SEND = " << g_pbft->detailTime[STEP::LOCK_RES_SEND]
+                        << ", LOCK_INPUT_COPY = " << g_pbft->detailTime[STEP::LOCK_INPUT_COPY] 
+                        << ", LOCK_INPUT_UTXO_NUM = " << g_pbft->inputCount[INPUT_CNT::LOCK_INPUT_CNT]
+                        << ", LOCK_cnt = " << g_pbft->totalExeCount[1] << std::endl;
+
+            } else if (vReq[i].type == ClientReqType::UNLOCK_TO_COMMIT) {
+                std::cout << "COMMIT_STAT. Overall time = " << g_pbft->totalExeTime[2] 
+                        << ". Detail time: COMMIT_SIG_CHECK = " << g_pbft->detailTime[STEP::COMMIT_SIG_CHECK] 
+                        << ", COMMIT_VALUE_CHECK = " << g_pbft->detailTime[STEP::COMMIT_VALUE_CHECK]
+                        << ", COMMIT_UTXO_ADD = " << g_pbft->detailTime[STEP::COMMIT_UTXO_ADD] 
+                        << ", COMMIT_cnt = " << g_pbft->totalExeCount[2] << std::endl;
+
+            } else if (vReq[i].type == ClientReqType::UNLOCK_TO_ABORT) {
+                std::cout << "ABORT = " << g_pbft->totalExeTime[3] << " us, ABORT_cnt = " << g_pbft->totalExeCount[3] << std::endl;
+            }
 	}
     }
-    std::cout << "Average execution time: ";
-    if (g_pbft->totalExeCount[0] != 0) {
-	std::cout << "TX = " << g_pbft->totalExeTime[0]/g_pbft->totalExeCount[0] << " us/req (ss = " << g_pbft->squareSum[0] << "), TX_cnt = " << g_pbft->totalExeCount[0] 
-                << ". Detail time: TX_UTXO_EXIST_AND_VALUE = " << g_pbft->detailTime[STEP::TX_UTXO_EXIST_AND_VALUE]/g_pbft->totalExeCount[0] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::TX_UTXO_EXIST_AND_VALUE_SS] 
-                << "), TX_SIG_CHECK = " << g_pbft->detailTime[STEP::TX_SIG_CHECK]/g_pbft->totalExeCount[0] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::TX_SIG_CHECK_SS]
-                << "), TX_DB_UPDATE = " << (double)g_pbft->detailTime[STEP::TX_DB_UPDATE]/g_pbft->totalExeCount[0] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::TX_DB_UPDATE_SS] 
-                << "), TX_INPUT_UTXO_NUM = " << (double)g_pbft->inputCount[INPUT_CNT::TX_INPUT_CNT]/g_pbft->totalExeCount[0] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::TX_INPUT_CNT_SS] << "). ";
-    }
-    if (g_pbft->totalExeCount[1] != 0) {
-	std::cout << "LOCK = " << g_pbft->totalExeTime[1]/g_pbft->totalExeCount[1] << " us/req, (ss = " << g_pbft->squareSum[1] << "), LOCK_cnt = " << g_pbft->totalExeCount[1]  
-                << ". Detail time: LOCK_UTXO_EXIST = " << g_pbft->detailTime[STEP::LOCK_UTXO_EXIST]/g_pbft->totalExeCount[1] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::LOCK_UTXO_EXIST_SS] 
-                << "), LOCK_SIG_CHECK = " << g_pbft->detailTime[STEP::LOCK_SIG_CHECK]/g_pbft->totalExeCount[1] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::LOCK_SIG_CHECK_SS]
-                << "), LOCK_UTXO_SPEND = " << (double)g_pbft->detailTime[STEP::LOCK_UTXO_SPEND]/g_pbft->totalExeCount[1] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::LOCK_UTXO_SPEND_SS] 
-                << "), LOCK_RES_SIGN = " << g_pbft->detailTime[STEP::LOCK_RES_SIGN]/g_pbft->totalExeCount[1] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::LOCK_RES_SIGN_SS]
-                << "), LOCK_RES_SEND = " << g_pbft->detailTime[STEP::LOCK_RES_SEND]/g_pbft->totalExeCount[1] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::LOCK_RES_SEND_SS]
-                << "), LOCK_INPUT_COPY = " << (double)g_pbft->detailTime[STEP::LOCK_INPUT_COPY]/g_pbft->totalExeCount[1] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::LOCK_INPUT_COPY_SS] 
-                << "), LOCK_INPUT_UTXO_NUM = " << (double)g_pbft->inputCount[INPUT_CNT::LOCK_INPUT_CNT]/g_pbft->totalExeCount[1] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::LOCK_INPUT_CNT_SS] << ").";
-    }
-    if (g_pbft->totalExeCount[2] != 0) {
-	std::cout << "COMMIT = " << g_pbft->totalExeTime[2]/g_pbft->totalExeCount[2] << " us/req, (ss = " << g_pbft->squareSum[2] << "), COMMIT_cnt = " << g_pbft->totalExeCount[2] 
-                << ". Detail time: COMMIT_SIG_CHECK = " << g_pbft->detailTime[STEP::COMMIT_SIG_CHECK]/g_pbft->totalExeCount[2] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::COMMIT_SIG_CHECK_SS] 
-                << "), COMMIT_VALUE_CHECK = " << (double)g_pbft->detailTime[STEP::COMMIT_VALUE_CHECK]/g_pbft->totalExeCount[2] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::COMMIT_VALUE_CHECK_SS]
-                << "), COMMIT_UTXO_ADD = " << (double)g_pbft->detailTime[STEP::COMMIT_UTXO_ADD]/g_pbft->totalExeCount[2] << " (ss = " << g_pbft->squareSum[SQUARE_SUM::COMMIT_UTXO_ADD_SS] << "). ";
-    }
-    if (g_pbft->totalExeCount[3] != 0) {
-	std::cout << "ABORT = " << g_pbft->totalExeTime[3]/g_pbft->totalExeCount[3] << " us/req, " << " ABORT_cnt = " << g_pbft->totalExeCount[3] << ", ";
-    }
-
     return txCnt;
 }
 
