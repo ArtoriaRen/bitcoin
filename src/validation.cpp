@@ -1561,7 +1561,7 @@ bool CheckLockInputs(const CTransaction& tx, CValidationState &state, const CCoi
                 return true;
             }
 
-	    int32_t myShardId = pbftID/CPbft::groupSize;
+	    int32_t myShardId = pbftID/CPbft::groupSize, inputUTXOInMyShard = 0;
 	    TxPlacer txPlacer;
             for (unsigned int i = 0; i < tx.vin.size(); i++) {
 		// TODO: check shardAffinity
@@ -1569,7 +1569,7 @@ bool CheckLockInputs(const CTransaction& tx, CValidationState &state, const CCoi
 //		    continue;
 		if (txPlacer.randomPlaceUTXO(tx.vin[i].prevout.hash) != myShardId)
 		    continue;
-		
+		inputUTXOInMyShard++;
                 const COutPoint &prevout = tx.vin[i].prevout;
                 const Coin& coin = inputs.AccessCoin(prevout);
                 assert(!coin.IsSpent());
@@ -1608,6 +1608,8 @@ bool CheckLockInputs(const CTransaction& tx, CValidationState &state, const CCoi
                     return state.DoS(100,false, REJECT_INVALID, strprintf("mandatory-script-verify-flag-failed (%s)", ScriptErrorString(check.GetScriptError())));
                 }
             }
+	    g_pbft->inputCount[INPUT_CNT::LOCK_INPUT_CNT] += inputUTXOInMyShard;
+	    g_pbft->squareSum[SQUARE_SUM::LOCK_INPUT_CNT_SS] += inputUTXOInMyShard * inputUTXOInMyShard;
 
             if (cacheFullScriptStore && !pvChecks) {
                 // We executed all of the provided scripts, and were told to
