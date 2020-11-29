@@ -30,7 +30,7 @@ extern int32_t pbftID;
 extern int32_t nMaxReqInFly; 
 extern int32_t reqWaitTimeout;
 extern int32_t maxBlockSize; 
-extern int32_t nWarmUpBlocks;
+extern int32_t warmUpMemoryPageCache;
 
 enum  STEP {TX_UTXO_EXIST_AND_VALUE = 0, TX_SIG_CHECK, TX_DB_UPDATE,
                 LOCK_UTXO_EXIST, LOCK_SIG_CHECK, LOCK_UTXO_SPEND, LOCK_RES_SIGN, LOCK_RES_SEND, LOCK_INPUT_COPY, 
@@ -159,8 +159,8 @@ public:
     }
 
 
-    void saveBlocks2File(const int numBlock) const;
-    void readBlocksFromFile(const int numBlock);
+    void saveBlocks2File() const;
+    int readBlocksFromFile();
     void WarmUpMemoryCache(CConnman* connman);
 private:
     // private ECDSA key used to sign messages

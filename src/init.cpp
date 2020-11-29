@@ -831,10 +831,8 @@ void InitParameterInteraction()
     if (gArgs.IsArgSet("-reqwaittimeout")) {
         reqWaitTimeout = gArgs.GetArg("-reqwaittimeout", 1000); // in ms
     }
-    /* if warmuppbftblocks = -1, do not warm up memory by tentatively executing blocks.*/
-    if (gArgs.IsArgSet("-warmuppbftblocks")) {
-        nWarmUpBlocks = gArgs.GetArg("-warmuppbftblocks", -1);
-    }
+    /* if warmuppbftblocks = false, do not warm up memory by tentatively executing blocks.*/
+    warmUpMemoryPageCache = gArgs.GetBoolArg("-warmuppbftblocks", false);
 }
 
 static std::string ResolveErrMsg(const char * const optname, const std::string& strBind)
@@ -1830,7 +1828,7 @@ bool AppInitMain()
     //printShardAffinity();
     //randomPlaceTxInBlock();
     //extractRawTxInBlock();
-    if (nWarmUpBlocks > 0) {
+    if (warmUpMemoryPageCache) {
 	std::cout << "start warmming up." << std::endl;
         g_pbft->WarmUpMemoryCache(g_connman.get());
 	std::cout << "warmming up ended." << std::endl;

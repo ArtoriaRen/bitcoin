@@ -31,7 +31,7 @@ int32_t pbftID;
 int32_t nMaxReqInFly; 
 int32_t reqWaitTimeout;
 int32_t maxBlockSize = 2000;
-int32_t nWarmUpBlocks = 1;
+int32_t warmUpMemoryPageCache = 1;
 
 ThreadSafeQueue::ThreadSafeQueue() { }
 
@@ -372,20 +372,24 @@ void CPbft::saveBlocks2File(const int numBlock) const {
     }
     CAutoFile fileout(file, SER_DISK, CLIENT_VERSION);
 
-    for (int i = 0; i < numBlock; i++) {
+    fileout.write((char*)&lastExecutedSeq, sizeof(lastExecutedSeq));
+    for (int i = 0; i <= lastExecutedSeq; i++) {
         log[i].ppMsg.pbft_block.Serialize(fileout);
     }
 }
 
-void CPbft::readBlocksFromFile(const int numBlock) {
-    FILE* file = fsbridge::fopen("pbft_blocks.out", "rb");
+int CPbft::readBlocksFromFile() {
+    FILE* file = fsbridge::fopen("pbft_blocks_tx_placement.out", "rb");
     if (!file) {
         std::cerr << "Unable to open PBFT block file to read." << std::endl;
-        return;
+        return 0;
     }
     CAutoFile filein(file, SER_DISK, CLIENT_VERSION);
 
-    for (int i = 0; i < numBlock; i++) {
+    int lastExecutedSeqWarmUp = 0;
+    filein.read((char*)&lastExecutedSeqWarmUp, sizeof(lastExecutedSeqWarmUp));
+    std::cout << __func__ << ": lastExecutedSeqWarmUp = " << lastExecutedSeqWarmUp << std::endl;
+    for (int i = 0; i < lastExecutedSeqWarmUp + 1; i++) {
         try {
             log[i].ppMsg.pbft_block.Unserialize(filein);
         }
@@ -393,15 +397,22 @@ void CPbft::readBlocksFromFile(const int numBlock) {
             std::cerr << "Deserialize or I/O error when reading PBFT block " << i << ": " << e.what() << std::endl;
         }
     }
+    return lastExecutedSeqWarmUp;
 }
 
 void CPbft::WarmUpMemoryCache(CConnman* connman) {
     CCoinsViewCache view_tenta(pcoinsTip.get());
-    readBlocksFromFile(nWarmUpBlocks);
-    for (int i = 0; i < nWarmUpBlocks; i++) {
-        log[i].ppMsg.pbft_block.Execute(i, connman, view_tenta);
+    int lastExecutedSeqWarmUp = readBlocksFromFile();
+    uint32_t nCompletedTx = 0;
+    for (int i = 0; i < lastExecutedSeqWarmUp + 1; i++) {
+	uint32_t block_size = log[i].ppMsg.pbft_block.vReq.size();
+	std::cout << "executing warm-up block of size " << block_size << std::endl;
+
+        log[i].ppMsg.pbft_block.WarmUpExecute(i, connman, view_tenta);
         /* Discard the block to prepare for performance test. */
         log[i].ppMsg.pbft_block.Clear();
+	nCompletedTx += block_size; 
+	std::cout << "total executed tx: " << nCompletedTx << std::endl;
     }
 }
 
