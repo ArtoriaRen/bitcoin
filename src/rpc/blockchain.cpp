@@ -660,9 +660,7 @@ UniValue getblockhash(const JSONRPCRequest& request)
 
 UniValue savepbftblocks(const JSONRPCRequest& request)
 {
-    int num_blocks = request.params[0].get_int();
-    assert(num_blocks > 0);
-    g_pbft->saveBlocks2File(num_blocks);
+    g_pbft->saveBlocks2File();
     return NullUniValue;
 }
 

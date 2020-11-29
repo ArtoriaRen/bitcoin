@@ -16,6 +16,7 @@
 #include "script/interpreter.h"
 #include "undo.h"
 #include "netmessagemaker.h"
+#include "tx_placement/tx_placer.h"
 
 void UpdateLockCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo, int nHeight);
 
@@ -410,6 +411,31 @@ void CPbftBlock::ComputeHash(){
 	hasher.Write((const unsigned char*)vReq[i].pReq->GetHash().begin(), vReq[i].pReq->GetHash().size());
     }
     hasher.Finalize((unsigned char*)&hash);
+}
+
+void CPbftBlock::WarmUpExecute(const int seq, CConnman* connman, CCoinsViewCache& view) const {
+    int32_t myShardId = pbftID/CPbft::groupSize;
+    TxPlacer txPlacer;
+    for (uint i = 0; i < vReq.size(); i++) {
+	CTransaction tx(vReq[i].pReq->tx_mutable);
+	if (vReq[i].type == ClientReqType::TX) {
+	    // are the actual inputs available?
+	    if (!view.HaveInputs(tx)) {
+		std::cout << __func__ << ": TX " << tx.GetHash().GetHex() << " inputs missing/spent" << std::endl;
+	    }
+	    UpdateCoins(tx, view, g_pbft->getBlockHeight(seq));
+	} else if (vReq[i].type == ClientReqType::LOCK) {
+	    for (CTxIn input: tx.vin) {
+		if (txPlacer.randomPlaceUTXO(input.prevout.hash) != myShardId)
+		    continue;
+		if (!view.HaveCoin(input.prevout)) {
+		    std::cout << __func__ << ": LOCK " << tx.GetHash().GetHex() << " inputs missing/spent" << std::endl;
+		}
+	    }
+	} else if (vReq[i].type == ClientReqType::UNLOCK_TO_COMMIT) {
+	    UpdateUnlockCommitCoins(tx, view, g_pbft->getBlockHeight(seq));
+	}
+    }
 }
 
 uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& view) const {
