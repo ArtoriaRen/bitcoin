@@ -22,6 +22,8 @@
 #include "pubkey.h"
 #include "key.h"
 #include <queue>  
+#include <iostream>
+#include <fstream>
 
 extern int32_t pbftID;
 extern uint32_t thruInterval;
@@ -215,6 +217,8 @@ public:
     std::atomic<TxIndexOnChain> latestConsecutiveCommittedTx;
     CommittedTxHeap committedTxIndex;
     
+    std::ofstream latencyFile;
+    std::ofstream thruputFile;
     /* <txid, tx_start_time>
      * This map includes both single-shard and cross-shard tx.
      */
@@ -227,6 +231,7 @@ public:
     struct timeval nextLogTime;
 
     CPbft();
+    ~CPbft();
     bool checkReplySig(const CReply* pReply) const;
     void logThruput(struct timeval& endTime);
 

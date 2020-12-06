@@ -1888,7 +1888,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 			g_pbft->txResendQueue.push_back(g_pbft->txInFly[reply.digest]);
 			nLocalTotalFailedTxPerInterval++;
 		} 
-		std::cout << "single-shard, result received at " << endTime.tv_sec << "." << endTime.tv_usec << " s , latency = " << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << " ms" << std::endl;
+		g_pbft->latencyFile << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << "\n";
 	    } else {
 		/* cross-shard tx */
 		auto& inputShardRplMap = g_pbft->inputShardReplyMap;
