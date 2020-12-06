@@ -51,10 +51,6 @@ void WaitForShutdown()
     {
         MilliSleep(200);
 
-	if (pbft.committedTxIndex.size() != lastCommittedTxDequeSize) {
-	    lastCommittedTxDequeSize = pbft.committedTxIndex.updateGreatestConsecutive();
-	}
-
 	/* print throughput */
 	/* log throughput if enough long time has elapsed. */
 	struct timeval currentTime;

@@ -65,8 +65,11 @@ void CommittedTxHeap::push(const std::vector<TxIndexOnChain>& localCommittedTx) 
     for (const TxIndexOnChain& txIdx: localCommittedTx) {
 	pq_.push(txIdx);
     }
+    updateGreatestConsecutive();
 }
 
+/* This method does not need to require the lock because it is only called by the the 
+ * above push method, which holds the lock already when calling this function.*/
 size_t CommittedTxHeap::updateGreatestConsecutive(){
     TxIndexOnChain LCCTx = g_pbft->latestConsecutiveCommittedTx.load(std::memory_order_relaxed);
     int i = 1;
@@ -97,6 +100,13 @@ CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), latestConsecutive
     nextLogTime = {0, 0};
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
+    latencyFile.open("/home/l27ren/placement_outfiles/latency.out");
+    thruputFile.open("/home/l27ren/placement_outfiles/thruput.out");
+}
+
+CPbft::~CPbft() {
+    latencyFile.close();
+    thruputFile.close();
 }
 
 bool CPbft::checkReplySig(const CReply* pReply) const {
@@ -118,7 +128,7 @@ bool CPbft::checkReplySig(const CReply* pReply) const {
 void CPbft::logThruput(struct timeval& endTime) {
     if (testStartTime.tv_sec == 0) {
 	/* test just started. log the start time */
-	std::cout << "At time " << endTime.tv_sec << "." << endTime.tv_usec << ", sending tx starts. This is the initial throughput log. " << std::endl;
+        thruputFile << endTime.tv_sec << "." << endTime.tv_usec << ", sending tx starts.\n";
 	testStartTime = endTime;
 	/* log when thruInterval seconds has passed by  */
 	nextLogTime.tv_sec = endTime.tv_sec + thruInterval;
@@ -131,7 +141,7 @@ void CPbft::logThruput(struct timeval& endTime) {
     nextLogTime.tv_sec = endTime.tv_sec + thruInterval;
     nextLogTime.tv_usec = endTime.tv_usec;
     nLastCompletedTx = nCompletedTxCopy;
-    std::cout << "At time " << endTime.tv_sec << "." << endTime.tv_usec << ", completed " <<  nCompletedTxCopy << " tx" << ": throughput = " << thruput << std::endl;
+    thruputFile << endTime.tv_sec << "." << endTime.tv_usec << "," << nCompletedTxCopy << "," << thruput << std::endl;
 }
 
 bool operator<(const TxBlockInfo& a, const TxBlockInfo& b)
