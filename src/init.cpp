@@ -813,7 +813,8 @@ void InitParameterInteraction()
         pbftID = gArgs.GetArg("-pbftid", -1);
     }
     if (gArgs.IsArgSet("-thruinterval")) {
-        thruInterval = gArgs.GetArg("-thruinterval", 100);
+	int millisecs = gArgs.GetArg("-thruinterval", 200);
+	thruInterval = {millisecs/1000, (millisecs % 1000) * 1000};
     }
     if (gArgs.IsArgSet("-buildwaitgraph")) {
         buildWaitGraph = gArgs.GetBoolArg("-buildwaitgraph", 0);

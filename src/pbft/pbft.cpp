@@ -7,7 +7,7 @@
 #include <pbft/pbft.h>
 #include "tx_placement/tx_placer.h"
 int32_t pbftID;
-uint32_t thruInterval; // calculate throughput once every "thruInterval" seconds
+struct timeval thruInterval; // calculate throughput once every "thruInterval" seconds
 
 TxBlockInfo::TxBlockInfo(): blockHeight(0), n(0), outputShard(-1) { }
 TxBlockInfo::TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn, TxIndexOnChain latest_prereq_tx_in, int32_t outputShardIn): tx(txIn), blockHeight(blockHeightIn), n(nIn), latest_prereq_tx(latest_prereq_tx_in), outputShard(outputShardIn) { }
@@ -66,6 +66,7 @@ void CommittedTxHeap::push(const std::vector<TxIndexOnChain>& localCommittedTx) 
 	pq_.push(txIdx);
     }
     updateGreatestConsecutive();
+    std::cout << "after push, the minHeap size = " << pq_.size() << std::endl;
 }
 
 /* This method does not need to require the lock because it is only called by the the 
@@ -100,8 +101,8 @@ CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), latestConsecutive
     nextLogTime = {0, 0};
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
-    latencyFile.open("/home/l27ren/placement_outfiles/latency.out");
-    thruputFile.open("/home/l27ren/placement_outfiles/thruput.out");
+    latencyFile.open("/home/l27ren/tx_placement/latency.out");
+    thruputFile.open("/home/l27ren/tx_placement/thruput.out");
 }
 
 CPbft::~CPbft() {
@@ -130,16 +131,15 @@ void CPbft::logThruput(struct timeval& endTime) {
 	/* test just started. log the start time */
         thruputFile << endTime.tv_sec << "." << endTime.tv_usec << ", sending tx starts.\n";
 	testStartTime = endTime;
-	/* log when thruInterval seconds has passed by  */
-	nextLogTime.tv_sec = endTime.tv_sec + thruInterval;
-	nextLogTime.tv_usec = endTime.tv_usec;
+	/* log when thruInterval has passed by  */
+	nextLogTime = endTime + thruInterval;
 	return;
     }
     uint32_t nCompletedTxCopy = nCompletedTx.load(std::memory_order_relaxed); 
-    double thruput = (nCompletedTxCopy - nLastCompletedTx) / ((endTime.tv_sec - nextLogTime.tv_sec + thruInterval) + (endTime.tv_usec - nextLogTime.tv_usec) * 0.000001);
-    /* log when thruInterval seconds has passed by  */
-    nextLogTime.tv_sec = endTime.tv_sec + thruInterval;
-    nextLogTime.tv_usec = endTime.tv_usec;
+    struct timeval timeElapsed = endTime - (nextLogTime - thruInterval);
+    double thruput = (nCompletedTxCopy - nLastCompletedTx) / (timeElapsed.tv_sec + timeElapsed.tv_usec * 0.000001);
+
+    nextLogTime = endTime + thruInterval;
     nLastCompletedTx = nCompletedTxCopy;
     thruputFile << endTime.tv_sec << "." << endTime.tv_usec << "," << nCompletedTxCopy << "," << thruput << std::endl;
 }
