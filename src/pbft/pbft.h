@@ -26,7 +26,7 @@
 #include <fstream>
 
 extern int32_t pbftID;
-extern uint32_t thruInterval;
+extern struct timeval thruInterval;
 
 struct LockReply{
     std::map<int32_t, std::vector<CInputShardReply>> lockReply;
@@ -238,6 +238,30 @@ private:
     // private ECDSA key used to sign messages
     CKey privateKey;
 };
+
+inline struct timeval operator+(const struct timeval& t0, const struct timeval& t1)
+{
+    struct timeval t = {t0.tv_sec + t1.tv_sec, t0.tv_usec + t1.tv_usec};
+    if (t.tv_usec >= 1000000) { // carry needed
+	    t.tv_sec++;
+	    t.tv_usec -= 1000000;
+    }
+    return t;
+}
+
+inline struct timeval operator-(const struct timeval& t0, const struct timeval& t1)
+{
+    struct timeval t = {t0.tv_sec - t1.tv_sec, t0.tv_usec - t1.tv_usec};
+    if (t.tv_usec < 0) { // borrow needed
+	    t.tv_sec--;
+	    t.tv_usec += 1000000;
+    }
+    return t;
+}
+
+inline bool operator>=(const struct timeval& t0, const struct timeval& t1) {
+    return (t0.tv_sec > t1.tv_sec) || (t0.tv_sec == t1.tv_sec && t0.tv_usec >= t1.tv_usec);
+}
 
 extern std::unique_ptr<CPbft> g_pbft;
 

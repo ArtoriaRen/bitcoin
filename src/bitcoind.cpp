@@ -55,8 +55,7 @@ void WaitForShutdown()
 	/* log throughput if enough long time has elapsed. */
 	struct timeval currentTime;
 	gettimeofday(&currentTime, NULL);
-	long time_elapsed = (currentTime.tv_sec - pbft.nextLogTime.tv_sec) * 1000000 + (currentTime.tv_usec - pbft.nextLogTime.tv_usec); 
-	if (testStarted && !testFinished && time_elapsed >= thruInterval) {
+	if (testStarted && !testFinished && currentTime >= pbft.nextLogTime) {
 	    pbft.logThruput(currentTime);
 	}
 	if (!testStarted) {

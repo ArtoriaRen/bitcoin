@@ -2048,7 +2048,7 @@ void CConnman::ThreadMessageHandler(uint threadIdx)
 
 	struct timeval currentTime;
 	gettimeofday(&currentTime, NULL);
-	long time_elapsed = (currentTime.tv_sec - lastGlobalStateUpdateTime.tv_sec) * 1000000 + (currentTime.tv_usec - lastGlobalStateUpdateTime.tv_usec); 
+	struct timeval time_elapsed = currentTime - lastGlobalStateUpdateTime;
 	if (time_elapsed >= thruInterval) {
 	    /* update global statistics */
 	    pbft.nCompletedTx.fetch_add(nLocalCompletedTxPerInterval, std::memory_order_relaxed); 

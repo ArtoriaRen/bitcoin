@@ -257,8 +257,6 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 	return true;
 }
 
-void loadDependencyGraph();
-
 TxIndexOnChain::TxIndexOnChain(): block_height(0), offset_in_block(0) { }
 
 TxIndexOnChain::TxIndexOnChain(uint32_t block_height_in, uint32_t offset_in_block_in):
