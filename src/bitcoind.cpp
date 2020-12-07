@@ -44,7 +44,6 @@ void WaitForShutdown()
 {
     bool fShutdown = ShutdownRequested();
     CPbft& pbft = *g_pbft;
-    size_t lastCommittedTxDequeSize = 0;
     bool testStarted = false, testFinished = false;
     // Tell the main threads to shutdown.
     while (!fShutdown)

@@ -2056,13 +2056,6 @@ void CConnman::ThreadMessageHandler(uint threadIdx)
 	    nLocalCompletedTxPerInterval = 0;
 	    nLocalTotalFailedTxPerInterval = 0;
 	    lastGlobalStateUpdateTime = currentTime; 	
-
-	    if (!vCommittedTxIndex.empty()) {
-		/* append to the global data structure */
-		g_pbft->committedTxIndex.push(vCommittedTxIndex);
-		vCommittedTxIndex.clear();
-	    }
-
 	}
 
         std::unique_lock<std::mutex> lock(mutexMsgProc);

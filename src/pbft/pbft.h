@@ -24,6 +24,7 @@
 #include <queue>  
 #include <iostream>
 #include <fstream>
+#include <set>
 
 extern int32_t pbftID;
 extern struct timeval thruInterval;
@@ -77,10 +78,9 @@ public:
     CTransactionRef tx;
     uint32_t blockHeight;
     uint32_t n;  // n-th tx in the block body
-    TxIndexOnChain latest_prereq_tx;
     
     TxBlockInfo();
-    TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn, TxIndexOnChain latest_prereq_tx_in);
+    TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn);
     friend bool operator<(const TxBlockInfo& a, const TxBlockInfo& b);
     friend bool operator>(const TxBlockInfo& a, const TxBlockInfo& b);
 };
@@ -147,23 +147,27 @@ private:
 
 
 /*Thread-safe min heap*/
-class CommittedTxHeap{
+class ThreadSafeTxIndexSet{
 public:
 
-    void push(const std::vector<TxIndexOnChain>& localCommittedTx);
-
-    /* Sort the underlying deque and find the greatest element whose value equals 
-     * its index + latestConsecutiveCommittedTx.
-     * Also remove elements less than the greatest consecutive element. 
-     * Need to know block sizes, which is available through chainActive. 
+    /* this method does not requir the lock b/c it is only called by the init 
+     * thread before tx-sending threads are created.
      */
-    size_t updateGreatestConsecutive();
+    void lock_free_insert(const TxIndexOnChain& txIdx);
+
+    /* remove an element. Called by msghand thread. */
+    void erase(const TxIndexOnChain& txIdx);
+
+    /* check if an element exist in the underlining set. 
+     * Called by tx-sending thread. 
+     */
+    bool haveTx(const TxIndexOnChain& txIdx);
 
     size_t size();
     bool empty();
 
 private:
-    std::priority_queue<TxIndexOnChain, std::deque<TxIndexOnChain>, std::greater<TxIndexOnChain>> pq_;
+    std::set<TxIndexOnChain> set_;
     std::mutex mutex_;
     std::condition_variable cond_;
 };
@@ -213,8 +217,8 @@ public:
     
     ThreadSafeQueue txResendQueue;
 
-    std::atomic<TxIndexOnChain> latestConsecutiveCommittedTx;
-    CommittedTxHeap committedTxIndex;
+    std::map<TxIndexOnChain, std::vector<TxIndexOnChain>> mapDependency; // <tx, latest_prereq_tx>
+    ThreadSafeTxIndexSet uncommittedPrereqTxSet;
     
     std::ofstream latencyFile;
     std::ofstream thruputFile;
@@ -233,6 +237,7 @@ public:
     ~CPbft();
     bool checkReplySig(const CReply* pReply) const;
     void logThruput(struct timeval& endTime);
+    void loadDependencyGraph();
 
 private:
     // private ECDSA key used to sign messages

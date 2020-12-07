@@ -29,7 +29,7 @@ extern int lastAssignedAffinity;
 class DependencyRecord {
 public:
     TxIndexOnChain tx;
-    TxIndexOnChain latest_prereq_tx;
+    TxIndexOnChain prereq_tx;
 
     DependencyRecord();
     DependencyRecord(const uint32_t block_height, const uint32_t offset_in_block, const TxIndexOnChain& latest_prereq_tx_in);
@@ -37,13 +37,13 @@ public:
     template<typename Stream>
     void Serialize(Stream& s) const{
 	tx.Serialize(s);
-	latest_prereq_tx.Serialize(s);
+	prereq_tx.Serialize(s);
     }
 
     template<typename Stream>
     void Unserialize(Stream& s) {
 	tx.Unserialize(s);
-	latest_prereq_tx.Unserialize(s);
+	prereq_tx.Unserialize(s);
     }
 };
 
@@ -51,7 +51,6 @@ class TxPlacer{
 public:
     std::map<uint, std::map<uint, uint>> shardCntMap; // < input_utxo_count, shard_count, tx_count>
     uint totalTxNum;
-    std::map<TxIndexOnChain, TxIndexOnChain> mapDependency; // <tx, latest_prereq_tx>
 
     /* return the number of shards that input UTXOs and output UTXOs span */
     TxPlacer();
@@ -64,9 +63,6 @@ public:
     int32_t randomPlaceUTXO(const uint256& txid);
 
     void printPlaceResult();
-
-    void loadDependencyGraph();
-
 };
 
 void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thread_idx, const uint32_t num_threads, const int noop_count);
