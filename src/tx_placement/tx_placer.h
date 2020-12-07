@@ -67,7 +67,7 @@ public:
 class DependencyRecord {
 public:
     TxIndexOnChain tx;
-    TxIndexOnChain latest_prereq_tx;
+    TxIndexOnChain prereq_tx;
 
     DependencyRecord();
     DependencyRecord(const uint32_t block_height, const uint32_t offset_in_block, const TxIndexOnChain& latest_prereq_tx_in);
@@ -75,13 +75,13 @@ public:
     template<typename Stream>
     void Serialize(Stream& s) const{
 	tx.Serialize(s);
-	latest_prereq_tx.Serialize(s);
+	prereq_tx.Serialize(s);
     }
 
     template<typename Stream>
     void Unserialize(Stream& s) {
 	tx.Unserialize(s);
-	latest_prereq_tx.Unserialize(s);
+	prereq_tx.Unserialize(s);
     }
 };
 

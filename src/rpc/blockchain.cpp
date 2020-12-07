@@ -1678,20 +1678,14 @@ UniValue gendependgraph(const JSONRPCRequest& request)
 	for (uint i = 1; i < block.vtx.size(); i++) {
 	    const CTransactionRef pTx = block.vtx[i];
 	    const uint256& txid = pTx->GetHash();
-	    TxIndexOnChain latest_prereq_tx;
 	    for (const CTxIn& txin: pTx->vin) {
 		if (mapTxid2Index.find(txin.prevout.hash) != mapTxid2Index.end()) {
 		    std::cout << "tx (" << block_height << ", " << i << ") depends on "
 			    << mapTxid2Index[txin.prevout.hash].ToString() << std::endl;
-		    latest_prereq_tx = std::max(latest_prereq_tx, mapTxid2Index[txin.prevout.hash]);
+                    DependencyRecord(block_height, i, mapTxid2Index[txin.prevout.hash]).Serialize(outfile);
 		}
 	    }
 
-	    if (!latest_prereq_tx.IsNull()) {
-		std::cout << "latest prereq = " << latest_prereq_tx.ToString() << std::endl;
-		DependencyRecord(block_height, i, latest_prereq_tx).Serialize(outfile);
-	    }
-	    
 	    mapTxid2Index.insert(std::make_pair(txid, TxIndexOnChain(block_height, i)));
 	}
     }
@@ -1715,7 +1709,7 @@ UniValue printdependgraph(const JSONRPCRequest& request) {
     DependencyRecord dpRec;
     dpRec.Unserialize(dependencyFileStream);
     while (!dependencyFileStream.eof()) {
-	std::cout << dpRec.tx.ToString() << ": " << dpRec.latest_prereq_tx.ToString() << std::endl;
+	std::cout << dpRec.tx.ToString() << ": " << dpRec.prereq_tx.ToString() << std::endl;
 	dpRec.Unserialize(dependencyFileStream);
     }
     dependencyFileStream.close();

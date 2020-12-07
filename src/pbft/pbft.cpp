@@ -6,11 +6,12 @@
 
 #include <pbft/pbft.h>
 #include "tx_placement/tx_placer.h"
+
 int32_t pbftID;
 struct timeval thruInterval; // calculate throughput once every "thruInterval" seconds
 
 TxBlockInfo::TxBlockInfo(): blockHeight(0), n(0), outputShard(-1) { }
-TxBlockInfo::TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn, TxIndexOnChain latest_prereq_tx_in, int32_t outputShardIn): tx(txIn), blockHeight(blockHeightIn), n(nIn), latest_prereq_tx(latest_prereq_tx_in), outputShard(outputShardIn) { }
+TxBlockInfo::TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn, int32_t outputShardIn): tx(txIn), blockHeight(blockHeightIn), n(nIn), outputShard(outputShardIn) { }
 
 ThreadSafeQueue::ThreadSafeQueue() { }
 
@@ -60,43 +61,36 @@ bool ThreadSafeQueue::empty() {
     return queue_.empty();
 }
 
-void CommittedTxHeap::push(const std::vector<TxIndexOnChain>& localCommittedTx) {
+void ThreadSafeTxIndexSet::lock_free_insert(const TxIndexOnChain& txIdx) {
+    set_.insert(txIdx);
+} 
+
+void ThreadSafeTxIndexSet::erase(const TxIndexOnChain& txIdx) {
     std::unique_lock<std::mutex> mlock(mutex_);
-    for (const TxIndexOnChain& txIdx: localCommittedTx) {
-	pq_.push(txIdx);
-    }
-    updateGreatestConsecutive();
-    std::cout << "after push, the minHeap size = " << pq_.size() << std::endl;
+    set_.erase(txIdx);
 }
 
-/* This method does not need to require the lock because it is only called by the the 
- * above push method, which holds the lock already when calling this function.*/
-size_t CommittedTxHeap::updateGreatestConsecutive(){
-    TxIndexOnChain LCCTx = g_pbft->latestConsecutiveCommittedTx.load(std::memory_order_relaxed);
-    int i = 1;
-    while (!pq_.empty() && pq_.top() == LCCTx + i) {
-	pq_.pop();
-	i++;
-    }
-    LCCTx = LCCTx + (i - 1);
-    g_pbft->latestConsecutiveCommittedTx.store(LCCTx, std::memory_order_relaxed);
-    std::cout << "latest consecutive commited tx = " << LCCTx.ToString() << std::endl;
-    return pq_.size();
+bool ThreadSafeTxIndexSet::haveTx(const TxIndexOnChain& txIdx) {
+    std::unique_lock<std::mutex> mlock(mutex_);
+    if (set_.find(txIdx) != set_.end()) 
+        return true;
+    else
+        return false;
 }
 
-size_t CommittedTxHeap::size() {
+size_t ThreadSafeTxIndexSet::size() {
     std::unique_lock<std::mutex> mlock(mutex_);
-    size_t size = pq_.size();
+    const size_t size = set_.size();
     mlock.unlock();
     return size;
 }
 
-bool CommittedTxHeap::empty() {
+bool ThreadSafeTxIndexSet::empty() {
     std::unique_lock<std::mutex> mlock(mutex_);
-    return pq_.empty();
+    return set_.empty();
 }
 
-CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), latestConsecutiveCommittedTx(TxIndexOnChain(600999, 2932)), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nTotalSentTx(0), privateKey(CKey()) {
+CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nTotalSentTx(0), privateKey(CKey()) {
     testStartTime = {0, 0};
     nextLogTime = {0, 0};
     privateKey.MakeNewKey(false);
@@ -144,14 +138,18 @@ void CPbft::logThruput(struct timeval& endTime) {
     thruputFile << endTime.tv_sec << "." << endTime.tv_usec << "," << nCompletedTxCopy << "," << thruput << std::endl;
 }
 
-bool operator<(const TxBlockInfo& a, const TxBlockInfo& b)
-{
-    return a.latest_prereq_tx < b.latest_prereq_tx;
-}
-
-bool operator>(const TxBlockInfo& a, const TxBlockInfo& b)
-{
-    return a.latest_prereq_tx > b.latest_prereq_tx;
+void CPbft::loadDependencyGraph (){
+    std::ifstream dependencyFileStream;
+    dependencyFileStream.open(getDependencyFilename());
+    assert(!dependencyFileStream.fail());
+    DependencyRecord dpRec;
+    dpRec.Unserialize(dependencyFileStream);
+    while (!dependencyFileStream.eof()) {
+	mapDependency[dpRec.tx].push_back(dpRec.prereq_tx);
+        uncommittedPrereqTxSet.lock_free_insert(dpRec.prereq_tx);
+	dpRec.Unserialize(dependencyFileStream);
+    }
+    dependencyFileStream.close();
 }
 
 std::unique_ptr<CPbft> g_pbft;

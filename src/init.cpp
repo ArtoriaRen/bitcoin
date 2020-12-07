@@ -1786,6 +1786,7 @@ bool AppInitMain()
 
     //if (buildWaitGraph)
     //   buildDependencyGraph(601000);
+    g_pbft->loadDependencyGraph();
 
     return true;
 }
