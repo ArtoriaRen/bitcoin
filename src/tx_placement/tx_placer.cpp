@@ -31,7 +31,7 @@ size_t txChunkSize = 100;
 //uint32_t txEndBlock;
 
 
-static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, int noop_count, std::deque<TxBlockInfo>& qDelaySendingTx);
+static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, int noop_count, std::list<TxBlockInfo>& qDelaySendingTx);
 
 TxPlacer::TxPlacer():totalTxNum(0){}
 
@@ -86,18 +86,20 @@ void TxPlacer::printPlaceResult(){
     }
 } 
 
-static uint32_t sendQueuedTx(std::deque<TxBlockInfo>& qDelaySendingTx) {
+static uint32_t sendQueuedTx(std::list<TxBlockInfo>& listDelaySendingTx) {
     int txSentCnt = 0;
     auto& mapDependency = g_pbft->mapDependency; 
-    for (auto iter = qDelaySendingTx.begin(); iter != qDelaySendingTx.end(); iter++) {
+    auto iter = listDelaySendingTx.begin();
+    while (iter != listDelaySendingTx.end()) {
         const TxIndexOnChain txIdx(iter->blockHeight, iter->n);
         for (auto& prereqTx: mapDependency[txIdx] ) {
             if (g_pbft->uncommittedPrereqTxSet.haveTx(prereqTx)) {
+                iter++;
                 continue;
             }
         }
         sendTx(iter->tx, iter->n, iter->blockHeight);
-        qDelaySendingTx.erase(iter);
+        iter = listDelaySendingTx.erase(iter);
         txSentCnt++;
     }
     return txSentCnt;
@@ -108,7 +110,7 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
     RenameThread(("sendTx" + std::to_string(thread_idx)).c_str());
     uint32_t cnt = 0;
     const uint32_t jump_length = num_threads * txChunkSize;
-    std::deque<TxBlockInfo> qDelaySendingTx;
+    std::list<TxBlockInfo> listDelaySendingTx;
     TxPlacer txPlacer;
     for (int block_height = startBlock; block_height < endBlock; block_height++) {
 	CBlock block;
@@ -119,28 +121,28 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
 	std::cout << " block_height = " << block_height  << ", thread_idx = " << thread_idx << ", block vtx size = " << block.vtx.size() << std::endl;
 	for (size_t i = thread_idx * txChunkSize; i < block.vtx.size(); i += jump_length){
 	    std::cout << __func__ << ": thread " << thread_idx << " sending No." << i << " tx in block " << block_height << std::endl;
-	    uint32_t actual_chunk_size = sendTxChunk(block, block_height, i, noop_count, qDelaySendingTx);
+	    uint32_t actual_chunk_size = sendTxChunk(block, block_height, i, noop_count, listDelaySendingTx);
 	    cnt += actual_chunk_size;
 	    std::cout << __func__ << ": thread " << thread_idx << " sent " << actual_chunk_size << " tx in block " << block_height << std::endl;
 	}
 
 	/* check delay sending tx.  */
-        cnt += sendQueuedTx(qDelaySendingTx);
+        cnt += sendQueuedTx(listDelaySendingTx);
     }
     /* send all remaining tx in the queue.  */
     std::cout << "sending remaining tx" << std::endl;
-    while (!qDelaySendingTx.empty()) {
+    while (!listDelaySendingTx.empty()) {
 	/* sleep for a while to give depended tx enough time to finish. */
 	usleep(100);
 	if (ShutdownRequested())
 		break;
-        cnt += sendQueuedTx(qDelaySendingTx);
+        cnt += sendQueuedTx(listDelaySendingTx);
     }
     std::cout << __func__ << ": thread " << thread_idx << " sent " << cnt << " tx in total" << std::endl;
     //count.set_value(cnt);
 }
 
-static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, int noop_count, std::deque<TxBlockInfo>& qDelaySendingTx) {
+static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, int noop_count, std::list<TxBlockInfo>& listDelaySendingTx) {
     uint32_t cnt = 0;
     uint32_t end_tx = std::min(start_tx + txChunkSize, block.vtx.size());
     auto& mapDependency = g_pbft->mapDependency; 
@@ -152,7 +154,7 @@ static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const 
             for (auto& prereqTx: it->second) {
                 if (g_pbft->uncommittedPrereqTxSet.haveTx(prereqTx)) {
                     /* the prereq tx has not been committed yet, enqueue and send later */
-                    qDelaySendingTx.emplace_back(block.vtx[j], block_height, j);
+                    listDelaySendingTx.emplace_back(block.vtx[j], block_height, j);
                     continue;
                 }
             }
