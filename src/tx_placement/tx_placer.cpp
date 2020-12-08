@@ -86,11 +86,25 @@ void TxPlacer::printPlaceResult(){
     }
 } 
 
-static uint32_t sendQueuedTx(std::list<TxBlockInfo>& listDelaySendingTx) {
+static void delayByNoop(const int noop_count) {
+    int k = 0;
+    uint oprand = noop_count;
+
+    for (; k < noop_count; k++) {
+	if (ShutdownRequested())
+	    return;
+	oprand ^= k;
+    }
+    std::cerr << "loop noop for " << k << " times. oprand becomes " << oprand << std::endl;
+}
+
+static uint32_t sendQueuedTx(std::list<TxBlockInfo>& listDelaySendingTx, const int noop_count) {
     int txSentCnt = 0;
     auto& mapDependency = g_pbft->mapDependency; 
     auto iter = listDelaySendingTx.begin();
     while (iter != listDelaySendingTx.end()) {
+	if (ShutdownRequested())
+	    return txSentCnt;
         const TxIndexOnChain txIdx(iter->blockHeight, iter->n);
 	bool prereqTxCleared = true;
         for (auto& prereqTx: mapDependency[txIdx] ) {
@@ -101,15 +115,16 @@ static uint32_t sendQueuedTx(std::list<TxBlockInfo>& listDelaySendingTx) {
         }
 	if (prereqTxCleared) {
 	    /* All prereqTx have been committed, ready to send this tx. */
-	    std::cout << "sending queued tx (" << iter->blockHeight << ", " << iter->n << ")" << std::endl;
+	    //std::cout << "sending queued tx (" << iter->blockHeight << ", " << iter->n << ")" << std::endl;
 	    sendTx(iter->tx, iter->n, iter->blockHeight);
 	    iter = listDelaySendingTx.erase(iter);
 	    txSentCnt++;
+	    delayByNoop(noop_count);
 	} else {
 	    iter++;
 	}
     }
-    std::cout << __func__ << " sent " <<  txSentCnt << " queued tx. queue size = "  << listDelaySendingTx.size() << std::endl;
+    //std::cout << __func__ << " sent " <<  txSentCnt << " queued tx. queue size = "  << listDelaySendingTx.size() << std::endl;
     return txSentCnt;
 }
 
@@ -121,6 +136,9 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
     std::list<TxBlockInfo> listDelaySendingTx;
     TxPlacer txPlacer;
     for (int block_height = startBlock; block_height < endBlock; block_height++) {
+	if (ShutdownRequested())
+	    break;
+
 	CBlock block;
 	CBlockIndex* pblockindex = chainActive[block_height];
 	if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
@@ -135,27 +153,29 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
 	}
 
 	/* check delay sending tx.  */
-        cnt += sendQueuedTx(listDelaySendingTx);
+        cnt += sendQueuedTx(listDelaySendingTx, noop_count);
     }
     /* send all remaining tx in the queue.  */
-    std::cout << "sending remaining tx" << std::endl;
-    while (!listDelaySendingTx.empty()) {
-	/* sleep for a while to give depended tx enough time to finish. */
-	usleep(100);
-	if (ShutdownRequested())
-		break;
-        cnt += sendQueuedTx(listDelaySendingTx);
-    }
-    std::cout << __func__ << ": thread " << thread_idx << " sent " << cnt << " tx in total" << std::endl;
-    //count.set_value(cnt);
+    //std::cout << "sending remaining tx" << std::endl;
+    //while (!listDelaySendingTx.empty()) {
+    //    /* sleep for a while to give depended tx enough time to finish. */
+    //    usleep(100);
+    //    if (ShutdownRequested())
+    //    	break;
+    //    cnt += sendQueuedTx(listDelaySendingTx);
+    //}
+    std::cout << __func__ << ": thread " << thread_idx << " sent " << cnt << " tx in total. queue size = "  << listDelaySendingTx.size() << std::endl;
 }
 
-static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, int noop_count, std::list<TxBlockInfo>& listDelaySendingTx) {
+static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, const int noop_count, std::list<TxBlockInfo>& listDelaySendingTx) {
     uint32_t cnt = 0;
     uint32_t end_tx = std::min(start_tx + txChunkSize, block.vtx.size());
     auto& mapDependency = g_pbft->mapDependency; 
 
     for (uint j = start_tx; j < end_tx; j++) {
+	if (ShutdownRequested())
+	    break;
+
 	TxIndexOnChain txIdx(block_height,j);
 	auto it = mapDependency.find(txIdx);
 	bool prereqTxCleared = true;
@@ -174,15 +194,7 @@ static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const 
 	    sendTx(block.vtx[j], j, block_height);
 	    cnt++;
 	    /* delay by doing noop. */
-	    int k = 0;
-	    uint oprand = noop_count;
-
-	    for (; k < noop_count; k++) {
-		if (ShutdownRequested())
-		    return cnt;
-		oprand ^= k;
-	    }
-	    std::cerr << "loop noop for " << k << " times. oprand becomes " << oprand << std::endl;
+	    delayByNoop(noop_count);
 	} 
     }
     return cnt;
@@ -194,20 +206,15 @@ uint32_t sendAllTailTx(int noop_count) {
     std::cout << "sending " << g_pbft->txResendQueue.size() << " tail tx ... " << std::endl;
     uint32_t cnt = 0;
     while (!g_pbft->txResendQueue.empty()) {
+	if (ShutdownRequested())
+	    break;
+
 	TxBlockInfo& txInfo = g_pbft->txResendQueue.front();
 	sendTx(txInfo.tx, txInfo.n, txInfo.blockHeight);
 	g_pbft->txResendQueue.pop_front();
 	cnt++;
 	/* delay by doing noop. */
-	int k = 0;
-	uint oprand = noop_count;
-
-	for (; k < noop_count; k++) {
-	    if (ShutdownRequested())
-	    	return cnt;
-	    oprand ^= k;
-	}
-	std::cerr << "loop noop for " << k << " times. oprand becomes " << oprand << std::endl;
+	delayByNoop(noop_count);
     }
     return cnt;
 }
@@ -221,10 +228,10 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 
 	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	assert((tx->IsCoinBase() && shards.size() == 1) || (!tx->IsCoinBase() && shards.size() >= 2)); // there must be at least one output shard and one input shard for non-coinbase tx.
-	std::cout << idx << "-th" << " tx "  <<  hashTx.GetHex().substr(0, 10) << " : ";
-	for (int shard : shards)
-	    std::cout << shard << ", ";
-	std::cout << std::endl;
+	//std::cout << idx << "-th" << " tx "  <<  hashTx.GetHex().substr(0, 10) << " : ";
+	//for (int shard : shards)
+	//    std::cout << shard << ", ";
+	//std::cout << std::endl;
 
 	/* send tx and collect time info to calculate latency. 
 	 * We also remove all reply msg for this req for resending aborted tx. */
