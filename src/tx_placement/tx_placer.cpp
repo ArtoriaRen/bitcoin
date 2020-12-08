@@ -192,16 +192,24 @@ static uint32_t sendQueuedTx(std::list<TxBlockInfo>& listDelaySendingTx, const T
     auto iter = listDelaySendingTx.begin();
     while (iter != listDelaySendingTx.end()) {
         const TxIndexOnChain txIdx(iter->blockHeight, iter->n);
+	bool prereqTxCleared = true;
         for (auto& prereqTx: mapDependency[txIdx] ) {
             if (g_pbft->uncommittedPrereqTxSet.haveTx(prereqTx)) {
-                iter++;
-                continue;
+		prereqTxCleared = false;
+                break;
             }
         }
-        txplacer.sendTx(iter->tx, iter->n, iter->blockHeight);
-        iter = listDelaySendingTx.erase(iter);
-        txSentCnt++;
+	if (prereqTxCleared) {
+	    /* All prereqTx have been committed, ready to send this tx. */
+	    std::cout << "sending queued tx (" << iter->blockHeight << ", " << iter->n << ")" << std::endl;
+	    txplacer.sendTx(iter->tx, iter->n, iter->blockHeight);
+	    iter = listDelaySendingTx.erase(iter);
+	    txSentCnt++;
+	} else {
+	    iter++;
+	}
     }
+    std::cout << __func__ << " sent " <<  txSentCnt << " queued tx. queue size = "  << listDelaySendingTx.size() << std::endl;
     return txSentCnt;
 }
 
@@ -422,41 +430,32 @@ static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const 
     for (uint j = start_tx; j < end_tx; j++) {
 	TxIndexOnChain txIdx(block_height,j);
 	auto it = mapDependency.find(txIdx);
+	bool prereqTxCleared = true;
 	if (it != mapDependency.end()) {
             for (auto& prereqTx: it->second) {
                 if (g_pbft->uncommittedPrereqTxSet.haveTx(prereqTx)) {
                     /* the prereq tx has not been committed yet, enqueue and send later */
+		    std::cout << "delay sending tx (" << block_height << ", " << j << ") " << std::endl;
                     listDelaySendingTx.emplace_back(block.vtx[j], block_height, j);
-                    continue;
+		    prereqTxCleared = false;
+                    break;
                 }
             }
 	}
-	txplacer.sendTx(block.vtx[j], j, block_height);
-	cnt++;
-	/* delay by doing noop. */
-	int k = 0;
-	uint oprand = noop_count;
+	if (prereqTxCleared) {
+	    txplacer.sendTx(block.vtx[j], j, block_height);
+	    cnt++;
+	    /* delay by doing noop. */
+	    int k = 0;
+	    uint oprand = noop_count;
 
-	for (; k < noop_count; k++) {
-	    if (ShutdownRequested())
-	    	return cnt;
-	    oprand ^= k;
-	}
-	std::cerr << "loop noop for " << k << " times. oprand becomes " << oprand << std::endl;
-
-	/* send one aborted tx every four tx */
-	if ((j & 0x04) == 0) {
-	    if (ShutdownRequested())
-	    	return cnt;
-	    //while (!g_pbft->txResendQueue.empty()) {
-	    //    TxBlockInfo& txInfo = g_pbft->txResendQueue.front();
-	    //    std::cout << "resend tx " << txInfo.tx->GetHash() << std::endl;
-	    //    sendTx(txInfo.tx, txInfo.n, txInfo.blockHeight);
-	    //    g_pbft->txResendQueue.pop_front();
-	    //    cnt++;
-	    //    //nanosleep(&sleep_length, NULL);
-	    //}
-	}
+	    for (; k < noop_count; k++) {
+		if (ShutdownRequested())
+		    return cnt;
+		oprand ^= k;
+	    }
+	    std::cerr << "loop noop for " << k << " times. oprand becomes " << oprand << std::endl;
+	} 
     }
     return cnt;
 }

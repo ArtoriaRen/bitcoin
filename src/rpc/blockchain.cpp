@@ -1678,12 +1678,16 @@ UniValue gendependgraph(const JSONRPCRequest& request)
 	for (uint i = 1; i < block.vtx.size(); i++) {
 	    const CTransactionRef pTx = block.vtx[i];
 	    const uint256& txid = pTx->GetHash();
+	    std::set<TxIndexOnChain> setPrereqTx;
 	    for (const CTxIn& txin: pTx->vin) {
 		if (mapTxid2Index.find(txin.prevout.hash) != mapTxid2Index.end()) {
-		    std::cout << "tx (" << block_height << ", " << i << ") depends on "
-			    << mapTxid2Index[txin.prevout.hash].ToString() << std::endl;
-                    DependencyRecord(block_height, i, mapTxid2Index[txin.prevout.hash]).Serialize(outfile);
+		    setPrereqTx.insert(mapTxid2Index[txin.prevout.hash]);
 		}
+	    }
+
+	    for (const TxIndexOnChain& prereqTx: setPrereqTx) {
+		std::cout << "tx (" << block_height << ", " << i << ") depends on " << prereqTx.ToString() << std::endl;
+		DependencyRecord(block_height, i, prereqTx).Serialize(outfile);
 	    }
 
 	    mapTxid2Index.insert(std::make_pair(txid, TxIndexOnChain(block_height, i)));
