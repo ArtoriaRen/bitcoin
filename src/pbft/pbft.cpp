@@ -29,7 +29,7 @@ std::string leaderAddrString;
 std::string clientAddrString;
 int32_t pbftID; 
 int32_t nMaxReqInFly; 
-int32_t reqWaitTimeout;
+int32_t reqWaitTimeout = 1000;
 int32_t maxBlockSize = 2000;
 int32_t warmUpMemoryPageCache = 1;
 
@@ -136,7 +136,6 @@ bool CPbft::ProcessPP(CConnman* connman, CPre_prepare& ppMsg) {
      -----Placeholder: to tolerate faulty nodes, we must check if all prepare msg matches the pre-prepare.
      */
 
-    std::cout << "digest = " << ppMsg.digest.GetHex() << std::endl;
 
     /* Enter prepare phase. */
     log[ppMsg.seq].phase = PbftPhase::prepare;
@@ -237,7 +236,6 @@ bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
     log[cMsg.seq].commitCount++;
     if (log[cMsg.seq].phase == PbftPhase::commit && log[cMsg.seq].commitCount >= (nFaulty << 1) + 1) {
         // enter reply phase
-        std::cout << "enter reply phase" << std::endl;
         log[cMsg.seq].phase = PbftPhase::reply;
 //	nReqInFly--; 
 	/* if some seq ahead of the cMsg.seq is not in the reply phase yet, 
@@ -270,7 +268,6 @@ bool CPbft::checkMsg(CPbftMessage* msg) {
         std::cerr << "verification sig fail" << std::endl;
         return false;
     }
-    std::cout << __func__ << ": sig ok" << std::endl;
     // server should be in the view
     if (localView != msg->view) {
         std::cerr << "server view = " << localView << ", but msg view = " << msg->view << std::endl;
@@ -402,13 +399,13 @@ void CPbft::WarmUpMemoryCache(CConnman* connman) {
     uint32_t nCompletedTx = 0;
     for (int i = 0; i < lastExecutedSeqWarmUp + 1; i++) {
 	uint32_t block_size = log[i].ppMsg.pbft_block.vReq.size();
-	std::cout << "executing warm-up block of size " << block_size << std::endl;
+	//std::cout << "executing warm-up block of size " << block_size << std::endl;
 
         log[i].ppMsg.pbft_block.WarmUpExecute(i, connman, view_tenta);
         /* Discard the block to prepare for performance test. */
         log[i].ppMsg.pbft_block.Clear();
 	nCompletedTx += block_size; 
-	std::cout << "total executed tx: " << nCompletedTx << std::endl;
+	//std::cout << "warm up -- total executed tx: " << nCompletedTx << std::endl;
     }
 }
 

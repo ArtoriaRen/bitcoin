@@ -1551,7 +1551,7 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, const std::ve
 
 bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman* connman, CPbft* pbft, const std::atomic<bool>& interruptMsgProc)
 {
-    std::cout << __func__ << ": " << strCommand << std::endl;
+    //std::cout << __func__ << ": " << strCommand << std::endl;
     LogPrint(BCLog::NET, "received: %s (%u bytes) peer=%d\n", SanitizeString(strCommand), vRecv.size(), pfrom->GetId());
     if (gArgs.IsArgSet("-dropmessagestest") && GetRand(gArgs.GetArg("-dropmessagestest", 0)) == 0)
     {
@@ -2965,12 +2965,11 @@ bool PeerLogicValidation::SendPPMessages(){
      *  
      */ 
     if (pbft->isLeader()) {
-	if (pbft->reqQueue.size() >= maxBlockSize || 
-	    (pbft->reqQueue.size() > 0 && pbft->timeoutWaitReq())) {
+	if (pbft->reqQueue.size() >= maxBlockSize
+			|| (pbft->reqQueue.size() > 0 && pbft->timeoutWaitReq())) {
 	    pbft->printQueueSize(); // only log queue size here cuz it will not change anywhere else
 	    CPbftBlock pbftblock(pbft->reqQueue.get_upto(static_cast<uint32_t>(maxBlockSize)));
 	    pbftblock.ComputeHash();
-	    std::cout << __func__ << ": block size = " << pbftblock.vReq.size() << " client reqs" << std::endl;
 	    CPre_prepare ppMsg = pbft->assemblePPMsg(pbftblock);
 	    pbft->log[ppMsg.seq].ppMsg = ppMsg;
 	    pbft->log[ppMsg.seq].phase = PbftPhase::prepare;
@@ -3144,7 +3143,7 @@ bool PeerLogicValidation::ProcessMessages(CNode* pfrom, std::atomic<bool>& inter
 
 bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman* connman, CPbft* pbft, const std::atomic<bool>& interruptMsgProc)
 {
-    std::cout << __func__ << ": " << strCommand << std::endl;
+    //std::cout << __func__ << ": " << strCommand << std::endl;
     LogPrint(BCLog::NET, "received: %s (%u bytes) peer=%d\n", SanitizeString(strCommand), vRecv.size(), pfrom->GetId());
     if (gArgs.IsArgSet("-dropmessagestest") && GetRand(gArgs.GetArg("-dropmessagestest", 0)) == 0)
     {
