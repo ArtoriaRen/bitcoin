@@ -19,6 +19,7 @@
 #include "init.h"
 #include <fstream>
 
+std::atomic<uint32_t> totalTxSent(0);
 static const uint32_t SEC = 1000000; // 1 sec = 10^6 microsecond
 
 uint32_t num_committees;
@@ -437,6 +438,7 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
     //    cnt += sendQueuedTx(listDelaySendingTx);
     //}
     std::cout << __func__ << ": thread " << thread_idx << " sent " << cnt << " tx in total. queue size = "  << listDelaySendingTx.size() << std::endl;
+    totalTxSent += cnt; 
 }
 
 static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, const int noop_count, const TxPlacer& txplacer, std::list<TxBlockInfo>& listDelaySendingTx) {

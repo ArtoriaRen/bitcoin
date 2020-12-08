@@ -21,6 +21,7 @@
 #include <future>
 #include "pbft/pbft.h"
 
+extern std::atomic<uint32_t> totalTxSent;
 extern uint32_t num_committees;
 extern int lastAssignedAffinity;
 //extern uint32_t txStartBlock;
