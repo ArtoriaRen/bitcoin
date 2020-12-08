@@ -220,7 +220,8 @@ public:
     std::map<TxIndexOnChain, std::vector<TxIndexOnChain>> mapDependency; // <tx, latest_prereq_tx>
     ThreadSafeTxIndexSet uncommittedPrereqTxSet;
     
-    std::ofstream latencyFile;
+    std::ofstream latencySingleShardFile;
+    std::ofstream latencyCrossShardFile;
     std::ofstream thruputFile;
     /* <txid, tx_start_time>
      * This map includes both single-shard and cross-shard tx.

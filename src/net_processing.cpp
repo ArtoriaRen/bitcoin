@@ -1503,7 +1503,7 @@ void static addCommittedTxIndex(const uint256& txid){
 
 bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman* connman, const std::atomic<bool>& interruptMsgProc, uint32_t& nLocalCompletedTxPerInterval, uint32_t& nLocalTotalFailedTxPerInterval, const uint threadIdx, std::vector<TxIndexOnChain>& vCommittedTxIndex)
 {
-    std::cout << __func__ << ": " << strCommand << std::endl;
+    //std::cout << __func__ << ": " << strCommand << std::endl;
     LogPrint(BCLog::NET, "received: %s (%u bytes) peer=%d\n", SanitizeString(strCommand), vRecv.size(), pfrom->GetId());
     if (gArgs.IsArgSet("-dropmessagestest") && GetRand(gArgs.GetArg("-dropmessagestest", 0)) == 0)
     {
@@ -1859,7 +1859,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	//if (!g_pbft->checkReplySig(&reply)) {
 	//    std::cout << strCommand << " from " << reply.peerID << " sig verification fail"  << std::endl;
 	//} 
-	std::cout << __func__ << ": received PBFT_REPLY for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
+	//std::cout << __func__ << ": received PBFT_REPLY for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
 	g_pbft->replyMap[reply.digest].emplace(pfrom->GetAddrName());
 	if (g_pbft->replyMap[reply.digest].size() == 2 * CPbft::nFaulty + 1) {
 	    struct timeval endTime;
@@ -1872,9 +1872,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		TxStat& stat = g_pbft->mapTxStartTime[reply.digest]; 
 		    
 		assert (stat.type == TxType::SINGLE_SHARD); 
-		std::cout << "tx " << reply.digest.GetHex().substr(0,10);
+		//std::cout << "tx " << reply.digest.GetHex().substr(0,10);
 		if (reply.reply == 'y') {
-			std::cout << ", SUCCEED, ";
+			std::cout << ", SUCCEED, " << std::endl;
 			addCommittedTxIndex(reply.digest);
 			g_pbft->txInFly.erase(reply.digest);
 			nLocalCompletedTxPerInterval++;
@@ -1883,7 +1883,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 			g_pbft->txResendQueue.push_back(g_pbft->txInFly[reply.digest]);
 			nLocalTotalFailedTxPerInterval++;
 		} 
-		g_pbft->latencyFile << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << "\n";
+		g_pbft->latencySingleShardFile << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << "\n";
 	    } else {
 		/* cross-shard tx */
 		auto& inputShardRplMap = g_pbft->inputShardReplyMap;
@@ -1891,12 +1891,12 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		//std::cout << "txid = " << txid.GetHex().substr(0, 10) << ", mapTxStartTime.size = " << g_pbft->mapTxStartTime.size() << std::endl;
 		assert(g_pbft->mapTxStartTime.exist(txid));
 		TxStat& stat = g_pbft->mapTxStartTime[txid]; 
-		std::cout << "tx " << txid.GetHex().substr(0,10);
+		//std::cout << "tx " << txid.GetHex().substr(0,10);
 		if (reply.reply == 'y' && inputShardRplMap[txid].decision.load(std::memory_order_relaxed) == 'c') {
 			/* only the output shard send committed reply, so no risk of 
 			 * printing info more than once for a tx. 
 			 */
-			std::cout << ", COMMITTED, ";
+			std::cout << ", COMMITTED, " << std::endl;
 			addCommittedTxIndex(txid);
 			g_pbft->txInFly.erase(txid);
 			nLocalCompletedTxPerInterval++;
@@ -1913,7 +1913,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		} else if (reply.reply == 'n') {
 			std::cout << " fail to commit or abort, ";
 		} 
-		std::cout << "cross-shard, result received at " << endTime.tv_sec << "." << endTime.tv_usec << " s, latency = " << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << " ms" << std::endl;
+		g_pbft->latencyCrossShardFile << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << "\n";
 	    }
 	}
     }
@@ -1925,12 +1925,12 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	if (g_pbft->inputShardReplyMap[reply.digest].decision.load(std::memory_order_relaxed) != '\0') {
 	    return true;
 	}
-	std::cout << __func__ << ": received "  << strCommand << "for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
-	if (!g_pbft->checkReplySig(&reply)) {
-	    std::cout << strCommand << " from " << reply.peerID << " sig verification fail"  << std::endl;
-	} else {
-	    std::cout << std::endl;
-	}
+	//std::cout << __func__ << ": received "  << strCommand << "for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
+	//if (!g_pbft->checkReplySig(&reply)) {
+	//    std::cout << strCommand << " from " << reply.peerID << " sig verification fail"  << std::endl;
+	//} else {
+	//    std::cout << std::endl;
+	//}
 
 	int shardID = reply.peerID/CPbft::groupSize;
 	std::vector<CInputShardReply>& shardReplies = g_pbft->inputShardReplyMap[reply.digest].lockReply[shardID];
@@ -1939,7 +1939,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	/* Check if the client has accumulated enough replies from every shard. If so, send a unlock_to_commit req to the output shard. */
 	bool isLeastReplyShard = true;
 	for (auto& p: g_pbft->inputShardReplyMap[reply.digest].lockReply) {
-	    std::cout << "shardId = " << p.first << ": number of lock replies = " << p.second.size() << std::endl;
+	    //std::cout << "shardId = " << p.first << ": number of lock replies = " << p.second.size() << std::endl;
 	    if (p.second.size() < shardReplies.size()) {
 		isLeastReplyShard = false;
 		break;
@@ -1981,7 +1981,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		/* other msghand threads has set the decision to commit and send commit req to all input shards. We do not need to do anything. */
 		return true;
 	    }
-	    std::cout << "tx " << reply.digest.GetHex().substr(0,10) << ", LOCK_OK, ";
+	    //std::cout << "tx " << reply.digest.GetHex().substr(0,10) << ", LOCK_OK, ";
 	    /* assemble a vector including (2f + 1) replies for every shard */
 	    std::vector<CInputShardReply> vReply;
 	    vReply.reserve(reply_threshold * g_pbft->inputShardReplyMap[reply.digest].lockReply.size());
@@ -1998,7 +1998,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
 	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	    int32_t outputShard = g_pbft->txInFly[reply.digest].outputShard;
-	    std::cout << "sending unlock_to_commit with req_hash = " << commitReq.GetDigest().GetHex().substr(0, 10) << " to shard " << outputShard << std::endl;
+	    //std::cout << "sending unlock_to_commit with req_hash = " << commitReq.GetDigest().GetHex().substr(0, 10) << " to shard " << outputShard << std::endl;
 	    connman->PushMessage(g_pbft->leaders[outputShard], msgMaker.Make(NetMsgType::OMNI_UNLOCK_COMMIT, commitReq));
 	} 
     }

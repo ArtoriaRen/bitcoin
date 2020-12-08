@@ -95,12 +95,14 @@ CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), nLastCompletedTx(
     nextLogTime = {0, 0};
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
-    latencyFile.open("/home/l27ren/tx_placement/latency.out");
+    latencySingleShardFile.open("/home/l27ren/tx_placement/latencySingleShard.out");
+    latencyCrossShardFile.open("/home/l27ren/tx_placement/latencyCrossShard.out");
     thruputFile.open("/home/l27ren/tx_placement/thruput.out");
 }
 
 CPbft::~CPbft() {
-    latencyFile.close();
+    latencySingleShardFile.close();
+    latencyCrossShardFile.close();
     thruputFile.close();
 }
 
