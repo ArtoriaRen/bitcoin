@@ -44,24 +44,16 @@ void WaitForShutdown()
 {
     bool fShutdown = ShutdownRequested();
     CPbft& pbft = *g_pbft;
-    bool testStarted = false, testFinished = false;
     // Tell the main threads to shutdown.
     while (!fShutdown)
     {
         MilliSleep(200);
 
-	/* print throughput */
 	/* log throughput if enough long time has elapsed. */
 	struct timeval currentTime;
 	gettimeofday(&currentTime, NULL);
-	if (testStarted && !testFinished && currentTime >= pbft.nextLogTime) {
+	if (pbft.testStartTime.tv_sec > 0 && !pbft.testFinished && currentTime >= pbft.nextLogTime) {
 	    pbft.logThruput(currentTime);
-	}
-	if (!testStarted) {
-	    testStarted = pbft.nTotalSentTx > 0;  // test has started
-	}
-	if (testStarted && !testFinished) {
-	    testFinished = pbft.nCompletedTx.load(std::memory_order_relaxed) + pbft.nTotalFailedTx.load(std::memory_order_relaxed) >= pbft.nTotalSentTx; // test has finished
 	}
         fShutdown = ShutdownRequested();
     }

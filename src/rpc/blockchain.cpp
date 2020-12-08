@@ -1467,61 +1467,24 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
     const uint num_threads = request.params[3].get_int();
     assert(num_threads >= 1);
     std::vector<std::thread> vThread;
-    //std::vector<std::promise<int>> counter(num_threads); // collect thread return value
-    //std::vector<std::future<int>> fut(num_threads);
-    //for (size_t i = 0; i < num_committees; i++) {
-    //    fut[i] = counter[i].get_future();
-    //}
 
-    struct timeval startTime, tailStartTime, tailEndTime;
-    uint32_t txCnt = 0, nonTailCnt = 0;
-    gettimeofday(&startTime, NULL); 
-    g_pbft->logThruput(startTime);
+    struct timeval startTime, endTime;
 
     /* creat threads to send tx.*/
     for (uint i = 0; i < num_threads; i++) {
-	//vThread.emplace_back(sendTxOfThread, vBlocksToSend, txStartBlock, i, num_threads, txSendPeriod, std::move(counter[i]));
 	vThread.emplace_back(sendTxOfThread, txStartBlock, txEndBlock, i, num_threads, noopCount);
     }
 
-    for (int i = txStartBlock; i < txEndBlock; i++) {
-	g_pbft->nTotalSentTx += chainActive[i]->nTx;
-    }
-
-    //uint32_t totalCnt = 0;
-    //for (uint i = 0; i < num_threads; i++) {
-    //    try {
-    //        totalCnt += fut[i].get();
-    //    } catch (const std::future_error& e) {
-    //        std::cout << "Caught a future_error with code \"" << e.code()
-    //    	      << "\"\nMessage: \"" << e.what() << "\"\n";
-    //    }
-    //}
-    //std::cout << totalCnt << " tx are sent. " << std::endl;
-
+    gettimeofday(&startTime, NULL); 
+    g_pbft->logThruput(startTime);
     for (uint i = 0; i < num_threads; i++) {
 	if (vThread[i].joinable())
 	    vThread[i].join();
     }
-
-    nonTailCnt = txCnt;
-    gettimeofday(&tailStartTime, NULL);
-    //txCnt += sendAllTailTx(txSendPeriod);
-    //std::cout << txCnt << " tail tx are sent. " << std::endl;
-
-    gettimeofday(&tailEndTime, NULL);
-    long sendDuration = (tailStartTime.tv_sec - startTime.tv_sec) * 1000000 
-	    + (tailStartTime.tv_usec - startTime.tv_usec);
-    //long tailDuration = (tailEndTime.tv_sec - tailStartTime.tv_sec) * 1000000 
-    //	    + (tailEndTime.tv_usec - tailStartTime.tv_usec);
-    std::cout << __func__ << ": send " << nonTailCnt << " non-tail tx in " << sendDuration
-	    << " us, actual sending rate = " << (double)nonTailCnt * 1000000 / sendDuration  
-	    << " tx/sec" << std::endl;
-//    uint32_t tailCnt = txCnt - nonTailCnt;
-//    std::cout << __func__ << ": send " << tailCnt << " tail tx in " << tailDuration
-//	    << " us, actual sending rate = " << (double)tailCnt * 1000000 / tailDuration  
-//	    << " tx/sec" << std::endl;
-
+    gettimeofday(&endTime, NULL);
+    g_pbft->testFinished = true;
+    long sendDuration = (endTime.tv_sec - startTime.tv_sec) * 1000000 + (endTime.tv_usec - startTime.tv_usec);
+    std::cout << __func__ << ": totally sent " << totalTxSent << " tx in " << sendDuration << " us, sending rate = " << (double)totalTxSent * 1000000 / sendDuration  << " tx/sec" << std::endl;
     return NullUniValue;
 }
 
