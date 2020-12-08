@@ -429,8 +429,6 @@ void CPbftBlock::ComputeHash(){
 }
 
 void CPbftBlock::WarmUpExecute(const int seq, CConnman* connman, CCoinsViewCache& view) const {
-    int32_t myShardId = pbftID/CPbft::groupSize;
-    TxPlacer txPlacer;
     for (uint i = 0; i < vReq.size(); i++) {
 	CTransaction tx(vReq[i].pReq->tx_mutable);
 	if (vReq[i].type == ClientReqType::TX) {
@@ -440,10 +438,8 @@ void CPbftBlock::WarmUpExecute(const int seq, CConnman* connman, CCoinsViewCache
 	    }
 	    UpdateCoins(tx, view, g_pbft->getBlockHeight(seq));
 	} else if (vReq[i].type == ClientReqType::LOCK) {
-	    for (CTxIn input: tx.vin) {
-		if (txPlacer.randomPlaceUTXO(input.prevout.hash) != myShardId)
-		    continue;
-		if (!view.HaveCoin(input.prevout)) {
+	    for (const uint32_t idx: (static_cast<LockReq*>(vReq[i].pReq.get()))->vInputUtxoIdxToLock) {
+		if (!view.HaveCoin(tx.vin[idx].prevout)) {
 		    std::cout << __func__ << ": LOCK " << tx.GetHash().GetHex() << " inputs missing/spent" << std::endl;
 		}
 	    }
