@@ -359,7 +359,7 @@ int CPbft::executeLog(const int seq, CConnman* connman) {
 }
 
 void CPbft::saveBlocks2File(const int numBlock) const {
-    FILE* file = fsbridge::fopen("pbft_blocks.out", "wb+");
+    FILE* file = fsbridge::fopen("pbft_blocks_tx_placement_smart.out", "wb+");
     if (!file) {
         std::cerr << "Unable to open PBFT block file to write." << std::endl;
         return;
