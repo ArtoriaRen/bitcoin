@@ -230,7 +230,6 @@ public:
     uint32_t nLastCompletedTx;
     std::atomic<uint32_t> nCompletedTx;
     std::atomic<uint32_t> nTotalFailedTx;
-    bool testFinished;
     struct timeval testStartTime;
     struct timeval nextLogTime;
 

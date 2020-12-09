@@ -24,6 +24,8 @@
 #include <stdio.h>
 #include <pbft/pbft.h>
 
+extern std::atomic<uint32_t> totalTxSent;
+
 /* Introduction text for doxygen: */
 
 /*! \mainpage Developer documentation
@@ -44,6 +46,7 @@ void WaitForShutdown()
 {
     bool fShutdown = ShutdownRequested();
     CPbft& pbft = *g_pbft;
+    bool testStarted = false, testFinished = false;
     // Tell the main threads to shutdown.
     while (!fShutdown)
     {
@@ -52,8 +55,14 @@ void WaitForShutdown()
 	/* log throughput if enough long time has elapsed. */
 	struct timeval currentTime;
 	gettimeofday(&currentTime, NULL);
-	if (pbft.testStartTime.tv_sec > 0 && !pbft.testFinished && currentTime >= pbft.nextLogTime) {
+	if (testStarted && !testFinished && currentTime >= pbft.nextLogTime) {
 	    pbft.logThruput(currentTime);
+	}
+	if (!testStarted) {
+	    testStarted = pbft.testStartTime.tv_sec > 0;  // test has started
+	}
+	if (totalTxSent > 0 && !testFinished) {
+	    testFinished = pbft.nCompletedTx.load(std::memory_order_relaxed) + pbft.nTotalFailedTx.load(std::memory_order_relaxed) >= totalTxSent; // test has finished
 	}
         fShutdown = ShutdownRequested();
     }
