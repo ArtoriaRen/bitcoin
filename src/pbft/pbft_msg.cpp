@@ -164,13 +164,13 @@ char LockReq::Execute(const int seq, CCoinsViewCache& view) const {
 //	    CBlockUndo blockundo;
     unsigned int flags = SCRIPT_VERIFY_NONE; // only verify pay to public key hash
 
-    /* Step 1: find all input UTXOs whose chainAffinity is our shard. Check if they are unspent.
+    /* Step 1: Check if input UTXOs to be locked are unspent.
      * We use INT_MAX as block height, so that we never fail coinbase maturity check. */
-    std::cout << "tx " << tx.GetHash().GetHex().substr(0, 10) << " locking inputs: ";
-    for(auto& inputidx: vInputUtxoIdxToLock) {
-	    std::cout << inputidx << ", ";
-    }
-    std::cout << std::endl;
+    //std::cout << "tx " << tx.GetHash().GetHex().substr(0, 10) << " locking inputs: ";
+    //for(auto& inputidx: vInputUtxoIdxToLock) {
+    //        std::cout << inputidx << ", ";
+    //}
+    //std::cout << std::endl;
     if (!Consensus::CheckLockReqInputs(tx, state, view, INT_MAX, totalValueInOfShard, vInputUtxoIdxToLock)) {
 	std::cerr << __func__ << ": Consensus::CheckTxInputs: " << tx.GetHash().ToString() << ", " << FormatStateMessage(state) << std::endl;
 	return 'n';

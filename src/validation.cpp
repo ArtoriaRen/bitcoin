@@ -1290,14 +1290,6 @@ void CChainState::InvalidBlockFound(CBlockIndex *pindex, const CValidationState 
 
 void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txundo, int nHeight)
 {
-    /* Use my shard id as the shard id of all output UTXOs. */
-    int32_t myShardId = pbftID/CPbft::groupSize;
-    
-    /* TODO: output shard should be the shard of the first input and should be the id
-     * of this shard. 
-     */
-//  assert(txPlacer.smartPlaceUTXO(tx.vin[0].prevout, inputs) == myShardId);
-
     // mark inputs spent
     if (!tx.IsCoinBase()) {
         txundo.vprevout.reserve(tx.vin.size());
@@ -1309,7 +1301,7 @@ void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txund
         }
     }
     // add outputs
-    AddCoins(inputs, tx, nHeight, myShardId);
+    AddCoins(inputs, tx, nHeight);
 }
 
 void UpdateLockCoins(const CTransaction& tx, const std::vector<uint32_t>& vInputUtxoIdxToLock, CCoinsViewCache& inputs, TxUndoInfo& undoInfo, int nHeight)
@@ -1330,19 +1322,8 @@ void UpdateLockCoins(const CTransaction& tx, const std::vector<uint32_t>& vInput
 
 void UpdateUnlockCommitCoins(const CTransaction& tx, CCoinsViewCache& inputs, int nHeight)
 {
-
-    /* for random placement, our shard id shoud be the random placement output 
-     * of the txid */
-    int32_t myShardId = pbftID/CPbft::groupSize;
-//    TxPlacer txPlacer;
-//    assert(txPlacer.randomPlaceUTXO(tx.GetHash()) == myShardId);
-
-    /* TODO: check if we are the output shard by checking the txUndoInfo of this tx.
-     * Remove the txUndo info if we are the output shard
-     */
-    
     // add outputs
-    AddCoins(inputs, tx, nHeight, myShardId);
+    AddCoins(inputs, tx, nHeight);
 }
 
 int ApplyTxInUndo(Coin&& undo, CCoinsViewCache& view, const COutPoint& out);
@@ -4069,7 +4050,6 @@ bool CChainState::RollforwardBlock(const CBlockIndex* pindex, CCoinsViewCache& i
 
     for (const CTransactionRef& tx : block.vtx) {
 	/* get the shard affinity for output UTXOs*/
-	int32_t shardAffinity = -1;
 //	if (tx->IsCoinBase()){
 //	    shardAffinity = TxPlacer().randomPlaceUTXO(tx->GetHash());
 //	} else {
@@ -4082,7 +4062,7 @@ bool CChainState::RollforwardBlock(const CBlockIndex* pindex, CCoinsViewCache& i
             }
         }
         // Pass check = true as every addition may be an overwrite.
-        AddCoins(inputs, *tx, pindex->nHeight, shardAffinity, true);
+        AddCoins(inputs, *tx, pindex->nHeight, true);
     }
     return true;
 }

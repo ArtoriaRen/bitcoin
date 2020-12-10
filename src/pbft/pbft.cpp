@@ -376,7 +376,7 @@ void CPbft::saveBlocks2File() const {
 }
 
 int CPbft::readBlocksFromFile() {
-    FILE* file = fsbridge::fopen("pbft_blocks_tx_placement.out", "rb");
+    FILE* file = fsbridge::fopen("pbft_blocks_tx_placement_smart.out", "rb");
     if (!file) {
         std::cerr << "Unable to open PBFT block file to read." << std::endl;
         return 0;
