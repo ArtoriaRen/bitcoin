@@ -91,9 +91,9 @@ public:
     std::map<uint, std::map<uint, uint>> shardCntMap; // < input_utxo_count, shard_count, tx_count>
     uint totalTxNum;
     std::vector<ShardInfo> vShardInfo;
+    std::map<TxIndexOnChain, ShardInfo> mapDelayedTxShardInfo;
     /* tx couter for load balancing. */
     std::vector<int32_t> vTxCnt;
-    std::map<TxIndexOnChain, TxIndexOnChain> mapDependency; // <tx, latest_prereq_tx>
 
     /* return the number of shards that input UTXOs and output UTXOs span */
     TxPlacer();
@@ -124,9 +124,7 @@ public:
     uint32_t sendAllTailTx(int txSendPeriod);
 
     /* return true if the tx is sent, false if the tx is queued. */
-    bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height) const;
-    void loadDependencyGraph();
-
+    bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height, const bool isDelayedTx = false);
 };
 
 typedef struct {

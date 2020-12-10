@@ -1926,11 +1926,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    return true;
 	}
 	//std::cout << __func__ << ": received "  << strCommand << "for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
-	//if (!g_pbft->checkReplySig(&reply)) {
-	//    std::cout << strCommand << " from " << reply.peerID << " sig verification fail"  << std::endl;
-	//} else {
-	//    std::cout << std::endl;
-	//}
+	if (!g_pbft->checkReplySig(&reply)) {
+	    std::cout << strCommand << " from " << reply.peerID << " sig verification fail"  << std::endl;
+	}
 
 	int shardID = reply.peerID/CPbft::groupSize;
 	std::vector<CInputShardReply>& shardReplies = g_pbft->inputShardReplyMap[reply.digest].lockReply[shardID];
@@ -1987,7 +1985,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    vReply.reserve(reply_threshold * g_pbft->inputShardReplyMap[reply.digest].lockReply.size());
 	    for (auto& p : g_pbft->inputShardReplyMap[reply.digest].lockReply) {
 		/* add the first (2f+1) replies of the current shard to the vector */
-		    std::cout << "shard " << p.first << " locks UTXO of value " << p.second[0].totalValueInOfShard << std::endl;
+		    //std::cout << "shard " << p.first << " locks UTXO of value " << p.second[0].totalValueInOfShard << std::endl;
 		vReply.insert(vReply.end(), p.second.begin(), p.second.begin() + 3);
 	    }
             

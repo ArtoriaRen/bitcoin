@@ -46,24 +46,25 @@ void WaitForShutdown()
 {
     bool fShutdown = ShutdownRequested();
     CPbft& pbft = *g_pbft;
-    bool testStarted = false, testFinished = false;
+    bool testStarted = false, testFinished = false, testFinishedNew = false;
+    struct timeval currentTime;
     // Tell the main threads to shutdown.
     while (!fShutdown)
     {
         MilliSleep(200);
 
-	/* log throughput if enough long time has elapsed. */
-	struct timeval currentTime;
-	gettimeofday(&currentTime, NULL);
-	if (testStarted && !testFinished && currentTime >= pbft.nextLogTime) {
-	    pbft.logThruput(currentTime);
-	}
 	if (!testStarted) {
 	    testStarted = pbft.testStartTime.tv_sec > 0;  // test has started
 	}
 	if (totalTxSent > 0 && !testFinished) {
-	    testFinished = pbft.nCompletedTx.load(std::memory_order_relaxed) + pbft.nTotalFailedTx.load(std::memory_order_relaxed) >= totalTxSent; // test has finished
+	    testFinishedNew = pbft.nCompletedTx.load(std::memory_order_relaxed) + pbft.nTotalFailedTx.load(std::memory_order_relaxed) >= totalTxSent; // test has finished
 	}
+	/* log throughput if enough long time has elapsed or the test has just finished. */
+	gettimeofday(&currentTime, NULL);
+	if (testStarted && !testFinished && (currentTime >= pbft.nextLogTime || testFinishedNew)) {
+	    pbft.logThruput(currentTime);
+	}
+	testFinished = testFinishedNew; 
         fShutdown = ShutdownRequested();
     }
     Interrupt();

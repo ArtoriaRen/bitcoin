@@ -52,7 +52,7 @@ void ShardInfo::print() const {
 }
 
 TxPlacer::TxPlacer():totalTxNum(0), vTxCnt(num_committees, 0){ }
-static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, int noop_count, const TxPlacer& txplacer, std::list<TxBlockInfo>& qDelaySendingTx);
+static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, int noop_count, TxPlacer& txplacer, std::list<TxBlockInfo>& qDelaySendingTx);
 
 /* all output UTXOs of a tx is stored in one shard. */
 std::vector<int32_t> TxPlacer::randomPlace(const CTransaction& tx){
@@ -199,7 +199,7 @@ static void delayByNoop(const int noop_count) {
     std::cerr << "loop noop for " << k << " times. oprand becomes " << oprand << std::endl;
 }
 
-static uint32_t sendQueuedTx(std::list<TxBlockInfo>& listDelaySendingTx, const int noop_count, const TxPlacer& txplacer) {
+static uint32_t sendQueuedTx(std::list<TxBlockInfo>& listDelaySendingTx, const int noop_count, TxPlacer& txplacer) {
     int txSentCnt = 0;
     auto& mapDependency = g_pbft->mapDependency; 
     auto iter = listDelaySendingTx.begin();
@@ -217,7 +217,7 @@ static uint32_t sendQueuedTx(std::list<TxBlockInfo>& listDelaySendingTx, const i
 	if (prereqTxCleared) {
 	    /* All prereqTx have been committed, ready to send this tx. */
 	    //std::cout << "sending queued tx (" << iter->blockHeight << ", " << iter->n << ")" << std::endl;
-	    txplacer.sendTx(iter->tx, iter->n, iter->blockHeight);
+	    txplacer.sendTx(iter->tx, iter->n, iter->blockHeight, true);
 	    iter = listDelaySendingTx.erase(iter);
 	    txSentCnt++;
 	    delayByNoop(noop_count);
@@ -402,7 +402,6 @@ void printShardAffinity(){
 void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thread_idx, const uint32_t num_threads, const int noop_count) {
     RenameThread(("sendTx" + std::to_string(thread_idx)).c_str());
     uint32_t cnt = 0;
-    TxPlacer txplacer;
     const uint32_t jump_length = num_threads * txChunkSize;
     std::list<TxBlockInfo> listDelaySendingTx;
     TxPlacer txPlacer;
@@ -415,14 +414,14 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
 	if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
 	    std::cerr << "Block not found on disk" << std::endl;
 	}
-	std::cout << " block_height = " << block_height  << ", thread_idx = " << thread_idx << ", block vtx size = " << block.vtx.size() << std::endl;
-        txplacer.loadShardInfo(block_height);
+	//std::cout << " block_height = " << block_height  << ", thread_idx = " << thread_idx << ", block vtx size = " << block.vtx.size() << std::endl;
+        txPlacer.loadShardInfo(block_height);
 
 	for (size_t i = thread_idx * txChunkSize; i < block.vtx.size(); i += jump_length){
-	    std::cout << __func__ << ": thread " << thread_idx << " sending No." << i << " tx in block " << block_height << std::endl;
+	    //std::cout << __func__ << ": thread " << thread_idx << " sending No." << i << " tx in block " << block_height << std::endl;
 	    uint32_t actual_chunk_size = sendTxChunk(block, block_height, i, noop_count, txPlacer, listDelaySendingTx);
 	    cnt += actual_chunk_size;
-	    std::cout << __func__ << ": thread " << thread_idx << " sent " << actual_chunk_size << " tx in block " << block_height << std::endl;
+	    //std::cout << __func__ << ": thread " << thread_idx << " sent " << actual_chunk_size << " tx in block " << block_height << std::endl;
 	}
 
 	/* check delay sending tx.  */
@@ -441,7 +440,7 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
     totalTxSent += cnt; 
 }
 
-static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, const int noop_count, const TxPlacer& txplacer, std::list<TxBlockInfo>& listDelaySendingTx) {
+static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, const int noop_count, TxPlacer& txplacer, std::list<TxBlockInfo>& listDelaySendingTx) {
     uint32_t cnt = 0;
     uint32_t end_tx = std::min(start_tx + txChunkSize, block.vtx.size());
     auto& mapDependency = g_pbft->mapDependency; 
@@ -457,8 +456,9 @@ static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const 
             for (auto& prereqTx: it->second) {
                 if (g_pbft->uncommittedPrereqTxSet.haveTx(prereqTx)) {
                     /* the prereq tx has not been committed yet, enqueue and send later */
-		    std::cout << "delay sending tx (" << block_height << ", " << j << ") " << std::endl;
+		    //std::cout << "delay sending tx (" << block_height << ", " << j << ") . current listDelaySendingTx size = " << listDelaySendingTx.size() << std::endl;
                     listDelaySendingTx.emplace_back(block.vtx[j], block_height, j);
+		    txplacer.mapDelayedTxShardInfo.emplace(txIdx, txplacer.vShardInfo[j]);
 		    prereqTxCleared = false;
                     break;
                 }
@@ -493,11 +493,19 @@ uint32_t TxPlacer::sendAllTailTx(int noop_count) {
     return cnt;
 }
 
-bool TxPlacer::sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height) const {
+bool TxPlacer::sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height, const bool isDelayedTx) {
 	const uint256& hashTx = tx->GetHash();
 	/* get the input shards and output shards id*/
-	const std::vector<int32_t>& shards = vShardInfo[idx].shards;
-	const std::vector<std::vector<uint32_t> >& vShardUtxoIdxToLock = vShardInfo[idx].vShardUtxoIdxToLock;
+	const ShardInfo* pShardInfo;
+	if (!isDelayedTx) {
+	    pShardInfo = &vShardInfo[idx];
+	} else {
+	    pShardInfo = &mapDelayedTxShardInfo[TxIndexOnChain(block_height, idx)];
+	}
+
+	const std::vector<int32_t>& shards = pShardInfo->shards;
+
+	const std::vector<std::vector<uint32_t> >& vShardUtxoIdxToLock = pShardInfo->vShardUtxoIdxToLock;
 
 	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	assert((tx->IsCoinBase() && shards.size() == 1) || (!tx->IsCoinBase() && shards.size() >= 2)); // there must be at least one output shard and one input shard for non-coinbase tx.
@@ -515,7 +523,7 @@ bool TxPlacer::sendTx(const CTransactionRef tx, const uint idx, const uint32_t b
 	 * the lastest_prereq_tx info is no longer need, so we can safely put a dummy
 	 * value. 
 	 */
-	g_pbft->txInFly.insert(std::make_pair(hashTx, std::move(TxBlockInfo(tx, block_height, idx))));
+	g_pbft->txInFly.insert(std::make_pair(hashTx, std::move(TxBlockInfo(tx, block_height, idx, shards[0]))));
 	struct TxStat stat;
 	if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
 	    /* this is a single shard tx */
