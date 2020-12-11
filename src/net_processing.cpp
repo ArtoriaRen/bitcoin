@@ -1874,7 +1874,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		assert (stat.type == TxType::SINGLE_SHARD); 
 		//std::cout << "tx " << reply.digest.GetHex().substr(0,10);
 		if (reply.reply == 'y') {
-			std::cout << ", SUCCEED, " << std::endl;
+			//std::cout << ", SUCCEED, " << std::endl;
 			addCommittedTxIndex(reply.digest);
 			g_pbft->txInFly.erase(reply.digest);
 			nLocalCompletedTxPerInterval++;
@@ -1896,7 +1896,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 			/* only the output shard send committed reply, so no risk of 
 			 * printing info more than once for a tx. 
 			 */
-			std::cout << ", COMMITTED, " << std::endl;
+			//std::cout << ", COMMITTED, " << std::endl;
 			addCommittedTxIndex(txid);
 			g_pbft->txInFly.erase(txid);
 			nLocalCompletedTxPerInterval++;

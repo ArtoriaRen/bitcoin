@@ -497,10 +497,13 @@ bool TxPlacer::sendTx(const CTransactionRef tx, const uint idx, const uint32_t b
 	const uint256& hashTx = tx->GetHash();
 	/* get the input shards and output shards id*/
 	const ShardInfo* pShardInfo;
+	std::map<TxIndexOnChain, ShardInfo>::iterator it;
 	if (!isDelayedTx) {
 	    pShardInfo = &vShardInfo[idx];
 	} else {
-	    pShardInfo = &mapDelayedTxShardInfo[TxIndexOnChain(block_height, idx)];
+		
+	    it = mapDelayedTxShardInfo.find(TxIndexOnChain(block_height, idx));
+	    pShardInfo = &(it->second);
 	}
 
 	const std::vector<int32_t>& shards = pShardInfo->shards;
@@ -543,6 +546,11 @@ bool TxPlacer::sendTx(const CTransactionRef tx, const uint idx, const uint32_t b
 		g_connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_LOCK, lockReq));
 	    }
 	}
+	
+	if (isDelayedTx) {
+	    mapDelayedTxShardInfo.erase(it);
+	}
+
 	return true;
 }
 
