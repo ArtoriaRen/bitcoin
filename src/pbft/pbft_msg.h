@@ -332,7 +332,7 @@ public:
     CPbftBlock();
     CPbftBlock(std::deque<TypedReq> vReqIn);
     void ComputeHash();
-    void WarmUpExecute(const int seq, CConnman* connman, CCoinsViewCache& view) const;
+    void WarmUpExecute(const int seq, CCoinsViewCache& view) const;
     uint32_t Execute(const int seq, CConnman* connman, CCoinsViewCache& view) const;
     void Clear();
 

@@ -103,7 +103,7 @@ bool ThreadSafeQueue::empty() {
     return queue_.empty();
 }
 
-CPbft::CPbft() : localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize * num_committees)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), notEnoughReqStartTime(std::chrono::milliseconds::zero()), startBlkHeight(0), privateKey(CKey()) {
+CPbft::CPbft() : localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize * num_committees)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), notEnoughReqStartTime(std::chrono::milliseconds::zero()), startBlkHeight(0), lastReplySentSeq(-1), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
@@ -299,7 +299,7 @@ CPbftMessage CPbft::assembleMsg(const uint32_t seq) {
     return toSent;
 }
 
-CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char exe_res) {
+CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char exe_res) const {
     /* 'y' --- execute sucessfully
      * 'n' --- execute fail
      */
@@ -328,34 +328,21 @@ CInputShardReply CPbft::assembleInputShardReply(const uint32_t seq, const uint32
 int CPbft::executeLog() {
     /* execute all lower-seq tx until this one if possible. */
     CCoinsViewCache view(pcoinsTip.get());
-    uint i = lastExecutedSeq + 1;
     /* We should go on to execute all log slots that are in reply phase even
      * their seqs are greater than the seq passed in. If we only execute up to
      * the seq passed in, a slot missing a pbftc msg might permanently block
      * log slots after it to be executed. */
-    for (; i < logSize; i++) {
-        if (log[i].phase == PbftPhase::reply) {
-	    log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, g_connman.get(), view);
-	    nCompletedTx += log[i].txCnt;
-	    std::cout << "Executed block " << log[i].ppMsg.digest.GetHex().substr(0,10) 
-                    << " at log slot = " << i  << ", block size = " 
-                    << log[i].ppMsg.pbft_block.vReq.size()  
-                    << std::endl;
-            /* wake up the client-listening thread to send results to clients. The 
-             * client-listening thread is probably already up if the client sends 
-             * request too frequently. 
-             * The following code cause linking errors still not fixed.
-             */
-            if (isLeader()) {
-                clientConnMan->WakeMessageHandler();
-            }
-        } else {
-            break;
-        }
+    for (uint i = lastExecutedSeq + 1; i < logSize && log[i].phase == PbftPhase::reply; i++) {
+	log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, g_connman.get(), view);
+	lastExecutedSeq = i;
+	nCompletedTx += log[i].txCnt;
+	std::cout << "Executed block " << log[i].ppMsg.digest.GetHex().substr(0,10) 
+		<< " at log slot = " << i  << ", block size = " 
+		<< log[i].ppMsg.pbft_block.vReq.size()  
+		<< std::endl;
     }
     bool flushed = view.Flush(); // flush to pcoinsTip
     assert(flushed);
-    lastExecutedSeq = i - 1;
     return lastExecutedSeq;
 }
 
@@ -395,7 +382,7 @@ int CPbft::readBlocksFromFile() {
     return lastExecutedSeqWarmUp;
 }
 
-void CPbft::WarmUpMemoryCache(CConnman* connman) {
+void CPbft::WarmUpMemoryCache() {
     CCoinsViewCache view_tenta(pcoinsTip.get());
     int lastExecutedSeqWarmUp = readBlocksFromFile();
     uint32_t nCompletedTx = 0;
@@ -403,7 +390,7 @@ void CPbft::WarmUpMemoryCache(CConnman* connman) {
 	uint32_t block_size = log[i].ppMsg.pbft_block.vReq.size();
 	//std::cout << "executing warm-up block of size " << block_size << std::endl;
 
-        log[i].ppMsg.pbft_block.WarmUpExecute(i, connman, view_tenta);
+        log[i].ppMsg.pbft_block.WarmUpExecute(i, view_tenta);
         /* Discard the block to prepare for performance test. */
         log[i].ppMsg.pbft_block.Clear();
 	nCompletedTx += block_size; 
@@ -417,6 +404,25 @@ void ThreadConsensusLogExe() {
     while (!ShutdownRequested()) {
         g_pbft->executeLog();
         MilliSleep(50);
+    }
+}
+
+void CPbft::sendReplies(CConnman* connman) {
+    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+    while (lastExecutedSeq > lastReplySentSeq) {
+        /* sent reply msg for all executed blocks. */
+	int seq = ++lastReplySentSeq;
+	std::vector<TypedReq>& vReq = log[seq].ppMsg.pbft_block.vReq;
+        const uint num_tx = vReq.size();
+	//std::cout << "sending reply for block " << seq <<",  lastReplySentSeq = "<<  lastReplySentSeq << ", lastExecutedSeq = " << lastExecutedSeq << std::endl;
+	/*send reply for non-LOCK requests in the block. (Because we are doing closed-loop test, there should be no ABORT request.)*/
+        for (uint i = 0; i < num_tx; i++) {
+	    if (vReq[i].type != ClientReqType::LOCK) {
+		/* hard code execution result as 'y' since we are replaying tx on Bitcoin's chain. */
+		CReply reply = assembleReply(seq, i,'y');
+		connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
+	    }
+        }
     }
 }
 

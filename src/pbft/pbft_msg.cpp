@@ -428,7 +428,7 @@ void CPbftBlock::ComputeHash(){
     hasher.Finalize((unsigned char*)&hash);
 }
 
-void CPbftBlock::WarmUpExecute(const int seq, CConnman* connman, CCoinsViewCache& view) const {
+void CPbftBlock::WarmUpExecute(const int seq, CCoinsViewCache& view) const {
     for (uint i = 0; i < vReq.size(); i++) {
 	CTransaction tx(vReq[i].pReq->tx_mutable);
 	if (vReq[i].type == ClientReqType::TX) {
@@ -471,9 +471,6 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& 
             g_pbft->detailTime[STEP::LOCK_RES_SEND] = timeElapsed;
 	} else {
 	    gettimeofday(&end_time, NULL);
-	    /* sending reply for only performance measurement, so we do not count the time as part of single-shard or cross-shard tx processing time. */
-	    CReply reply = g_pbft->assembleReply(seq, i, exe_res);
-	    connman->PushMessage(g_pbft->client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
 	    if (vReq[i].type == ClientReqType::TX || vReq[i].type == ClientReqType::UNLOCK_TO_COMMIT) {
 		/* only count TX and UNLOCK_TO_COMMIT requests */
 		txCnt++;
