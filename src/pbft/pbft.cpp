@@ -23,6 +23,7 @@
 #include "netmessagemaker.h"
 #include "streams.h"
 #include "clientversion.h"
+#include "init.h"
 
 extern std::unique_ptr<CConnman> g_connman;
 
@@ -355,10 +356,6 @@ int CPbft::executeLog() {
     bool flushed = view.Flush(); // flush to pcoinsTip
     assert(flushed);
     lastExecutedSeq = i - 1;
-    /* if lastExecutedIndex is less than seq, we delay sending reply until 
-     * the all requsts up to seq has been executed. This may be triggered 
-     * by future requests.
-     */
     return lastExecutedSeq;
 }
 
@@ -417,7 +414,7 @@ void CPbft::WarmUpMemoryCache(CConnman* connman) {
 
 void ThreadConsensusLogExe() {
     RenameThread("log-exe");
-    while (true) {
+    while (!ShutdownRequested()) {
         g_pbft->executeLog();
         MilliSleep(50);
     }
