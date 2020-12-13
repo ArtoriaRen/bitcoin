@@ -24,6 +24,7 @@
 #include <condition_variable>
 #include <memory>
 #include <chrono>
+#include "netmessagemaker.h"
 
 extern int32_t pbftID;
 extern int32_t nMaxReqInFly; 
@@ -106,6 +107,7 @@ public:
     /* detailed execution time and count*/
     unsigned long detailTime[STEP::NUM_STEPS];
     unsigned long inputCount[INPUT_CNT::NUM_INPUT_CNTS];
+    int lastReplySentSeq; // the highest block we have sent reply to the client. Used only by the main thread.
         
     
     CPbft();
@@ -120,11 +122,12 @@ public:
 
     CPre_prepare assemblePPMsg(const CPbftBlock& pbft_block);
     CPbftMessage assembleMsg(const uint32_t seq); 
-    CReply assembleReply(const uint32_t seq, const uint32_t idx, const char exe_res);
+    CReply assembleReply(const uint32_t seq, const uint32_t idx, const char exe_res) const;
     CInputShardReply assembleInputShardReply(const uint32_t seq, const uint32_t idx, const char exe_res, const CAmount& inputUtxoValueSum);
     bool checkMsg(CPbftMessage* msg);
     /*return the last executed seq */
     int executeLog();
+    void sendReplies(CConnman* connman);
 
     inline void printQueueSize(){
 	std::chrono::milliseconds current = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
@@ -160,7 +163,7 @@ public:
 
     void saveBlocks2File() const;
     int readBlocksFromFile();
-    void WarmUpMemoryCache(CConnman* connman);
+    void WarmUpMemoryCache();
 private:
     // private ECDSA key used to sign messages
     CKey privateKey;

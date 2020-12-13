@@ -22,6 +22,8 @@
 #include <boost/thread.hpp>
 
 #include <stdio.h>
+#include <net.h>
+#include "pbft/pbft.h"
 
 /* Introduction text for doxygen: */
 
@@ -39,13 +41,16 @@
  * Use the buttons <code>Namespaces</code>, <code>Classes</code> or <code>Files</code> at the top of the page to start navigating the code.
  */
 
+extern std::unique_ptr<CConnman> g_connman;
+
 void WaitForShutdown()
 {
     bool fShutdown = ShutdownRequested();
     // Tell the main threads to shutdown.
     while (!fShutdown)
     {
-        MilliSleep(200);
+	g_pbft->sendReplies(g_connman.get());
+        MilliSleep(10);
         fShutdown = ShutdownRequested();
     }
     Interrupt();

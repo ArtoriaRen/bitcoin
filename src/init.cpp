@@ -1832,7 +1832,7 @@ bool AppInitMain()
     //extractRawTxInBlock();
     if (warmUpMemoryPageCache) {
 	std::cout << "start warmming up." << std::endl;
-        g_pbft->WarmUpMemoryCache(g_connman.get());
+        g_pbft->WarmUpMemoryCache();
 	std::cout << "warmming up ended." << std::endl;
     }
     return true;
