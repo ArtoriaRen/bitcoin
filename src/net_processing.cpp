@@ -1874,12 +1874,12 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		assert (stat.type == TxType::SINGLE_SHARD); 
 		//std::cout << "tx " << reply.digest.GetHex().substr(0,10);
 		if (reply.reply == 'y') {
-			std::cout << ", SUCCEED, " << std::endl;
+			g_pbft->nSucceed++;
 			addCommittedTxIndex(reply.digest);
 			g_pbft->txInFly.erase(reply.digest);
 			nLocalCompletedTxPerInterval++;
 		} else if (reply.reply == 'n') {
-			std::cout << ", FAIL, ";
+			g_pbft->nFail++;
 			g_pbft->txResendQueue.push_back(g_pbft->txInFly[reply.digest]);
 			nLocalTotalFailedTxPerInterval++;
 		} 
@@ -1896,7 +1896,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 			/* only the output shard send committed reply, so no risk of 
 			 * printing info more than once for a tx. 
 			 */
-			std::cout << ", COMMITTED, " << std::endl;
+			g_pbft->nCommitted++;
 			addCommittedTxIndex(txid);
 			g_pbft->txInFly.erase(txid);
 			nLocalCompletedTxPerInterval++;
@@ -1907,7 +1907,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 			 * for every input shard that have locked some UTXOs. However, we do
 			 * not count the latency of aborted tx in our statistics anyway.
 			 */
-			std::cout << ", ABORTED, ";
+			g_pbft->nAborted++;
 			g_pbft->txResendQueue.push_back(g_pbft->txInFly[reply.digest]);
 			nLocalTotalFailedTxPerInterval++;
 		} else if (reply.reply == 'n') {

@@ -232,6 +232,10 @@ public:
     std::atomic<uint32_t> nTotalFailedTx;
     struct timeval testStartTime;
     struct timeval nextLogTime;
+    uint32_t nSucceed; /* number of single-shard committed tx */
+    uint32_t nFail; /* number of single-shard aborted tx */
+    uint32_t nCommitted; /* number of cross-shard committed tx */
+    uint32_t nAborted; /* number of cross-shard aborte tx */
 
     CPbft();
     ~CPbft();
