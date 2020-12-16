@@ -92,6 +92,72 @@ int32_t TxPlacer::randomPlaceUTXO(const uint256& txid) {
     return txid.GetCheapHash() % num_committees;
 }
 
+std::vector<int32_t> TxPlacer::dependencyPlace(const CTransaction& tx, CCoinsViewCache& cache, std::vector<std::vector<uint32_t> >& vShardUtxoIdxToLock, const uint32_t block_height){
+    std::vector<int32_t> ret;
+
+    /* random place coinbase tx */
+    if (tx.IsCoinBase()) { 
+	return std::vector<int32_t>{randomPlaceUTXO(tx.GetHash())};
+    }
+
+    /* key is shard id, value is a vector of input utxos in this shard. */
+    std::map<int32_t, std::vector<uint32_t> > mapInputShardUTXO;
+    /* key is shard id, value is the total value of input utxos in this shard. */
+    std::map<int32_t, CAmount> mapInputShardValue;
+    /* Add the input shard ids to the set, and assign the outputShard with the 
+     * shard id of the first input UTXO. 
+     * Note: some input UTXOs might not be in the coinsViewCache, so we maintain
+     * a map<txid, shardId> to keep track of the shard id of newly processed tx 
+     * during test.
+     */
+    //std::cout << " tx " << tx.GetHash().GetHex().substr(0,10) << " inputs : ";
+    for(uint32_t i = 0; i < tx.vin.size(); i++) {
+	//std::cout << "Outpoint (" << tx.vin[i].prevout.hash.GetHex().substr(0, 10) << ", " << tx.vin[i].prevout.n << "), ";
+	assert(cache.HaveCoin(tx.vin[i].prevout));
+	const Coin& coin = cache.AccessCoin(tx.vin[i].prevout);
+	mapInputShardUTXO[coin.shardAffinity].push_back(i);
+	mapInputShardValue[coin.shardAffinity] += coin.out.nValue;
+    }
+    //std::cout << std::endl;
+
+    /* output shard is the shard host most-valued input UTXOs. */
+    CAmount maxShardValue = 0;
+    int32_t outputShard = -1;
+    for (const auto& pair : mapInputShardValue) {
+	if (pair.second > maxShardValue) {
+	    maxShardValue = pair.second;
+	    outputShard = pair.first;
+	}
+    }
+    assert(outputShard >= 0 && outputShard < num_committees);
+    
+    /* Because this func is called by the 2PC coordinator, it should add the shard
+     * info of this outputs of tx to coinsviewcache for future use. 
+     */
+    //std::cout << __func__ << ": add to mapTxShard, tx = " << tx.GetHash().GetHex().substr(0, 10) << ", outputShard = " << outputShard << std::endl;
+    AddCoins(cache, tx, block_height, outputShard);
+
+    /* inputShardIds.size() is the shard span of this tx. */
+    shardCntMap[tx.vin.size()][mapInputShardUTXO.size()]++;
+    
+    /* prepare a resultant vector for return */
+    ret.reserve(mapInputShardUTXO.size() + 1);
+    ret.push_back(outputShard);// put the outShardId as the first element
+    for (auto it = mapInputShardUTXO.begin(); it != mapInputShardUTXO.end(); it++) 
+    {
+	ret.push_back(it->first);
+	vShardUtxoIdxToLock.push_back(it->second);
+    }
+    assert(vShardUtxoIdxToLock.size() + 1 == ret.size());
+    
+    /*update tx counter. */
+    vTxCnt[outputShard]++;
+    int32_t hashingPlaceRes = randomPlaceUTXO(tx.GetHash());
+    assert(hashingPlaceRes >= 0 && hashingPlaceRes < num_committees);
+    vTxCnt[hashingPlaceRes]--;
+    return ret;
+}
+
 std::vector<int32_t> TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCache& cache, std::vector<std::vector<uint32_t> >& vShardUtxoIdxToLock, const uint32_t block_height){
     std::vector<int32_t> ret;
 

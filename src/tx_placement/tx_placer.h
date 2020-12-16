@@ -108,6 +108,7 @@ public:
     /* return a vector of shard ids. 
      * The first element is the output shard id, and other elements are input shard ids.
      * The output shard id might equal one input shard id. */
+    std::vector<int32_t> dependencyPlace(const CTransaction& tx, CCoinsViewCache& cache, std::vector<std::vector<uint32_t> >& vShardUtxoIdxToLock, const uint32_t block_height);
     std::vector<int32_t> smartPlace(const CTransaction& tx, CCoinsViewCache& cache, std::vector<std::vector<uint32_t> >& vShardUtxoIdxToLock, const uint32_t block_height);
 
     /* return the shard hosting the UTXO whose producing tx is txid. 
