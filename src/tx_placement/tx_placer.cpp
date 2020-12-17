@@ -18,6 +18,7 @@
 #include "txdb.h"
 #include "init.h"
 #include <fstream>
+#include <algorithm>
 
 std::atomic<uint32_t> totalTxSent(0);
 static const uint32_t SEC = 1000000; // 1 sec = 10^6 microsecond
@@ -150,11 +151,6 @@ std::vector<int32_t> TxPlacer::dependencyPlace(const CTransaction& tx, CCoinsVie
     }
     assert(vShardUtxoIdxToLock.size() + 1 == ret.size());
     
-    /*update tx counter. */
-    vTxCnt[outputShard]++;
-    int32_t hashingPlaceRes = randomPlaceUTXO(tx.GetHash());
-    assert(hashingPlaceRes >= 0 && hashingPlaceRes < num_committees);
-    vTxCnt[hashingPlaceRes]--;
     return ret;
 }
 
@@ -600,6 +596,7 @@ bool TxPlacer::sendTx(const CTransactionRef tx, const uint idx, const uint32_t b
 	    gettimeofday(&stat.startTime, NULL);
 	    g_pbft->mapTxStartTime.insert(std::make_pair(hashTx, stat));
 	    g_connman->PushMessage(g_pbft->leaders[shards[0]], msgMaker.Make(NetMsgType::PBFT_TX, *tx));
+            g_pbft->vLoad.add(shards[0], CPbft::LOAD_TX);
 	} else {
 	    /* this is a cross-shard tx */
 	    stat.type = TxType::CROSS_SHARD;
@@ -610,6 +607,7 @@ bool TxPlacer::sendTx(const CTransactionRef tx, const uint idx, const uint32_t b
 		g_pbft->inputShardReplyMap[hashTx].decision.store('\0', std::memory_order_relaxed);
 		LockReq lockReq(*tx, vShardUtxoIdxToLock[i - 1]);
 		g_connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_LOCK, lockReq));
+                g_pbft->vLoad.add(shards[i], CPbft::LOAD_LOCK);
 	    }
 	}
 	

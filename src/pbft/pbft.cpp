@@ -90,7 +90,29 @@ bool ThreadSafeTxIndexSet::empty() {
     return set_.empty();
 }
 
-CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nSucceed(0), nFail(0), nCommitted(0), nAborted(0), privateKey(CKey()) {
+ThreadSafeVector::ThreadSafeVector(uint32_t size, double initial_val): vector_(size, initial_val) { }
+
+void ThreadSafeVector::add(uint32_t index, double value) {
+    std::unique_lock<std::mutex> mlock(mutex_);
+    vector_[index] += value;
+}
+
+uint32_t ThreadSafeVector::minEleIndex() {
+    std::unique_lock<std::mutex> mlock(mutex_);
+    return std::min_element(vector_.begin(), vector_.end()) - vector_.begin();
+}
+
+void ThreadSafeVector::print() {
+    std::unique_lock<std::mutex> mlock(mutex_);
+    for (uint32_t i = 0; i < vector_.size(); i++)
+        std::cout << " shard " << i << " = " << vector_[i];
+}
+
+const float CPbft::LOAD_TX = 1.0f;
+const float CPbft::LOAD_LOCK = 3.85f;
+const float CPbft::LOAD_COMMIT = 4.82f;
+
+CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nSucceed(0), nFail(0), nCommitted(0), nAborted(0), vLoad(num_committees, 0), privateKey(CKey()) {
     testStartTime = {0, 0};
     nextLogTime = {0, 0};
     privateKey.MakeNewKey(false);
