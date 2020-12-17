@@ -55,40 +55,6 @@ void ShardInfo::print() const {
 TxPlacer::TxPlacer():totalTxNum(0), vTxCnt(num_committees, 0){ }
 static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, int noop_count, TxPlacer& txplacer, std::list<TxBlockInfo>& qDelaySendingTx);
 
-/* all output UTXOs of a tx is stored in one shard. */
-std::vector<int32_t> TxPlacer::randomPlace(const CTransaction& tx){
-	    std::set<int> inputShardIds;
-
-    /* add the input shard ids to the set */
-    if (!tx.IsCoinBase()) { // do not calculate shard for dummy coinbase input.
-	for(uint32_t i = 0; i < tx.vin.size(); i++) {
-	    inputShardIds.insert(tx.vin[i].prevout.hash.GetCheapHash() % num_committees);
-	}
-    }
-
-//    std::cout << "tx " << tx->GetHash().GetHex() << " spans shards : ";
-//    for(auto entry : shardIds) {
-//	std::cout << entry << " ";
-//    }
-//    std::cout << std::endl;
-
-    /* add the output shard id to the above set */
-    int32_t outShardId = tx.GetHash().GetCheapHash() % num_committees;
-    if (inputShardIds.find(outShardId) != inputShardIds.end()) {
-	/* inputShardIds.size() is the shard span of this tx. */
-	shardCntMap[tx.vin.size()][inputShardIds.size()]++;
-    } else {
-	/* inputShardIds.size() + 1 is the shard span of this tx. */
-	shardCntMap[tx.vin.size()][inputShardIds.size() + 1]++;
-    }
-    
-    /* prepare a resultant vector for return */
-    std::vector<int32_t> ret(inputShardIds.size() + 1);
-    ret[0] = outShardId;// put the outShardIt as the first element
-    std::copy(inputShardIds.begin(), inputShardIds.end(), ret.begin() + 1);
-    return ret;
-}
-
 int32_t TxPlacer::randomPlaceUTXO(const uint256& txid) {
     return txid.GetCheapHash() % num_committees;
 }

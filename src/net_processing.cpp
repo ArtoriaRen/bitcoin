@@ -1955,22 +1955,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		return true;
 	    }
 
-	    std::cout << "tx " << reply.digest.GetHex().substr(0,10) << ", LOCK_NOT_OK, ";
-	    /* assemble a unlock_to_abort req including (2f + 1) replies from this shard */
-	    assert(g_pbft->txInFly.exist(reply.digest));
-	    UnlockToAbortReq abortReq(std::move(CMutableTransaction(*g_pbft->txInFly[reply.digest].tx)), shardReplies);
-
-	    g_pbft->txUnlockReqMap.insert(std::make_pair(abortReq.GetDigest(), reply.digest));
-
-	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-	    TxPlacer txPlacer;
-	    CTransactionRef tx = g_pbft->txInFly[reply.digest].tx;
-	    std::vector<int32_t> shards = txPlacer.randomPlace(*tx);
-	    std::cout << "sending unlock_to_abort with req_hash = " << abortReq.GetDigest().GetHex().substr(0, 10) << " to shards: " << std::endl;
-	    for (uint i = 1; i < shards.size(); i++) {
-		std::cout << shards[i] << ", ";
-		connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_UNLOCK_ABORT, abortReq));
-	    }
+	    std::cout << "tx " << reply.digest.GetHex().substr(0,10) << ", LOCK_NOT_OK, " << std::endl;
 	} else if (isLeastReplyShard && shardReplies.size() == reply_threshold && reply.reply == 'y') {
 	    /* mark the tx is final so that we do not need to process future replies for this req. 'c' stands for commit. */
 	    char freshDecision = g_pbft->inputShardReplyMap[reply.digest].decision.exchange('c', std::memory_order_relaxed); 

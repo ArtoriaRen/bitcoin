@@ -98,10 +98,6 @@ public:
     /* return the number of shards that input UTXOs and output UTXOs span */
     TxPlacer();
 
-    /* return a vector of shard ids. 
-     * The first element is the output shard id, and other elements are input shard ids. */
-    std::vector<int32_t> randomPlace(const CTransaction& tx);
-
     /* return the shard hosting the UTXO whose producing tx is txid */
     int32_t randomPlaceUTXO(const uint256& txid);
 
