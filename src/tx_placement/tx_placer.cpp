@@ -182,18 +182,17 @@ std::vector<int32_t> TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCach
     int32_t outputShard = -1;
     if (mapInputShardUTXO.size() > 1) {
         /* input UTXOs are not in the same shard, choose load-balancing path. */
-        int32_t minCnt = 0x7FFFFFFF, minCntIdx = -1;
-        for (uint i = 0; i < vTxCnt.size(); i++) {
-            if (vTxCnt[i] < minCnt) {
-                minCnt = vTxCnt[i];
-                minCntIdx = i;
-            }
+        for (const auto& pair : mapInputShardUTXO) {
+            g_pbft->vLoad.add(pair.first, CPbft::LOAD_LOCK);
         }
-        outputShard = minCntIdx; 
-        
+        outputShard = g_pbft->vLoad.minEleIndex();
+        assert(outputShard >= 0 && outputShard < num_committees);
+        g_pbft->vLoad.add(outputShard, CPbft::LOAD_COMMIT);
     } else {
         assert(mapInputShardUTXO.size() == 1);
         outputShard = cache.AccessCoin(tx.vin[0].prevout).shardAffinity;
+		/* only count non-coinbase tx b/c coinbase tx do not have the time-consuming sig verification step. */
+        g_pbft->vLoad.add(outputShard, CPbft::LOAD_TX);
     }
     
     /* Because this func is called by the 2PC coordinator, it should add the shard
@@ -596,10 +595,6 @@ bool TxPlacer::sendTx(const CTransactionRef tx, const uint idx, const uint32_t b
 	    gettimeofday(&stat.startTime, NULL);
 	    g_pbft->mapTxStartTime.insert(std::make_pair(hashTx, stat));
 	    g_connman->PushMessage(g_pbft->leaders[shards[0]], msgMaker.Make(NetMsgType::PBFT_TX, *tx));
-	    if (shards.size() != 1) {
-		/* only count non-coinbase tx b/c coinbase tx do not have the time-consuming sig verification step. */
-		g_pbft->vLoad.add(shards[0], CPbft::LOAD_TX);
-	    }
 	} else {
 	    /* this is a cross-shard tx */
 	    stat.type = TxType::CROSS_SHARD;
@@ -610,7 +605,6 @@ bool TxPlacer::sendTx(const CTransactionRef tx, const uint idx, const uint32_t b
 		g_pbft->inputShardReplyMap[hashTx].decision.store('\0', std::memory_order_relaxed);
 		LockReq lockReq(*tx, vShardUtxoIdxToLock[i - 1]);
 		g_connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_LOCK, lockReq));
-                g_pbft->vLoad.add(shards[i], CPbft::LOAD_LOCK);
 	    }
 	}
 	

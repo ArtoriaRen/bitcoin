@@ -1995,12 +1995,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    g_pbft->txUnlockReqMap.insert(std::make_pair(commitReq.GetDigest(), reply.digest));
 
 	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-	    //int32_t outputShard = g_pbft->txInFly[reply.digest].outputShard;
-	    int32_t outputShard = g_pbft->vLoad.minEleIndex();
-            assert(outputShard >= 0 && outputShard < num_committees);
+	    int32_t outputShard = g_pbft->txInFly[reply.digest].outputShard;
 	    //std::cout << "sending unlock_to_commit with req_hash = " << commitReq.GetDigest().GetHex().substr(0, 10) << " to shard " << outputShard << std::endl;
 	    connman->PushMessage(g_pbft->leaders[outputShard], msgMaker.Make(NetMsgType::OMNI_UNLOCK_COMMIT, commitReq));
-	    g_pbft->vLoad.add(outputShard, CPbft::LOAD_COMMIT);
 	} 
     }
 
