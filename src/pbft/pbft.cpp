@@ -103,7 +103,7 @@ bool ThreadSafeQueue::empty() {
     return queue_.empty();
 }
 
-CPbft::CPbft() : localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize * num_committees)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), notEnoughReqStartTime(std::chrono::milliseconds::zero()), startBlkHeight(0), lastReplySentSeq(-1), privateKey(CKey()) {
+CPbft::CPbft() : localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize * num_committees)), nReqInFly(0), clientConnMan(nullptr), notEnoughReqStartTime(std::chrono::milliseconds::zero()), startBlkHeight(0), lastReplySentSeq(-1), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
@@ -335,10 +335,12 @@ int CPbft::executeLog() {
     for (uint i = lastExecutedSeq + 1; i < logSize && log[i].phase == PbftPhase::reply; i++) {
 	log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, g_connman.get(), view);
 	lastExecutedSeq = i;
-	nCompletedTx += log[i].txCnt;
-	std::cout << "Executed block " << log[i].ppMsg.digest.GetHex().substr(0,10) 
-		<< " at log slot = " << i  << ", block size = " 
+	std::cout << "Executed block " << i  << ", block size = " 
 		<< log[i].ppMsg.pbft_block.vReq.size()  
+		<< ", Total TX cnt = " << totalExeCount[0]
+		<< ", Total LOCK cnt = " << totalExeCount[1]
+		<< ", Total COMMIT cnt = " << totalExeCount[2]
+
 		<< std::endl;
     }
     bool flushed = view.Flush(); // flush to pcoinsTip
@@ -385,7 +387,7 @@ int CPbft::readBlocksFromFile() {
 void CPbft::WarmUpMemoryCache() {
     CCoinsViewCache view_tenta(pcoinsTip.get());
     int lastExecutedSeqWarmUp = readBlocksFromFile();
-    uint32_t nCompletedTx = 0;
+    uint32_t nWarmUpTx = 0;
     for (int i = 0; i < lastExecutedSeqWarmUp + 1; i++) {
 	uint32_t block_size = log[i].ppMsg.pbft_block.vReq.size();
 	//std::cout << "executing warm-up block of size " << block_size << std::endl;
@@ -393,8 +395,8 @@ void CPbft::WarmUpMemoryCache() {
         log[i].ppMsg.pbft_block.WarmUpExecute(i, view_tenta);
         /* Discard the block to prepare for performance test. */
         log[i].ppMsg.pbft_block.Clear();
-	nCompletedTx += block_size; 
-	//std::cout << "warm up -- total executed tx: " << nCompletedTx << std::endl;
+	nWarmUpTx += block_size; 
+	//std::cout << "warm up -- total executed tx: " << nWarmUpTx << std::endl;
     }
 }
 

@@ -89,7 +89,6 @@ public:
      * req  enters the reply phase, another req at the front of the reqQueue is 
      * added to the pbft log and start consensus process. */
     int nReqInFly; 
-    uint32_t nCompletedTx;
     /* a queue storing client req waiting for being processed. */
     ThreadSafeQueue reqQueue;
     /* we need the client conn man to wake up the client listening thread to send
