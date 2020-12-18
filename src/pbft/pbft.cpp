@@ -178,7 +178,7 @@ void CPbft::loadDependencyGraph (){
 
 void ThreadSafePriorityQueue::getTxUpTo(const TxIndexOnChain& txIdx, std::deque<TxIndexOnChain>& res) {
     std::unique_lock<std::mutex> mlock(mutex_);
-    while (!pq_.empty() && pq_.top() <= txIdx) {
+    while (pq_.top() <= txIdx) {
         res.push_back(pq_.top());
         pq_.pop();
     }

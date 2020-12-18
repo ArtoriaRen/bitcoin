@@ -1589,7 +1589,7 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
     const int txStartBlock = request.params[0].get_int();
     const int txEndBlock = request.params[1].get_int();
     int noopCount = request.params[2].get_int();
-    num_threads = request.params[3].get_int();
+    const uint num_threads = request.params[3].get_int();
     assert(num_threads >= 1);
 
     for (uint i = 0; i < num_threads; i++) {
