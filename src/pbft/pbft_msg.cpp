@@ -440,6 +440,7 @@ void CPbftBlock::WarmUpExecute(const int seq, CCoinsViewCache& view) const {
 uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& view) const {
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
     uint32_t txCnt = 0;
+    CPbft& pbft = *g_pbft; 
     for (uint i = 0; i < vReq.size(); i++) {
 	struct timeval start_time, end_time, detail_start_time, detail_end_time;
         uint64_t timeElapsed = 0;
@@ -447,22 +448,20 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& 
 	char exe_res = vReq[i].pReq->Execute(seq, view);
 	if (vReq[i].type == ClientReqType::LOCK) {
             gettimeofday(&detail_start_time, NULL);
-	    CInputShardReply reply = g_pbft->assembleInputShardReply(seq, i, exe_res, ((LockReq*)vReq[i].pReq.get())->totalValueInOfShard);
+	    CInputShardReply reply = pbft.assembleInputShardReply(seq, i, exe_res, ((LockReq*)vReq[i].pReq.get())->totalValueInOfShard);
             gettimeofday(&detail_end_time, NULL);
             timeElapsed = (detail_end_time.tv_sec - detail_start_time.tv_sec) * 1000000 + (detail_end_time.tv_usec - detail_start_time.tv_usec);
-            g_pbft->detailTime[STEP::LOCK_RES_SIGN] = timeElapsed;
+            pbft.detailTime[STEP::LOCK_RES_SIGN] = timeElapsed;
             gettimeofday(&detail_start_time, NULL);
-	    connman->PushMessage(g_pbft->client, msgMaker.Make(NetMsgType::OMNI_LOCK_REPLY, reply));
+	    connman->PushMessage(pbft.client, msgMaker.Make(NetMsgType::OMNI_LOCK_REPLY, reply));
             gettimeofday(&detail_end_time, NULL);
 	    gettimeofday(&end_time, NULL);
             timeElapsed = (detail_end_time.tv_sec - detail_start_time.tv_sec) * 1000000 + (detail_end_time.tv_usec - detail_start_time.tv_usec);
-            g_pbft->detailTime[STEP::LOCK_RES_SEND] = timeElapsed;
+            pbft.detailTime[STEP::LOCK_RES_SEND] = timeElapsed;
 	} else {
 	    gettimeofday(&end_time, NULL);
-	    if (vReq[i].type == ClientReqType::TX || vReq[i].type == ClientReqType::UNLOCK_TO_COMMIT) {
-		/* only count TX and UNLOCK_TO_COMMIT requests */
-		txCnt++;
-	    }
+	    /* only count TX and UNLOCK_TO_COMMIT requests */
+	    txCnt++;
 	}
 
 	/* update execution time and count. Only count non-coinbase tx.*/
