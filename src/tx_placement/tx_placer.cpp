@@ -236,6 +236,7 @@ static uint32_t sendQueuedTx(const TxIndexOnChain& txIdx, const int noop_count, 
     for (const TxIndexOnChain& tx_i : txSendReady) {
 	if (ShutdownRequested())
 	    return txSentCnt;
+	assert(txplacer.mapDelayedTxShardInfo.find(tx_i) != txplacer.mapDelayedTxShardInfo.end());
         txplacer.sendTx(txplacer.mapDelayedTxShardInfo[tx_i].tx, tx_i.offset_in_block, tx_i.block_height, true);
         txSentCnt++;
         delayByNoop(noop_count);
@@ -691,7 +692,7 @@ DependencyRecord::DependencyRecord(const uint32_t block_height, const uint32_t o
 uint32_t getThreadIDForTx(uint32_t TxIdxInBlock) {
     const uint32_t jump_length = num_threads * txChunkSize;
     uint32_t shift_bits = log2(txChunkSize);
-    return TxIdxInBlock & (jump_length - 1) >> shift_bits;
+    return (TxIdxInBlock & (jump_length - 1)) >> shift_bits;
 }
 
 TxRefAndShardInfo::TxRefAndShardInfo() {}

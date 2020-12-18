@@ -1502,7 +1502,9 @@ void static decrementPrereqCnt(const uint256& txid){
     for (const TxIndexOnChain& dependent : pbft.mapDependentTx[txIndex]) {
         uint32_t old_val = pbft.mapRemainingPrereq[dependent].fetch_sub(1, std::memory_order_relaxed);
         if (old_val == 1) {
-            pbft.arrClearedTxQ[getThreadIDForTx(txInfo.n)]->push(dependent);
+	    uint32_t txSendingThrdId = getThreadIDForTx(txInfo.n);
+	    assert(txSendingThrdId >= 0&& txSendingThrdId < num_threads);
+            pbft.arrClearedTxQ[txSendingThrdId]->push(dependent);
         }
     }
 }
