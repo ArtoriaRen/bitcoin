@@ -27,6 +27,7 @@ extern int lastAssignedAffinity;
 //extern uint32_t txStartBlock;
 //extern uint32_t txEndBlock;
 extern bool buildWaitGraph;
+extern uint32_t num_threads; // tx sending threads
 
 /* The shard info for one tx */
 class ShardInfo{
@@ -86,12 +87,20 @@ public:
     }
 };
 
+class TxRefAndShardInfo {
+public:
+    CTransactionRef tx;
+    ShardInfo shardInfo;
+    TxRefAndShardInfo();
+    TxRefAndShardInfo(const CTransactionRef txIn, ShardInfo&& shardInfoIn);
+};
+
 class TxPlacer{
 public:
     std::map<uint, std::map<uint, uint>> shardCntMap; // < input_utxo_count, shard_count, tx_count>
     uint totalTxNum;
     std::vector<ShardInfo> vShardInfo;
-    std::map<TxIndexOnChain, ShardInfo> mapDelayedTxShardInfo;
+    std::map<TxIndexOnChain, TxRefAndShardInfo> mapDelayedTxShardInfo;
     /* tx couter for load balancing. */
     std::vector<int32_t> vTxCnt;
 
@@ -166,6 +175,8 @@ extern TxPlacer g_txplacer;
 inline std::string getDependencyFilename() {
     return "dependency_file/dependency.out";
 }
+
+uint32_t getThreadIDForTx(uint32_t TxIdxInBlock); 
 
 #endif /* TX_PLACER_H */
 

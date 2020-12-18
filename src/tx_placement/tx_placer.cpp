@@ -19,6 +19,7 @@
 #include "init.h"
 #include <fstream>
 #include <algorithm>
+#include <cmath>
 
 std::atomic<uint32_t> totalTxSent(0);
 static const uint32_t SEC = 1000000; // 1 sec = 10^6 microsecond
@@ -29,7 +30,8 @@ int lastAssignedAffinity = -1;
  * has nothing to do. We should consertively set the num of threads less than 20 
  * given the txChunkSize of 100.
  */
-size_t txChunkSize = 100; 
+size_t txChunkSize = 128; // must be a power of 2
+uint32_t num_threads = 0; // tx sending threads. will be set by sendtxinblocks rpc call.
 //uint32_t txStartBlock;
 //uint32_t txEndBlock;
 bool buildWaitGraph = false;
@@ -53,7 +55,8 @@ void ShardInfo::print() const {
 }
 
 TxPlacer::TxPlacer():totalTxNum(0), vTxCnt(num_committees, 0){ }
-static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, int noop_count, TxPlacer& txplacer, std::list<TxBlockInfo>& qDelaySendingTx);
+
+static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, int noop_count, TxPlacer& txplacer, const uint32_t threadId);
 
 int32_t TxPlacer::randomPlaceUTXO(const uint256& txid) {
     return txid.GetCheapHash() % num_committees;
@@ -226,31 +229,16 @@ static void delayByNoop(const int noop_count) {
     std::cerr << "loop noop for " << k << " times. oprand becomes " << oprand << std::endl;
 }
 
-static uint32_t sendQueuedTx(std::list<TxBlockInfo>& listDelaySendingTx, const int noop_count, TxPlacer& txplacer) {
+static uint32_t sendQueuedTx(const TxIndexOnChain& txIdx, const int noop_count, TxPlacer& txplacer, const uint32_t threadId) {
     int txSentCnt = 0;
-    auto& mapDependency = g_pbft->mapDependency; 
-    auto iter = listDelaySendingTx.begin();
-    while (iter != listDelaySendingTx.end()) {
+    std::deque<TxIndexOnChain> txSendReady;
+    g_pbft->arrClearedTxQ[threadId]->getTxUpTo(txIdx, txSendReady);
+    for (const TxIndexOnChain& tx_i : txSendReady) {
 	if (ShutdownRequested())
 	    return txSentCnt;
-        const TxIndexOnChain txIdx(iter->blockHeight, iter->n);
-	bool prereqTxCleared = true;
-        for (auto& prereqTx: mapDependency[txIdx] ) {
-            if (g_pbft->uncommittedPrereqTxSet.haveTx(prereqTx)) {
-		prereqTxCleared = false;
-                break;
-            }
-        }
-	if (prereqTxCleared) {
-	    /* All prereqTx have been committed, ready to send this tx. */
-	    //std::cout << "sending queued tx (" << iter->blockHeight << ", " << iter->n << ")" << std::endl;
-	    txplacer.sendTx(iter->tx, iter->n, iter->blockHeight, true);
-	    iter = listDelaySendingTx.erase(iter);
-	    txSentCnt++;
-	    delayByNoop(noop_count);
-	} else {
-	    iter++;
-	}
+        txplacer.sendTx(txplacer.mapDelayedTxShardInfo[tx_i].tx, tx_i.offset_in_block, tx_i.block_height, true);
+        txSentCnt++;
+        delayByNoop(noop_count);
     }
     //std::cout << __func__ << " sent " <<  txSentCnt << " queued tx. queue size = "  << listDelaySendingTx.size() << std::endl;
     return txSentCnt;
@@ -446,14 +434,13 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
 
 	for (size_t i = thread_idx * txChunkSize; i < block.vtx.size(); i += jump_length){
 	    //std::cout << __func__ << ": thread " << thread_idx << " sending No." << i << " tx in block " << block_height << std::endl;
-	    uint32_t actual_chunk_size = sendTxChunk(block, block_height, i, noop_count, txPlacer, listDelaySendingTx);
+	    uint32_t actual_chunk_size = sendTxChunk(block, block_height, i, noop_count, txPlacer, thread_idx);
 	    cnt += actual_chunk_size;
 	    //std::cout << __func__ << ": thread " << thread_idx << " sent " << actual_chunk_size << " tx in block " << block_height << std::endl;
 	}
-
-	/* check delay sending tx.  */
-        cnt += sendQueuedTx(listDelaySendingTx, noop_count, txPlacer);
     }
+    /* check delay sending tx.  */
+    cnt += sendQueuedTx(TxIndexOnChain(endBlock, 0), noop_count, txPlacer, thread_idx);
     /* send all remaining tx in the queue.  */
     //std::cout << "sending remaining tx" << std::endl;
     //while (!listDelaySendingTx.empty()) {
@@ -467,31 +454,26 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
     totalTxSent += cnt; 
 }
 
-static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, const int noop_count, TxPlacer& txplacer, std::list<TxBlockInfo>& listDelaySendingTx) {
+static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, const int noop_count, TxPlacer& txplacer, const uint32_t threadId) {
     uint32_t cnt = 0;
     uint32_t end_tx = std::min(start_tx + txChunkSize, block.vtx.size());
-    auto& mapDependency = g_pbft->mapDependency; 
+    auto& mapRemainingPrereq = g_pbft->mapRemainingPrereq; 
 
     for (uint j = start_tx; j < end_tx; j++) {
 	if (ShutdownRequested())
 	    break;
 
 	TxIndexOnChain txIdx(block_height,j);
-	auto it = mapDependency.find(txIdx);
-	bool prereqTxCleared = true;
-	if (it != mapDependency.end()) {
-            for (auto& prereqTx: it->second) {
-                if (g_pbft->uncommittedPrereqTxSet.haveTx(prereqTx)) {
-                    /* the prereq tx has not been committed yet, enqueue and send later */
-		    //std::cout << "delay sending tx (" << block_height << ", " << j << ") . current listDelaySendingTx size = " << listDelaySendingTx.size() << std::endl;
-                    listDelaySendingTx.emplace_back(block.vtx[j], block_height, j);
-		    txplacer.mapDelayedTxShardInfo.emplace(txIdx, txplacer.vShardInfo[j]);
-		    prereqTxCleared = false;
-                    break;
-                }
+	auto it = mapRemainingPrereq.find(txIdx);
+	if (it != mapRemainingPrereq.end()) {
+            /* this tx has prereq tx. Send all prereq-cleared tx up to this tx. */
+            bool currentTxSent = sendQueuedTx(txIdx, noop_count, txplacer, threadId);
+            if (!currentTxSent) {
+                /* this tx is not prereq-clear yet, store its info for future sending. */
+                txplacer.mapDelayedTxShardInfo.emplace(txIdx, TxRefAndShardInfo(block.vtx[j], std::move(txplacer.vShardInfo[j])));
             }
-	}
-	if (prereqTxCleared) {
+	} else {
+            /* this tx has no prereq tx, send it directly. */
 	    txplacer.sendTx(block.vtx[j], j, block_height);
 	    cnt++;
 	    /* delay by doing noop. */
@@ -524,13 +506,12 @@ bool TxPlacer::sendTx(const CTransactionRef tx, const uint idx, const uint32_t b
 	const uint256& hashTx = tx->GetHash();
 	/* get the input shards and output shards id*/
 	const ShardInfo* pShardInfo;
-	std::map<TxIndexOnChain, ShardInfo>::iterator it;
+	std::map<TxIndexOnChain, TxRefAndShardInfo>::iterator it;
 	if (!isDelayedTx) {
 	    pShardInfo = &vShardInfo[idx];
 	} else {
-		
 	    it = mapDelayedTxShardInfo.find(TxIndexOnChain(block_height, idx));
-	    pShardInfo = &(it->second);
+	    pShardInfo = &(it->second.shardInfo);
 	}
 
 	const std::vector<int32_t>& shards = pShardInfo->shards;
@@ -706,3 +687,13 @@ std::string TxIndexOnChain::ToString() const {
 
 DependencyRecord::DependencyRecord(): tx(), prereq_tx() { }
 DependencyRecord::DependencyRecord(const uint32_t block_height, const uint32_t offset_in_block, const TxIndexOnChain& latest_prereq_tx_in): tx(block_height, offset_in_block), prereq_tx(latest_prereq_tx_in) { }
+
+uint32_t getThreadIDForTx(uint32_t TxIdxInBlock) {
+    const uint32_t jump_length = num_threads * txChunkSize;
+    uint32_t shift_bits = log2(txChunkSize);
+    return TxIdxInBlock & (jump_length - 1) >> shift_bits;
+}
+
+TxRefAndShardInfo::TxRefAndShardInfo() {}
+
+TxRefAndShardInfo::TxRefAndShardInfo(const CTransactionRef txIn, ShardInfo&& shardInfoIn): tx(txIn), shardInfo(shardInfoIn) { }
