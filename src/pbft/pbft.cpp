@@ -112,7 +112,7 @@ const float CPbft::LOAD_TX = 1.0f;
 const float CPbft::LOAD_LOCK = 3.85f;
 const float CPbft::LOAD_COMMIT = 4.82f;
 
-CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), arrClearedTxQ(0), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nSucceed(0), nFail(0), nCommitted(0), nAborted(0), vLoad(num_committees, 0), privateKey(CKey()) {
+CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nSucceed(0), nFail(0), nCommitted(0), nAborted(0), vLoad(num_committees, 0), privateKey(CKey()) {
     testStartTime = {0, 0};
     nextLogTime = {0, 0};
     privateKey.MakeNewKey(false);
@@ -169,24 +169,11 @@ void CPbft::loadDependencyGraph (){
     DependencyRecord dpRec;
     dpRec.Unserialize(dependencyFileStream);
     while (!dependencyFileStream.eof()) {
-	mapRemainingPrereq[dpRec.tx]++;
-        mapDependentTx[dpRec.prereq_tx].push_back(dpRec.tx);
+	mapDependency[dpRec.tx].push_back(dpRec.prereq_tx);
+        uncommittedPrereqTxSet.lock_free_insert(dpRec.prereq_tx);
 	dpRec.Unserialize(dependencyFileStream);
     }
     dependencyFileStream.close();
-}
-
-void ThreadSafePriorityQueue::getTxUpTo(const TxIndexOnChain& txIdx, std::deque<TxIndexOnChain>& res) {
-    std::unique_lock<std::mutex> mlock(mutex_);
-    while (pq_.top() <= txIdx) {
-        res.push_back(pq_.top());
-        pq_.pop();
-    }
-}
-
-void ThreadSafePriorityQueue::push(const TxIndexOnChain& txIdx) {
-    std::unique_lock<std::mutex> mlock(mutex_);
-    pq_.push(txIdx);
 }
 
 std::unique_ptr<CPbft> g_pbft;

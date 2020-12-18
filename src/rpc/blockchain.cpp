@@ -1591,11 +1591,6 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
     int noopCount = request.params[2].get_int();
     const uint num_threads = request.params[3].get_int();
     assert(num_threads >= 1);
-
-    for (uint i = 0; i < num_threads; i++) {
-        g_pbft->arrClearedTxQ.emplace_back(new ThreadSafePriorityQueue());
-    }
-    
     std::vector<std::thread> vThread;
 
     struct timeval startTime, endTime;

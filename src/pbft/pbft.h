@@ -186,16 +186,6 @@ private:
     std::mutex mutex_;
 };
 
-class ThreadSafePriorityQueue {
-public:
-    void getTxUpTo(const TxIndexOnChain& txIdx, std::deque<TxIndexOnChain>& res);
-    void push(const TxIndexOnChain& txIdx);
-
-private:
-    std::priority_queue<TxIndexOnChain, std::deque<TxIndexOnChain>, std::greater<TxIndexOnChain>> pq_;
-    std::mutex mutex_;
-};
-
 
 class CPbft{
 public:
@@ -247,11 +237,8 @@ public:
     
     ThreadSafeQueue txResendQueue;
 
-    std::map<TxIndexOnChain, std::vector<TxIndexOnChain>> mapDependentTx; // <tx, all_dependent_tx>
-    std::map<TxIndexOnChain, std::atomic<uint32_t>> mapRemainingPrereq; // <tx, num_remaining_uncommitted_prereq_tx_cnt>
-    /* one priority for every sending thread. pq are heap-allocated by the thread 
-     * answer rpc call sendtxinthreads. */
-    std::vector<std::shared_ptr<ThreadSafePriorityQueue>> arrClearedTxQ; 
+    std::map<TxIndexOnChain, std::vector<TxIndexOnChain>> mapDependency; // <tx, latest_prereq_tx>
+    ThreadSafeTxIndexSet uncommittedPrereqTxSet;
     
     std::ofstream latencySingleShardFile;
     std::ofstream latencyCrossShardFile;
