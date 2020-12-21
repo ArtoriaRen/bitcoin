@@ -251,6 +251,10 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 	    gettimeofday(&stat.startTime, NULL);
 	    g_pbft->mapTxStartTime.insert(std::make_pair(hashTx, stat));
 	    g_connman->PushMessage(g_pbft->leaders[shards[0]], msgMaker.Make(NetMsgType::PBFT_TX, *tx));
+	    if (shards.size() != 1) {
+		/* only count non-coinbase tx b/c coinbase tx do not have the time-consuming sig verification step. */
+		g_pbft->vLoad.add(shards[0], CPbft::LOAD_TX);
+	    }
 	} else {
 	    /* this is a cross-shard tx */
 	    stat.type = TxType::CROSS_SHARD;
@@ -260,6 +264,7 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 		g_pbft->inputShardReplyMap[hashTx].lockReply.insert(std::make_pair(shards[i], std::vector<CInputShardReply>()));
 		g_pbft->inputShardReplyMap[hashTx].decision.store('\0', std::memory_order_relaxed);
 		g_connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_LOCK, *tx));
+		g_pbft->vLoad.add(shards[i], CPbft::LOAD_LOCK);
 	    }
 	}
 	return true;

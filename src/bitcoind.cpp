@@ -65,7 +65,9 @@ void WaitForShutdown()
 	if (testStarted && !testFinished && (currentTime >= pbft.nextLogTime || testFinishedNew)) {
 	    pbft.logThruput(currentTime);
 	    if (testFinishedNew) {
-		std::cout << "SUCCEED: " << pbft.nSucceed << ", FAIL: " << pbft.nFail << ", COMMITT: " << pbft.nCommitted << ", ABORT: " << pbft.nAborted << ". Single-shard tx : " << pbft.nSucceed + pbft.nFail << ", cross-shard tx: " << pbft.nCommitted + pbft.nAborted << ". total succeed = " << pbft.nSucceed + pbft.nCommitted << ", total fail = " << pbft.nFail + pbft.nAborted << std::endl;
+		std::cout << "SUCCEED: " << pbft.nSucceed << ", FAIL: " << pbft.nFail << ", COMMITT: " << pbft.nCommitted << ", ABORT: " << pbft.nAborted << ". Single-shard tx : " << pbft.nSucceed + pbft.nFail << ", cross-shard tx: " << pbft.nCommitted + pbft.nAborted << ". total succeed = " << pbft.nSucceed + pbft.nCommitted << ", total fail = " << pbft.nFail + pbft.nAborted << ". Load score:";
+		pbft.vLoad.print();
+                std::cout << std::endl;
 	    }
 	}
 	testFinished = testFinishedNew;

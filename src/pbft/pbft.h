@@ -172,10 +172,27 @@ private:
     std::condition_variable cond_;
 };
 
+class ThreadSafeVector {
+public:
+    ThreadSafeVector(uint32_t size, double initial_val);
+
+    void add(uint32_t index, double value);
+    void print();
+
+private:
+    std::vector<double> vector_;
+    std::mutex mutex_;
+};
+
 class CPbft{
 public:
     static const uint32_t nFaulty = 1;
     static const size_t groupSize = 4;
+
+    static const float LOAD_TX;
+    static const float LOAD_LOCK;
+    static const float LOAD_COMMIT;
+
     CPubKey myPubKey;
     std::vector<CNode*> leaders; // pbft leader
 //    CPubKey myPubKey;
@@ -236,6 +253,7 @@ public:
     uint32_t nFail; /* number of single-shard aborted tx */
     uint32_t nCommitted; /* number of cross-shard committed tx */
     uint32_t nAborted; /* number of cross-shard aborte tx */
+    ThreadSafeVector vLoad; // the load of all shards.
 
     CPbft();
     ~CPbft();

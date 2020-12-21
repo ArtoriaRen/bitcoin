@@ -2000,6 +2000,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    int32_t outputShard = txPlacer.randomPlaceUTXO(reply.digest);
 	    //std::cout << "sending unlock_to_commit with req_hash = " << commitReq.GetDigest().GetHex().substr(0, 10) << " to shard " << outputShard << std::endl;
 	    connman->PushMessage(g_pbft->leaders[outputShard], msgMaker.Make(NetMsgType::OMNI_UNLOCK_COMMIT, commitReq));
+	    g_pbft->vLoad.add(outputShard, CPbft::LOAD_COMMIT);
 	} 
     }
 
