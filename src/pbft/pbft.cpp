@@ -33,7 +33,7 @@ std::string clientAddrString;
 int32_t pbftID; 
 int32_t nMaxReqInFly; 
 int32_t reqWaitTimeout = 1000;
-int32_t maxBlockSize = 2000;
+size_t maxBlockSize = 1000000; //max block size is 1MB of tx (req type, etc. excluded)
 int32_t warmUpMemoryPageCache = 1;
 
 ThreadSafeQueue::ThreadSafeQueue() { }
@@ -55,18 +55,20 @@ std::deque<TypedReq> ThreadSafeQueue::get_all() {
     return ret;
 }
 
-std::deque<TypedReq> ThreadSafeQueue::get_upto(uint32_t upto) {
+std::deque<TypedReq> ThreadSafeQueue::get_upto(size_t max_bytes) {
     std::unique_lock<std::mutex> mlock(mutex_);
-    if (queue_.size() < upto) {
-	std::deque<TypedReq> ret(queue_);
-	queue_.clear();
-	return ret;
-    } else {
-	std::deque<TypedReq> ret;
-	ret.insert(ret.end(), queue_.begin(), queue_.begin() + upto);
-	queue_.erase(queue_.begin(), queue_.begin() + upto);
-	return ret;
+    size_t packageSize = 0;
+    int i = 0;
+    for (; i < queue_.size() && packageSize < max_bytes; i++) {
+	CMutableTransaction& tx_mutable = queue_[i].pReq->tx_mutable;
+	//std::cout << "tx " << tx_mutable.GetHash().GetHex() << " size = " << ::GetSerializeSize(tx_mutable, SER_NETWORK, PROTOCOL_VERSION) << std::endl; 
+	packageSize += ::GetSerializeSize(tx_mutable, SER_NETWORK, PROTOCOL_VERSION);
     }
+    //std::cout << "i = " << i << ", packageSize = " << packageSize << std::endl;
+
+    std::deque<TypedReq> ret(queue_.begin(), queue_.begin() + i);
+    queue_.erase(queue_.begin(), queue_.begin() + i);
+    return ret;
 }
 
 void ThreadSafeQueue::pop_front() {

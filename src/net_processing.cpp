@@ -2965,10 +2965,10 @@ bool PeerLogicValidation::SendPPMessages(){
      *  
      */ 
     if (pbft->isLeader()) {
-	if (pbft->reqQueue.size() >= maxBlockSize
+	if (pbft->reqQueue.size() >= 500
 			|| (pbft->reqQueue.size() > 0 && pbft->timeoutWaitReq())) {
 	    pbft->printQueueSize(); // only log queue size here cuz it will not change anywhere else
-	    CPbftBlock pbftblock(pbft->reqQueue.get_upto(static_cast<uint32_t>(maxBlockSize)));
+	    CPbftBlock pbftblock(pbft->reqQueue.get_upto(maxBlockSize));
 	    pbftblock.ComputeHash();
 	    CPre_prepare ppMsg = pbft->assemblePPMsg(pbftblock);
 	    pbft->log[ppMsg.seq].ppMsg = ppMsg;
