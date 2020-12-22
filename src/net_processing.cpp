@@ -1860,8 +1860,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	//    std::cout << strCommand << " from " << reply.peerID << " sig verification fail"  << std::endl;
 	//} 
 	//std::cout << __func__ << ": received PBFT_REPLY for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
-	g_pbft->replyMap[reply.digest].emplace(pfrom->GetAddrName());
-	if (g_pbft->replyMap[reply.digest].size() == 2 * CPbft::nFaulty + 1) {
+	g_pbft->replyMap[reply.digest]++;
+	if (g_pbft->replyMap[reply.digest] == 2 * CPbft::nFaulty + 1) {
 	    struct timeval endTime;
 	    gettimeofday(&endTime, NULL);
 	    /* ---- calculate latency ---- */
@@ -1874,12 +1874,12 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		assert (stat.type == TxType::SINGLE_SHARD); 
 		//std::cout << "tx " << reply.digest.GetHex().substr(0,10);
 		if (reply.reply == 'y') {
-			g_pbft->nSucceed++;
+			g_pbft->nSucceed.fetch_add(1, std::memory_order_relaxed);
 			addCommittedTxIndex(reply.digest);
 			g_pbft->txInFly.erase(reply.digest);
 			nLocalCompletedTxPerInterval++;
 		} else if (reply.reply == 'n') {
-			g_pbft->nFail++;
+			g_pbft->nFail.fetch_add(1, std::memory_order_relaxed);
 			g_pbft->txResendQueue.push_back(g_pbft->txInFly[reply.digest]);
 			nLocalTotalFailedTxPerInterval++;
 		} 
@@ -1896,7 +1896,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 			/* only the output shard send committed reply, so no risk of 
 			 * printing info more than once for a tx. 
 			 */
-			g_pbft->nCommitted++;
+			g_pbft->nCommitted.fetch_add(1, std::memory_order_relaxed);
 			addCommittedTxIndex(txid);
 			g_pbft->txInFly.erase(txid);
 			nLocalCompletedTxPerInterval++;
@@ -1907,7 +1907,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 			 * for every input shard that have locked some UTXOs. However, we do
 			 * not count the latency of aborted tx in our statistics anyway.
 			 */
-			g_pbft->nAborted++;
+			g_pbft->nAborted.fetch_add(1, std::memory_order_relaxed);
 			g_pbft->txResendQueue.push_back(g_pbft->txInFly[reply.digest]);
 			nLocalTotalFailedTxPerInterval++;
 		} else if (reply.reply == 'n') {

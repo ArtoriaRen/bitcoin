@@ -1607,6 +1607,7 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
 	    vThread[i].join();
     }
     gettimeofday(&endTime, NULL);
+    sendingDone = true;
     long sendDuration = (endTime.tv_sec - startTime.tv_sec) * 1000000 + (endTime.tv_usec - startTime.tv_usec);
     std::cout << __func__ << ": totally sent " << totalTxSent << " tx in " << sendDuration << " us, sending rate = " << (double)totalTxSent * 1000000 / sendDuration  << " tx/sec" << std::endl;
     return NullUniValue;
