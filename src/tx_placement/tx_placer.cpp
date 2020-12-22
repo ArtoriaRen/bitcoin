@@ -19,6 +19,7 @@
 #include "init.h"
 
 std::atomic<uint32_t> totalTxSent(0);
+bool sendingDone = false;
 static const uint32_t SEC = 1000000; // 1 sec = 10^6 microsecond
 
 uint32_t num_committees;
@@ -185,7 +186,7 @@ static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const 
             for (auto& prereqTx: it->second) {
                 if (g_pbft->uncommittedPrereqTxSet.haveTx(prereqTx)) {
                     /* the prereq tx has not been committed yet, enqueue and send later */
-		    std::cout << "delay sending tx (" << block_height << ", " << j << ") " << std::endl;
+		    //std::cout << "delay sending tx (" << block_height << ", " << j << ") " << std::endl;
                     listDelaySendingTx.emplace_back(block.vtx[j], block_height, j);
 		    prereqTxCleared = false;
                     break;

@@ -25,6 +25,7 @@
 #include <pbft/pbft.h>
 
 extern std::atomic<uint32_t> totalTxSent;
+extern bool sendingDone;
 
 /* Introduction text for doxygen: */
 
@@ -56,7 +57,7 @@ void WaitForShutdown()
 	if (!testStarted) {
 	    testStarted = pbft.testStartTime.tv_sec > 0;  // test has started
 	}
-	if (totalTxSent > 0 && !testFinished) {
+	if (sendingDone && !testFinished) {
 	    testFinishedNew = pbft.nCompletedTx.load(std::memory_order_relaxed) + pbft.nTotalFailedTx.load(std::memory_order_relaxed) >= totalTxSent; // test has finished
 	}
 
