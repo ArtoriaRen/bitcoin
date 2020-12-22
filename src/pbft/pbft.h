@@ -29,7 +29,7 @@
 extern int32_t pbftID;
 extern int32_t nMaxReqInFly; 
 extern int32_t reqWaitTimeout;
-extern int32_t maxBlockSize; 
+extern size_t maxBlockSize; 
 extern int32_t warmUpMemoryPageCache;
 
 enum  STEP {TX_UTXO_EXIST_AND_VALUE = 0, TX_SIG_CHECK, TX_DB_UPDATE,
@@ -47,7 +47,7 @@ public:
 
     TypedReq& front();
     std::deque<TypedReq> get_all();
-    std::deque<TypedReq> get_upto(uint32_t upto);
+    std::deque<TypedReq> get_upto(size_t max_bytes);
     void pop_front();
 
     void push_back(const TypedReq& item);

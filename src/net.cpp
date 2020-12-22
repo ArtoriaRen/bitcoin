@@ -2839,6 +2839,7 @@ void CConnman::PushMessage(CNode* pnode, CSerializedNetMsg&& msg)
         //log total amount of bytes per command
         pnode->mapSendBytesPerMsgCmd[msg.command] += nTotalSize;
         pnode->nSendSize += nTotalSize;
+	//std::cout << __func__ << ": disconnected = " << pnode->fDisconnect << ". message size =  " << nMessageSize << " " << msg.command << " to " << pnode->GetAddrName()  << std::endl;
 
         if (pnode->nSendSize > nSendBufferMaxSize)
             pnode->fPauseSend = true;
