@@ -52,6 +52,7 @@ public:
 
     void push_back(const TypedReq& item);
     void push_back(TypedReq&& item);
+    void push_back(CReqBatch& itemBatch);
 
     int size();
     bool empty();

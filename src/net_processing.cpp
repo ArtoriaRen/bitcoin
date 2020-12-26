@@ -3465,25 +3465,12 @@ bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CD
     }
 
     /* received a tx, put it in queue . */
-    else if (strCommand == NetMsgType::PBFT_TX) {
-        CTransactionRef ptx;
-        vRecv >> ptx;
-	std::shared_ptr<CClientReq> req = std::make_shared<TxReq>(*ptx);
-	TypedReq typedReq = {ClientReqType::TX, req};
-	pbft->reqQueue.push_back(typedReq);
+    else if (strCommand == NetMsgType::REQ_BATCH) {
+        CReqBatch reqBatch;
+        vRecv >> reqBatch;
+	pbft->reqQueue.push_back(reqBatch);
         g_connman->WakeMessageHandler();
 	//std::cout << __func__ << ": push to req queue tx = " << ptx->GetHash().GetHex().substr(0, 10) << std::endl;
-    }
-
-    /* received a lock req, put it in queue . */
-    else if (strCommand == NetMsgType::OMNI_LOCK) {
-        CTransactionRef ptx;
-        vRecv >> ptx;
-	std::shared_ptr<CClientReq> req = std::make_shared<LockReq>(*ptx);
-	TypedReq typedReq = {ClientReqType::LOCK, req};
-	pbft->reqQueue.push_back(typedReq);
-        g_connman->WakeMessageHandler();
-//	std::cout << __func__ << ": push to req queue lockreq. tx = " << ptx->GetHash().GetHex().substr(0, 10) << std::endl;
     }
 
     /* received an unlock_to_commit req, put it in queue . */

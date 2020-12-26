@@ -515,3 +515,4 @@ void CPbftBlock::Clear() {
     vReq.clear();
 }
 
+CReqBatch::CReqBatch() { }
