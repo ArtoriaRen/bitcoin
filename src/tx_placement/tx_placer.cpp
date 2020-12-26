@@ -157,6 +157,8 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
 	/* check delay sending tx.  */
         cnt += sendQueuedTx(listDelaySendingTx, noop_count);
     }
+    /* send all tx remaining in batch buffers. */
+    g_pbft->sendAllBatch();
     /* send all remaining tx in the queue.  */
     //std::cout << "sending remaining tx" << std::endl;
     //while (!listDelaySendingTx.empty()) {
@@ -229,7 +231,6 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 	std::vector<int32_t> shards = txPlacer.randomPlace(*tx, view);
 	const uint256& hashTx = tx->GetHash();
 
-	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	assert((tx->IsCoinBase() && shards.size() == 1) || (!tx->IsCoinBase() && shards.size() >= 2)); // there must be at least one output shard and one input shard for non-coinbase tx.
 	//std::cout << idx << "-th" << " tx "  <<  hashTx.GetHex().substr(0, 10) << " : ";
 	//for (int shard : shards)
@@ -244,27 +245,21 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 	 * the lastest_prereq_tx info is no longer need, so we can safely put a dummy
 	 * value. 
 	 */
-	g_pbft->txInFly.insert(std::make_pair(hashTx, std::move(TxBlockInfo(tx, block_height, idx))));
-	struct TxStat stat;
+        g_pbft->txInFly.insert(std::make_pair(hashTx, std::move(TxBlockInfo(tx, block_height, idx))));
 	if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
 	    /* this is a single shard tx */
-	    stat.type = TxType::SINGLE_SHARD;
-	    gettimeofday(&stat.startTime, NULL);
-	    g_pbft->mapTxStartTime.insert(std::make_pair(hashTx, stat));
-	    g_connman->PushMessage(g_pbft->leaders[shards[0]], msgMaker.Make(NetMsgType::PBFT_TX, *tx));
 	    if (shards.size() != 1) {
-		/* only count non-coinbase tx b/c coinbase tx do not have the time-consuming sig verification step. */
+                g_pbft->add2Batch(shards[0], ClientReqType::TX, tx);
+                /* only count non-coinbase tx b/c coinbase tx do not 
+                 * have the time-consuming sig verification step. */
 		g_pbft->vLoad.add(shards[0], CPbft::LOAD_TX);
 	    }
 	} else {
 	    /* this is a cross-shard tx */
-	    stat.type = TxType::CROSS_SHARD;
-	    gettimeofday(&stat.startTime, NULL);
-	    g_pbft->mapTxStartTime.insert(std::make_pair(hashTx, stat));
 	    for (uint i = 1; i < shards.size(); i++) {
 		g_pbft->inputShardReplyMap[hashTx].lockReply.insert(std::make_pair(shards[i], std::vector<CInputShardReply>()));
 		g_pbft->inputShardReplyMap[hashTx].decision.store('\0', std::memory_order_relaxed);
-		g_connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_LOCK, *tx));
+                g_pbft->add2Batch(shards[i], ClientReqType::LOCK, tx);
 		g_pbft->vLoad.add(shards[i], CPbft::LOAD_LOCK);
 	    }
 	}

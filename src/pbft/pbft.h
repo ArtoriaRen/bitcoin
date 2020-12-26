@@ -254,12 +254,15 @@ public:
     std::atomic<uint32_t> nCommitted; /* number of cross-shard committed tx */
     std::atomic<uint32_t> nAborted; /* number of cross-shard aborte tx */
     ThreadSafeVector vLoad; // the load of all shards.
+    std::vector<CReqBatch> batchBuffers;
 
     CPbft();
     ~CPbft();
     bool checkReplySig(const CReply* pReply) const;
     void logThruput(struct timeval& endTime);
     void loadDependencyGraph();
+    void add2Batch(const uint32_t shardID, const ClientReqType type, const CTransactionRef txRef);
+    void sendAllBatch();
 
 private:
     // private ECDSA key used to sign messages
