@@ -41,6 +41,42 @@ struct TxStat{
     struct timeval startTime;
 };
 
+/* The shard info for one tx */
+class ShardInfo{
+public: 
+    std::vector<int32_t> shards; // output_shard, input_shard1, input_shard2, ....
+    std::deque<std::vector<uint32_t> > vShardUtxoIdxToLock;
+
+    template<typename Stream>
+    void Serialize(Stream& s) const{
+	uint32_t size = shards.size();
+	s.write(reinterpret_cast<const char*>(&size), sizeof(size));
+	s.write(reinterpret_cast<const char*>(shards.data()), size * sizeof(shards[0]));
+	assert(vShardUtxoIdxToLock.size() == size - 1);
+	for (uint i = 0; i < vShardUtxoIdxToLock.size(); i++) {
+	    size = vShardUtxoIdxToLock[i].size();
+	    s.write(reinterpret_cast<const char*>(&size), sizeof(size));
+	    s.write(reinterpret_cast<const char*>(vShardUtxoIdxToLock[i].data()), size * sizeof(vShardUtxoIdxToLock[i][0]));
+	}
+    }
+    
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+	uint32_t size;
+	s.read(reinterpret_cast<char*>(&size), sizeof(size));
+	shards.resize(size);
+	s.read(reinterpret_cast<char*>(shards.data()), size * sizeof(shards[0]));
+	vShardUtxoIdxToLock.resize(size - 1);
+	for (uint i = 0; i < vShardUtxoIdxToLock.size(); i++) {
+	    s.read(reinterpret_cast<char*>(&size), sizeof(size));
+	    vShardUtxoIdxToLock[i].resize(size);
+	    s.read(reinterpret_cast<char*>(vShardUtxoIdxToLock[i].data()), size * sizeof(vShardUtxoIdxToLock[i][0]));
+	}
+    }
+
+    void print() const;
+};
+
 class TxIndexOnChain {
 public:
     uint32_t block_height;
@@ -240,6 +276,9 @@ public:
     std::map<TxIndexOnChain, std::vector<TxIndexOnChain>> mapDependency; // <tx, latest_prereq_tx>
     ThreadSafeTxIndexSet uncommittedPrereqTxSet;
     
+
+    std::deque<std::deque<ShardInfo>> allBlockShardInfo;
+
     std::ofstream latencySingleShardFile;
     std::ofstream latencyCrossShardFile;
     std::ofstream thruputFile;
@@ -257,12 +296,18 @@ public:
     std::atomic<uint32_t> nCommitted; /* number of cross-shard committed tx */
     std::atomic<uint32_t> nAborted; /* number of cross-shard aborte tx */
     ThreadSafeVector vLoad; // the load of all shards.
+    std::vector<CReqBatch> batchBuffers;
 
     CPbft();
     ~CPbft();
     bool checkReplySig(const CReply* pReply) const;
     void logThruput(struct timeval& endTime);
     void loadDependencyGraph();
+    /* only adding LOCK_REQ to the batch requires utxoIdxToLock. */
+    void add2Batch(const uint32_t shardID, const ClientReqType type, const CTransactionRef txRef, const std::vector<uint32_t>* utxoIdxToLock = nullptr);
+    void sendAllBatch();
+
+    void loadShardInfo(const int txStartBlock, const int txEndBlock);
 
 private:
     // private ECDSA key used to sign messages

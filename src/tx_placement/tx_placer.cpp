@@ -35,23 +35,6 @@ size_t txChunkSize = 100;
 //uint32_t txEndBlock;
 bool buildWaitGraph = false;
 
-template<typename T>
-static std::string vector_to_string(const std::vector<T>& vec) {
-    std::string ret;
-    for (uint i = 0; i < vec.size(); i++) {
-        ret += std::to_string(vec[i]);
-        ret += ',';
-    }
-    return ret.substr(0, ret.size() - 1);
-}
-
-void ShardInfo::print() const {
-    std::cout <<  vector_to_string(shards) << std::endl;
-    for(uint i = 0; i < vShardUtxoIdxToLock.size(); i++) {
-	std::cout << "shard " << shards[i+1] << " should lock UTXO idx: ";
-	std::cout << vector_to_string(vShardUtxoIdxToLock[i]) << std::endl; 
-    }
-}
 
 TxPlacer::TxPlacer():totalTxNum(0), vTxCnt(num_committees, 0){ }
 static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const uint32_t start_tx, int noop_count, TxPlacer& txplacer, std::list<TxBlockInfo>& qDelaySendingTx);
@@ -121,7 +104,7 @@ std::vector<int32_t> TxPlacer::dependencyPlace(const CTransaction& tx, CCoinsVie
     return ret;
 }
 
-std::vector<int32_t> TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCache& cache, std::vector<std::vector<uint32_t> >& vShardUtxoIdxToLock, const uint32_t block_height){
+std::vector<int32_t> TxPlacer::smartPlace(const CTransaction& tx, CCoinsViewCache& cache, std::deque<std::vector<uint32_t> >& vShardUtxoIdxToLock, const uint32_t block_height){
     std::vector<int32_t> ret;
 
     /* random place coinbase tx */
@@ -245,7 +228,7 @@ static uint32_t sendQueuedTx(std::list<TxBlockInfo>& listDelaySendingTx, const i
 	if (prereqTxCleared) {
 	    /* All prereqTx have been committed, ready to send this tx. */
 	    //std::cout << "sending queued tx (" << iter->blockHeight << ", " << iter->n << ")" << std::endl;
-	    txplacer.sendTx(iter->tx, iter->n, iter->blockHeight, true);
+	    txplacer.sendTx(iter->tx, iter->n, iter->blockHeight);
 	    iter = listDelaySendingTx.erase(iter);
 	    txSentCnt++;
 	    delayByNoop(noop_count);
@@ -443,7 +426,6 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
 	    std::cerr << "Block not found on disk" << std::endl;
 	}
 	//std::cout << " block_height = " << block_height  << ", thread_idx = " << thread_idx << ", block vtx size = " << block.vtx.size() << std::endl;
-        txPlacer.loadShardInfo(block_height);
 
 	for (size_t i = thread_idx * txChunkSize; i < block.vtx.size(); i += jump_length){
 	    //std::cout << __func__ << ": thread " << thread_idx << " sending No." << i << " tx in block " << block_height << std::endl;
@@ -455,6 +437,8 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
 	/* check delay sending tx.  */
         cnt += sendQueuedTx(listDelaySendingTx, noop_count, txPlacer);
     }
+    /* send all tx remaining in batch buffers. */
+    g_pbft->sendAllBatch();
     /* send all remaining tx in the queue.  */
     //std::cout << "sending remaining tx" << std::endl;
     //while (!listDelaySendingTx.empty()) {
@@ -486,7 +470,6 @@ static uint32_t sendTxChunk(const CBlock& block, const uint block_height, const 
                     /* the prereq tx has not been committed yet, enqueue and send later */
 		    //std::cout << "delay sending tx (" << block_height << ", " << j << ") " << std::endl;
                     listDelaySendingTx.emplace_back(block.vtx[j], block_height, j);
-		    txplacer.mapDelayedTxShardInfo.emplace(txIdx, txplacer.vShardInfo[j]);
 		    prereqTxCleared = false;
                     break;
                 }
@@ -521,70 +504,51 @@ uint32_t TxPlacer::sendAllTailTx(int noop_count) {
     return cnt;
 }
 
-bool TxPlacer::sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height, const bool isDelayedTx) {
-	const uint256& hashTx = tx->GetHash();
-	/* get the input shards and output shards id*/
-	const ShardInfo* pShardInfo;
-	std::map<TxIndexOnChain, ShardInfo>::iterator it;
-	if (!isDelayedTx) {
-	    pShardInfo = &vShardInfo[idx];
-	} else {
-		
-	    it = mapDelayedTxShardInfo.find(TxIndexOnChain(block_height, idx));
-	    pShardInfo = &(it->second);
-	}
+bool TxPlacer::sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height) {
+    CPbft& pbft = *g_pbft;
+    const uint256& hashTx = tx->GetHash();
+    /* get the input shards and output shards id*/
+    const ShardInfo& shardInfo = pbft.allBlockShardInfo[block_height][idx];
 
-	const std::vector<int32_t>& shards = pShardInfo->shards;
+    const std::vector<int32_t>& shards = shardInfo.shards;
 
-	const std::vector<std::vector<uint32_t> >& vShardUtxoIdxToLock = pShardInfo->vShardUtxoIdxToLock;
+    const std::deque<std::vector<uint32_t> >& vShardUtxoIdxToLock = shardInfo.vShardUtxoIdxToLock;
 
-	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-	assert((tx->IsCoinBase() && shards.size() == 1) || (!tx->IsCoinBase() && shards.size() >= 2)); // there must be at least one output shard and one input shard for non-coinbase tx.
-	//std::cout << idx << "-th" << " tx "  <<  hashTx.GetHex().substr(0, 10) << " : ";
-	//for (int shard : shards)
-	//    std::cout << shard << ", ";
-	//std::cout << std::endl;
+    assert((tx->IsCoinBase() && shards.size() == 1) || (!tx->IsCoinBase() && shards.size() >= 2)); // there must be at least one output shard and one input shard for non-coinbase tx.
+    //std::cout << idx << "-th" << " tx "  <<  hashTx.GetHex().substr(0, 10) << " : ";
+    //for (int shard : shards)
+    //    std::cout << shard << ", ";
+    //std::cout << std::endl;
 
-	/* send tx and collect time info to calculate latency. 
-	 * We also remove all reply msg for this req for resending aborted tx. */
-	//g_pbft->replyMap[hashTx].clear();
-	//g_pbft->mapTxStartTime.erase(hashTx);
+    /* send tx and collect time info to calculate latency. 
+     * We also remove all reply msg for this req for resending aborted tx. */
+    //g_pbft->replyMap[hashTx].clear();
+    //g_pbft->mapTxStartTime.erase(hashTx);
 
-	/* In closed loop test, for a tx has been send out, it will be committed and 
-	 * the lastest_prereq_tx info is no longer need, so we can safely put a dummy
-	 * value. 
-	 */
-	g_pbft->txInFly.insert(std::make_pair(hashTx, std::move(TxBlockInfo(tx, block_height, idx, shards[0]))));
-	struct TxStat stat;
-	if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
-	    /* this is a single shard tx */
-	    stat.type = TxType::SINGLE_SHARD;
-	    gettimeofday(&stat.startTime, NULL);
-	    g_pbft->mapTxStartTime.insert(std::make_pair(hashTx, stat));
-	    g_connman->PushMessage(g_pbft->leaders[shards[0]], msgMaker.Make(NetMsgType::PBFT_TX, *tx));
-	    if (shards.size() != 1) {
-		/* only count non-coinbase tx b/c coinbase tx do not have the time-consuming sig verification step. */
-		g_pbft->vLoad.add(shards[0], CPbft::LOAD_TX);
-	    }
-	} else {
-	    /* this is a cross-shard tx */
-	    stat.type = TxType::CROSS_SHARD;
-	    gettimeofday(&stat.startTime, NULL);
-	    g_pbft->mapTxStartTime.insert(std::make_pair(hashTx, stat));
-	    for (uint i = 1; i < shards.size(); i++) {
-		g_pbft->inputShardReplyMap[hashTx].lockReply.insert(std::make_pair(shards[i], std::vector<CInputShardReply>()));
-		g_pbft->inputShardReplyMap[hashTx].decision.store('\0', std::memory_order_relaxed);
-		LockReq lockReq(*tx, vShardUtxoIdxToLock[i - 1]);
-		g_connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_LOCK, lockReq));
-		g_pbft->vLoad.add(shards[i], CPbft::LOAD_LOCK);
-	    }
-	}
-	
-	if (isDelayedTx) {
-	    mapDelayedTxShardInfo.erase(it);
-	}
-
-	return true;
+    /* In closed loop test, for a tx has been send out, it will be committed and 
+     * the lastest_prereq_tx info is no longer need, so we can safely put a dummy
+     * value. 
+     */
+    pbft.txInFly.insert(std::make_pair(hashTx, std::move(TxBlockInfo(tx, block_height, idx, shards[0]))));
+    if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
+        /* this is a single shard tx */
+        if (shards.size() != 1) {
+            pbft.add2Batch(shards[0], ClientReqType::TX, tx);
+            /* only count non-coinbase tx b/c coinbase tx do not 
+             * have the time-consuming sig verification step. */
+            pbft.vLoad.add(shards[0], CPbft::LOAD_TX);
+        }
+    } else {
+        /* this is a cross-shard tx */
+        for (uint i = 1; i < shards.size(); i++) {
+            pbft.inputShardReplyMap[hashTx].lockReply.insert(std::make_pair(shards[i], std::vector<CInputShardReply>()));
+            pbft.inputShardReplyMap[hashTx].decision.store('\0', std::memory_order_relaxed);
+            pbft.add2Batch(shards[i], ClientReqType::LOCK, tx, &vShardUtxoIdxToLock[i - 1]);
+            pbft.vLoad.add(shards[i], CPbft::LOAD_LOCK);
+        }
+    }
+    
+    return true;
 }
 
 void buildDependencyGraph(uint32_t block_height) {
@@ -634,23 +598,6 @@ void buildDependencyGraph(uint32_t block_height) {
 //    }
 //}
 
-void TxPlacer::loadShardInfo(int block_height) {
-    CBlock block;
-    CBlockIndex* pblockindex = chainActive[block_height];
-    if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
-        std::cerr << "Block not found on disk" << std::endl;
-    }
-    std::cout << __func__ << ": loading shard info for " << block.vtx.size() << " tx in block " << block_height << std::endl;
-    std::ifstream shardInfoFile;
-    shardInfoFile.open(getShardInfoFilename(block_height));
-    assert(shardInfoFile.is_open());
-    /* we did not clear vShardInfo b/c it will be overwirtten during file unserialization. */
-    vShardInfo.resize(block.vtx.size());
-    for (uint i = 0; i < vShardInfo.size(); i++) {
-	vShardInfo[i].Unserialize(shardInfoFile);
-    }
-    shardInfoFile.close();
-}
 
 TxIndexOnChain::TxIndexOnChain(): block_height(0), offset_in_block(0) { }
 

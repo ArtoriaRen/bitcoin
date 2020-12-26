@@ -6,6 +6,7 @@
 
 #include <pbft/pbft.h>
 #include "tx_placement/tx_placer.h"
+#include "netmessagemaker.h"
 
 int32_t pbftID;
 struct timeval thruInterval; // calculate throughput once every "thruInterval" seconds
@@ -112,7 +113,7 @@ const float CPbft::LOAD_TX = 1.0f;
 const float CPbft::LOAD_LOCK = 3.85f;
 const float CPbft::LOAD_COMMIT = 4.82f;
 
-CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nSucceed(0), nFail(0), nCommitted(0), nAborted(0), vLoad(num_committees, 0), privateKey(CKey()) {
+CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nSucceed(0), nFail(0), nCommitted(0), nAborted(0), vLoad(num_committees, 0), batchBuffers(num_committees), privateKey(CKey()) {
     testStartTime = {0, 0};
     nextLogTime = {0, 0};
     privateKey.MakeNewKey(false);
@@ -174,6 +175,84 @@ void CPbft::loadDependencyGraph (){
 	dpRec.Unserialize(dependencyFileStream);
     }
     dependencyFileStream.close();
+}
+
+void CPbft::add2Batch(const uint32_t shardId, const ClientReqType type, const CTransactionRef txRef, const std::vector<uint32_t>* utxoIdxToLock) {
+	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+	const uint256& hashTx = txRef->GetHash();
+	struct TxStat stat;
+    std::shared_ptr<CClientReq> req;
+    if (type == ClientReqType::TX) { 
+        stat.type = TxType::SINGLE_SHARD;
+        req = std::make_shared<TxReq>(*txRef);
+    }
+    else {
+        stat.type = TxType::CROSS_SHARD;
+        req = std::make_shared<LockReq>(*txRef, *utxoIdxToLock);
+    }
+    req->UpdateHash();
+    batchBuffers[shardId].emplace_back(type, req);
+    mapTxStartTime.insert(std::make_pair(hashTx, stat));
+
+    /* if batch for the shard is full, send the batch. */
+    if (batchBuffers[shardId].isFull()) {
+        for (uint i = 0; i < batchBuffers[shardId].vReq.size(); i++) { 
+            const uint256& hashTx = batchBuffers[shardId].vReq[i].pReq->hash;
+            /* all req in the batch have the same start time. */
+            gettimeofday(&(mapTxStartTime[hashTx].startTime), NULL);
+        }
+        g_connman->PushMessage(leaders[shardId], msgMaker.Make(NetMsgType::REQ_BATCH, batchBuffers[shardId]));
+        batchBuffers[shardId].vReq.clear();
+    }
+}
+
+/* no matter any batch is full or not, send all batches. */
+void CPbft::sendAllBatch() {
+	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+    for (uint shardId = 0; shardId < num_committees; shardId++) {
+        for (uint i = 0; i < batchBuffers[shardId].vReq.size(); i++) { 
+            const uint256& hashTx = batchBuffers[shardId].vReq[i].pReq->hash;
+            /* all req in the batch have the same start time. */
+            gettimeofday(&(mapTxStartTime[hashTx].startTime), NULL);
+        }
+        g_connman->PushMessage(leaders[shardId], msgMaker.Make(NetMsgType::REQ_BATCH, batchBuffers[shardId]));
+        batchBuffers[shardId].vReq.clear();
+    }
+}
+
+void CPbft::loadShardInfo(const int txStartBlock, const int txEndBlock) {
+    allBlockShardInfo.resize(txEndBlock - txStartBlock);
+    for (int block_height = txStartBlock; block_height < txEndBlock; block_height++) {
+        uint32_t block_size = chainActive[block_height]->nTx;
+        std::cout << __func__ << ": loading shard info for " << block_size << " tx in block " << block_height << std::endl;
+        std::ifstream shardInfoFile;
+        shardInfoFile.open(getShardInfoFilename(block_height));
+        assert(shardInfoFile.is_open());
+        /* we did not clear allBlockShardInfo b/c it will be overwirtten during file unserialization. */
+        allBlockShardInfo[block_height - txStartBlock].resize(block_size);
+        for (uint i = 0; i < allBlockShardInfo.size(); i++) {
+            allBlockShardInfo[block_height - txStartBlock][i].Unserialize(shardInfoFile);
+        }
+        shardInfoFile.close();
+    }
+}
+
+template<typename T>
+static std::string vector_to_string(const std::vector<T>& vec) {
+    std::string ret;
+    for (uint i = 0; i < vec.size(); i++) {
+        ret += std::to_string(vec[i]);
+        ret += ',';
+    }
+    return ret.substr(0, ret.size() - 1);
+}
+
+void ShardInfo::print() const {
+    std::cout <<  vector_to_string(shards) << std::endl;
+    for(uint i = 0; i < vShardUtxoIdxToLock.size(); i++) {
+	std::cout << "shard " << shards[i+1] << " should lock UTXO idx: ";
+	std::cout << vector_to_string(vShardUtxoIdxToLock[i]) << std::endl; 
+    }
 }
 
 std::unique_ptr<CPbft> g_pbft;

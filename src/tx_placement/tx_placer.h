@@ -29,42 +29,6 @@ extern int lastAssignedAffinity;
 //extern uint32_t txEndBlock;
 extern bool buildWaitGraph;
 
-/* The shard info for one tx */
-class ShardInfo{
-public: 
-    std::vector<int32_t> shards; // output_shard, input_shard1, input_shard2, ....
-    std::vector<std::vector<uint32_t> > vShardUtxoIdxToLock;
-
-    template<typename Stream>
-    void Serialize(Stream& s) const{
-	uint32_t size = shards.size();
-	s.write(reinterpret_cast<const char*>(&size), sizeof(size));
-	s.write(reinterpret_cast<const char*>(shards.data()), size * sizeof(shards[0]));
-	assert(vShardUtxoIdxToLock.size() == size - 1);
-	for (uint i = 0; i < vShardUtxoIdxToLock.size(); i++) {
-	    size = vShardUtxoIdxToLock[i].size();
-	    s.write(reinterpret_cast<const char*>(&size), sizeof(size));
-	    s.write(reinterpret_cast<const char*>(vShardUtxoIdxToLock[i].data()), size * sizeof(vShardUtxoIdxToLock[i][0]));
-	}
-    }
-    
-    template<typename Stream>
-    void Unserialize(Stream& s) {
-	uint32_t size;
-	s.read(reinterpret_cast<char*>(&size), sizeof(size));
-	shards.resize(size);
-	s.read(reinterpret_cast<char*>(shards.data()), size * sizeof(shards[0]));
-	vShardUtxoIdxToLock.resize(size - 1);
-	for (uint i = 0; i < vShardUtxoIdxToLock.size(); i++) {
-	    s.read(reinterpret_cast<char*>(&size), sizeof(size));
-	    vShardUtxoIdxToLock[i].resize(size);
-	    s.read(reinterpret_cast<char*>(vShardUtxoIdxToLock[i].data()), size * sizeof(vShardUtxoIdxToLock[i][0]));
-	}
-    }
-
-    void print() const;
-};
-
 
 class DependencyRecord {
 public:
@@ -91,8 +55,6 @@ class TxPlacer{
 public:
     std::map<uint, std::map<uint, uint>> shardCntMap; // < input_utxo_count, shard_count, tx_count>
     uint totalTxNum;
-    std::vector<ShardInfo> vShardInfo;
-    std::map<TxIndexOnChain, ShardInfo> mapDelayedTxShardInfo;
     /* tx couter for load balancing. */
     std::vector<int32_t> vTxCnt;
 
@@ -106,7 +68,7 @@ public:
      * The first element is the output shard id, and other elements are input shard ids.
      * The output shard id might equal one input shard id. */
     std::vector<int32_t> dependencyPlace(const CTransaction& tx, CCoinsViewCache& cache, std::vector<std::vector<uint32_t> >& vShardUtxoIdxToLock, const uint32_t block_height);
-    std::vector<int32_t> smartPlace(const CTransaction& tx, CCoinsViewCache& cache, std::vector<std::vector<uint32_t> >& vShardUtxoIdxToLock, const uint32_t block_height);
+    std::vector<int32_t> smartPlace(const CTransaction& tx, CCoinsViewCache& cache, std::deque<std::vector<uint32_t> >& vShardUtxoIdxToLock, const uint32_t block_height);
 
     /* return the shard hosting the UTXO whose producing tx is txid. 
      * Note: this should be called only by servers, so the func does not 
@@ -115,14 +77,13 @@ public:
 
     void printPlaceResult();
 
-    void loadShardInfo(int block_height);
 
     //uint32_t sendTxInBlock(uint32_t block_height, struct timeval& expected_last_send_time, int txSendPeriod);
     uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod);
     uint32_t sendAllTailTx(int txSendPeriod);
 
     /* return true if the tx is sent, false if the tx is queued. */
-    bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height, const bool isDelayedTx = false);
+    bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height);
 };
 
 typedef struct {

@@ -1556,15 +1556,15 @@ UniValue printshardinfo(const JSONRPCRequest& request)
 
     int block_height = request.params[0].get_int();
     
-    TxPlacer txPlacer;
-    txPlacer.loadShardInfo(block_height);
-    for (unsigned int i = 0; i < txPlacer.vShardInfo.size(); i++) {
+    CPbft& pbft = *g_pbft;
+    pbft.loadShardInfo(601000, block_height);
+    for (unsigned int i = 0; i < pbft.allBlockShardInfo[block_height].size(); i++) {
 	std::cout << i << "-th" << " tx "  << " : ";
 //	auto& shards = txPlacer.vShardInfo[i].shards;
 //	for (int shard : shards)
 //	    std::cout << shard << ", ";
 //	std::cout << std::endl;
-	txPlacer.vShardInfo[i].print();
+	pbft.allBlockShardInfo[block_height][i].print();
     }
     return NullUniValue;
 }
@@ -1591,6 +1591,7 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
     int noopCount = request.params[2].get_int();
     const uint num_threads = request.params[3].get_int();
     assert(num_threads >= 1);
+    g_pbft->loadShardInfo(txStartBlock, txEndBlock);
     std::vector<std::thread> vThread;
 
     struct timeval startTime, endTime;
