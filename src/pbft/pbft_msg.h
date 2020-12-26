@@ -379,5 +379,32 @@ public:
     }
 };
 
+class CReqBatch {
+public:
+    std::deque<TypedReq> vReq;
+
+    CReqBatch();
+
+    template<typename Stream>
+    void Serialize(Stream& s) const {
+        uint batch_size = vReq.size();
+        s.write((char*) &batch_size, sizeof (batch_size));
+        for (uint i = 0; i < vReq.size(); i++) {
+            vReq[i].Serialize(s);
+        }
+    }
+
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+        uint batch_size;
+        s.read((char*) &batch_size, sizeof (batch_size));
+        vReq.resize(batch_size);
+        for (uint i = 0; i < vReq.size(); i++) {
+            vReq[i].Unserialize(s);
+        }
+    }
+};
+
+
 #endif /* PBFT_MSG_H */
 

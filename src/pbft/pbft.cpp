@@ -93,6 +93,16 @@ void ThreadSafeQueue::push_back(TypedReq&& item) {
     cond_.notify_one(); // notify one waiting thread
 }
 
+void ThreadSafeQueue::push_back(CReqBatch& itemBatch) {
+    std::unique_lock<std::mutex> mlock(mutex_);
+    for (uint i = 0; i < itemBatch.vReq.size(); i++) {
+        queue_.push_back(std::move(itemBatch.vReq[i]));
+    }
+    mlock.unlock(); // unlock before notificiation to minimize mutex con
+    cond_.notify_one(); // notify one waiting thread
+}
+
+
 int ThreadSafeQueue::size() {
     std::unique_lock<std::mutex> mlock(mutex_);
     int size = queue_.size();

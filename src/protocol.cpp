@@ -49,7 +49,8 @@ const char *PBFT_CLIENT="client"; // a pbft client use this msg to inform the le
 const char *OMNI_LOCK="omnilock"; // lock req of OmniLedger
 const char *OMNI_LOCK_REPLY="lockrly"; // lock reply of OmniLedger
 const char *OMNI_UNLOCK_COMMIT="unlockcmt"; 
-const char *OMNI_UNLOCK_ABORT="unlockabt"; 
+const char *OMNI_UNLOCK_ABORT="unlockabt";
+const char *REQ_BATCH = "reqbth";
 } // namespace NetMsgType
 
 /** All known message types. Keep this in the same order as the list of
@@ -92,7 +93,8 @@ const static std::string allNetMessageTypes[] = {
     NetMsgType::OMNI_LOCK, // lock req of OmniLedger
     NetMsgType::OMNI_LOCK_REPLY, // lock reply of OmniLedger
     NetMsgType::OMNI_UNLOCK_COMMIT, 
-    NetMsgType::OMNI_UNLOCK_ABORT 
+    NetMsgType::OMNI_UNLOCK_ABORT,
+    NetMsgType::REQ_BATCH
 };
 const static std::vector<std::string> allNetMessageTypesVec(allNetMessageTypes, allNetMessageTypes+ARRAYLEN(allNetMessageTypes));
 
