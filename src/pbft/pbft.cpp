@@ -113,15 +113,17 @@ CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), nLastCompletedTx(
     nextLogTime = {0, 0};
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
-    latencySingleShardFile.open("/home/l27ren/tx_placement/latencySingleShard.out");
-    latencyCrossShardFile.open("/home/l27ren/tx_placement/latencyCrossShard.out");
-    thruputFile.open("/home/l27ren/tx_placement/thruput.out");
+    latencySingleShardFile.open("/hdd2/davina/tx_placement/latencySingleShard.out");
+    latencyCrossShardFile.open("/hdd2/davina/tx_placement/latencyCrossShard.out");
+    thruputFile.open("/hdd2/davina/tx_placement/thruput.out");
+    recordedSentTx.open("/hdd2/davina/tx_placement/recordedSentTx.out");
 }
 
 CPbft::~CPbft() {
     latencySingleShardFile.close();
     latencyCrossShardFile.close();
     thruputFile.close();
+    recordedSentTx.close();
 }
 
 bool CPbft::checkReplySig(const CReply* pReply) const {
@@ -172,6 +174,9 @@ void CPbft::loadDependencyGraph (){
     dependencyFileStream.close();
 }
 
+
+static long totalPushMessageTime = 0;
+static uint totalPushMessageCnt = 0;
 void CPbft::add2Batch(const uint32_t shardId, const ClientReqType type, const CTransactionRef txRef) {
 	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	const uint256& hashTx = txRef->GetHash();
@@ -196,7 +201,14 @@ void CPbft::add2Batch(const uint32_t shardId, const ClientReqType type, const CT
             /* all req in the batch have the same start time. */
             gettimeofday(&(mapTxStartTime[hashTx].startTime), NULL);
         }
-        g_connman->PushMessage(leaders[shardId], msgMaker.Make(NetMsgType::REQ_BATCH, batchBuffers[shardId]));
+
+        struct timeval start, end;
+        totalPushMessageCnt += batchBuffers[shardId].vReq.size();
+        gettimeofday(&start, NULL);
+        g_connman->PushMessage(leaders[shardId], msgMaker.Make(NetMsgType::REQ_BATCH, std::move(batchBuffers[shardId])));
+        gettimeofday(&end, NULL);
+        totalPushMessageTime += (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec);
+        std::cout << "send a batch of " << batchBuffers[shardId].vReq.size() << " req takes " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec)  << " us, average push message time = " << totalPushMessageTime/totalPushMessageCnt << " usec/tx " << std::endl;
         batchBuffers[shardId].vReq.clear();
     }
 }

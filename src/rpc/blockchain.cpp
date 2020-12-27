@@ -1472,7 +1472,8 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
 
     /* creat threads to send tx.*/
     for (uint i = 0; i < num_threads; i++) {
-	vThread.emplace_back(sendTxOfThread, txStartBlock, txEndBlock, i, num_threads, noopCount);
+        vThread.emplace_back(sendTxOfThread, txStartBlock, txEndBlock, i, num_threads, noopCount);
+        //vThread.emplace_back(sendRecordedTxOfThread, txStartBlock, txEndBlock, i, num_threads, noopCount);
     }
 
     gettimeofday(&startTime, NULL); 
