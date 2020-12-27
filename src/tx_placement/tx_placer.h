@@ -82,8 +82,6 @@ public:
     uint32_t sendTxInBlock(uint32_t block_height, int txSendPeriod);
     uint32_t sendAllTailTx(int txSendPeriod);
 
-    /* return true if the tx is sent, false if the tx is queued. */
-    bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height);
 };
 
 typedef struct {
@@ -121,9 +119,12 @@ inline std::string getShardInfoFilename(int block_height) {
     return "/home/l27ren/shard_info_files/" + std::to_string(num_committees) + "committees/"+ std::to_string(block_height) + "_shardinfo.out";
 }
 void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thread_idx, const uint32_t num_threads, const int noop_count);
+void sendRecordedTxOfThread(const int startBlock, const int endBlock, const uint32_t thread_idx, const uint32_t num_threads, const int noop_count);
+
 uint32_t sendAllTailTx(int noop_count);
 
-extern TxPlacer g_txplacer;
+/* return true if the tx is sent, false if the tx is queued. */
+bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height);
 
 inline std::string getDependencyFilename() {
     return "dependency_file/dependency.out";

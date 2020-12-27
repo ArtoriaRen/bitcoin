@@ -282,6 +282,7 @@ public:
     std::ofstream latencySingleShardFile;
     std::ofstream latencyCrossShardFile;
     std::ofstream thruputFile;
+    std::ofstream recordedSentTx;
     /* <txid, tx_start_time>
      * This map includes both single-shard and cross-shard tx.
      */

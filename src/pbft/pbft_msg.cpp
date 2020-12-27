@@ -2,7 +2,7 @@
 #include "hash.h"
 #include "pbft.h"
 
-uint32_t MAX_BATCH_SIZE = 10; 
+uint32_t MAX_BATCH_SIZE = 100; 
 
 CReply::CReply(): reply(), digest(), sigSize(0), vchSig(){ 
     vchSig.reserve(72); // the expected sig size is 72 bytes.
