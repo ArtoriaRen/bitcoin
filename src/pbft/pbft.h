@@ -234,8 +234,17 @@ public:
     
     ThreadSafeQueue txResendQueue;
 
-    std::map<TxIndexOnChain, std::vector<TxIndexOnChain>> mapDependency; // <tx, latest_prereq_tx>
-    ThreadSafeTxIndexSet uncommittedPrereqTxSet;
+    std::map<TxIndexOnChain, std::vector<TxIndexOnChain>> mapDependentTx; // <tx, all_dependent_tx>
+    std::map<TxIndexOnChain, std::atomic<uint32_t>> mapRemainingPrereq; // <tx, num_remaining_uncommitted_prereq_tx_cnt>
+    std::deque<CBlock> blocks2Send;
+    std::deque<std::deque<uint32_t>> indepTx2Send; /* tx without prereq tx*/
+    std::deque<TxIndexOnChain> depTxReady2Send; /* tx with prereq tx but all prereq cleared. */
+    /* make sure the tx sending thread does not read the  depTxReady2Send when
+     * a msghand thread is inserting into it. 
+     * All threads should use trylock. In case that a trylock fails, a msghand thread
+     * temporarily buffer the tx to insert and insert all of them the next time.
+     */
+    std::mutex depTxMutex; 
     
     std::ofstream latencySingleShardFile;
     std::ofstream latencyCrossShardFile;
@@ -264,6 +273,10 @@ public:
     void loadDependencyGraph();
     void add2Batch(const uint32_t shardID, const ClientReqType type, const CTransactionRef txRef);
     void sendAllBatch();
+    /* called by the rpc thread to load all blocks about to send. */
+    void loadBlocks(uint32_t startBlock, uint32_t endBlock);
+    /* a queue of tx that have no prereq tx (independent tx). called by the rpc thread. */
+    void BuildIndepTxQueue(uint32_t startBlock, uint32_t endBlock); 
 
 private:
     // private ECDSA key used to sign messages
