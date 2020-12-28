@@ -1590,6 +1590,8 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
     const int txEndBlock = request.params[1].get_int();
     int noopCount = request.params[2].get_int();
     const uint num_threads = request.params[3].get_int();
+    g_pbft->loadBlocks(txStartBlock, txEndBlock);
+    g_pbft->BuildIndepTxQueue(txStartBlock, txEndBlock);
     assert(num_threads >= 1);
     g_pbft->loadShardInfo(txStartBlock, txEndBlock);
     std::vector<std::thread> vThread;

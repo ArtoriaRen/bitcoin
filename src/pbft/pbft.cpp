@@ -7,6 +7,7 @@
 #include <pbft/pbft.h>
 #include "tx_placement/tx_placer.h"
 #include "netmessagemaker.h"
+#include "chainparams.h"
 
 int32_t pbftID;
 struct timeval thruInterval; // calculate throughput once every "thruInterval" seconds
@@ -172,8 +173,8 @@ void CPbft::loadDependencyGraph (){
     DependencyRecord dpRec;
     dpRec.Unserialize(dependencyFileStream);
     while (!dependencyFileStream.eof()) {
-	mapDependency[dpRec.tx].push_back(dpRec.prereq_tx);
-        uncommittedPrereqTxSet.lock_free_insert(dpRec.prereq_tx);
+        mapRemainingPrereq[dpRec.tx]++;
+        mapDependentTx[dpRec.prereq_tx].push_back(dpRec.tx);
 	dpRec.Unserialize(dependencyFileStream);
     }
     dependencyFileStream.close();
@@ -263,6 +264,27 @@ void ShardInfo::print() const {
     for(uint i = 0; i < vShardUtxoIdxToLock.size(); i++) {
 	std::cout << "shard " << shards[i+1] << " should lock UTXO idx: ";
 	std::cout << vector_to_string(vShardUtxoIdxToLock[i]) << std::endl; 
+    }
+}
+
+void CPbft::loadBlocks(uint32_t startBlock, uint32_t endBlock) {
+    blocks2Send.resize(endBlock - startBlock);
+    for (int block_height = startBlock; block_height < endBlock; block_height++) {
+        CBlockIndex* pblockindex = chainActive[block_height];
+        if (!ReadBlockFromDisk(blocks2Send[block_height - startBlock], pblockindex, Params().GetConsensus())) {
+            std::cerr << "Block not found on disk" << std::endl;
+        }
+    }
+}
+
+void CPbft::BuildIndepTxQueue(uint32_t startBlock, uint32_t endBlock) {
+    for (uint block_height = startBlock; block_height < endBlock; block_height++) {
+        for (uint i = 0; i < blocks2Send[block_height - startBlock].vtx.size(); i++) {
+            if (mapRemainingPrereq.find(TxIndexOnChain(block_height, i)) == mapRemainingPrereq.end()) {
+                /* this tx has no prereq tx*/
+                indepTx2Send[block_height - startBlock].push_back(i);
+            }
+        }
     }
 }
 
