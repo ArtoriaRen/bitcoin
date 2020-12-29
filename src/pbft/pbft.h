@@ -270,7 +270,7 @@ public:
     ~CPbft();
     bool checkReplySig(const CReply* pReply) const;
     void logThruput(struct timeval& endTime);
-    void loadDependencyGraph();
+    void loadDependencyGraph(uint32_t startBlock, uint32_t endBlock);
     void add2Batch(const uint32_t shardID, const ClientReqType type, const CTransactionRef txRef);
     void sendAllBatch();
     /* called by the rpc thread to load all blocks about to send. */

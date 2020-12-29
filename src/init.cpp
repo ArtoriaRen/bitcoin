@@ -1764,7 +1764,5 @@ bool AppInitMain()
     StartWallets(scheduler);
 #endif
 
-    g_pbft->loadDependencyGraph();
-
     return true;
 }
