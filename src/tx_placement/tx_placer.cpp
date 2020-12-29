@@ -96,14 +96,14 @@ static void delayByNoop(const int noop_count) {
     std::cerr << "loop noop for " << k << " times. oprand becomes " << oprand << std::endl;
 }
 
-static uint32_t sendTxChunk(const CBlock& block, const uint start_height, const uint block_height, const uint32_t start_tx, const int noop_count, std::list<TxBlockInfo>& listDelaySendingTx) {
+static uint32_t sendTxChunk(const CBlock& block, const uint start_height, const uint block_height, const uint32_t start_tx, const int noop_count, std::vector<std::deque<TypedReq>>& batchBuffers) {
     uint32_t cnt = 0;
     CPbft& pbft = *g_pbft;
     uint32_t end_tx = std::min(start_tx + txChunkSize, pbft.indepTx2Send[block_height - start_height] .size());
 
     for (uint j = start_tx; j < end_tx; j++) {
         uint32_t tx_offset = pbft.indepTx2Send[block_height - start_height][j];
-        sendTx(block.vtx[tx_offset], tx_offset, block_height);
+        sendTx(block.vtx[tx_offset], tx_offset, block_height, batchBuffers);
         cnt++;
         //txIdx.Serialize(g_pbft->recordedSentTx);
         /* delay by doing noop. */
@@ -112,7 +112,7 @@ static uint32_t sendTxChunk(const CBlock& block, const uint start_height, const 
     return cnt;
 }
 
-static uint32_t sendQueuedTx(const int startBlock, const int noop_count) {
+static uint32_t sendQueuedTx(const int startBlock, const int noop_count, std::vector<std::deque<TypedReq>>& batchBuffers) {
     int txSentCnt = 0;
     CPbft& pbft = *g_pbft;
     if (pbft.depTxReady2Send.empty())
@@ -125,7 +125,7 @@ static uint32_t sendQueuedTx(const int startBlock, const int noop_count) {
             txSentCnt += pbft.depTxReady2Send.size();
             for (const TxIndexOnChain& txIdx: pbft.depTxReady2Send) {
                 //std::cout << "found queued tx " << txIdx.ToString() << std::endl;
-                sendTx(pbft.blocks2Send[txIdx.block_height - startBlock].vtx[txIdx.offset_in_block], txIdx.offset_in_block, txIdx.block_height);
+                sendTx(pbft.blocks2Send[txIdx.block_height - startBlock].vtx[txIdx.offset_in_block], txIdx.offset_in_block, txIdx.block_height, batchBuffers);
             }
             pbft.depTxReady2Send.clear();
         }
@@ -141,7 +141,7 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
     RenameThread(("sendTx" + std::to_string(thread_idx)).c_str());
     uint32_t cnt = 0;
     const uint32_t jump_length = num_threads * txChunkSize;
-    std::list<TxBlockInfo> listDelaySendingTx;
+    std::vector<std::deque<TypedReq>> batchBuffers(num_committees);
     TxPlacer txPlacer;
     CPbft& pbft = *g_pbft;
     struct timeval start_time, end_time;
@@ -154,32 +154,21 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
         for (size_t i = thread_idx * txChunkSize; i < pbft.indepTx2Send[block_height - startBlock] .size(); i += jump_length){
             std::cout << __func__ << ": thread " << thread_idx << " sending No." << i << " tx in block " << block_height << std::endl;
             gettimeofday(&start_time, NULL);
-            uint32_t actual_chunk_size = sendTxChunk(block, startBlock, block_height, i, noop_count, listDelaySendingTx);
+            uint32_t actual_chunk_size = sendTxChunk(block, startBlock, block_height, i, noop_count, batchBuffers);
             gettimeofday(&end_time, NULL);
             cnt += actual_chunk_size;
             std::cout << __func__ << ": thread " << thread_idx << " sent " << actual_chunk_size << " tx in block " << block_height << ". The sending takes " << (end_time.tv_sec - start_time.tv_sec)*1000000 + (end_time.tv_usec - start_time.tv_usec) << " us." << std::endl;
 
             /* check delay sending tx after sending a chunk.  */
             gettimeofday(&start_time, NULL);
-            uint32_t cnt_queued_tx_sent = sendQueuedTx(startBlock, noop_count);
+            uint32_t cnt_queued_tx_sent = sendQueuedTx(startBlock, noop_count, batchBuffers);
             cnt += cnt_queued_tx_sent;
             gettimeofday(&end_time, NULL);
             std::cout << "sent " <<  cnt_queued_tx_sent << " tx queued. The sending takes " << (end_time.tv_sec - start_time.tv_sec)*1000000 + (end_time.tv_usec - start_time.tv_usec) << " us." << std::endl;
         }
     }
-    /* send all tx remaining in batch buffers. */
-    g_pbft->sendAllBatch();
-    /* send all remaining tx in the queue.  */
-    //std::cout << "sending remaining tx" << std::endl;
-    //while (!listDelaySendingTx.empty()) {
-    //    /* sleep for a while to give depended tx enough time to finish. */
-    //    usleep(100);
-    //    if (ShutdownRequested())
-    //    	break;
-    //    cnt += sendQueuedTx(listDelaySendingTx);
-    //}
     gettimeofday(&end_time_all_block, NULL);
-    std::cout << __func__ << ": thread " << thread_idx << " sent " << cnt << " tx in total. queue size = "  << listDelaySendingTx.size() << ". all tx of this thread takes " << (end_time_all_block.tv_sec - start_time_all_block.tv_sec)*1000000 + (end_time_all_block.tv_usec - start_time_all_block.tv_usec) << " us." << std::endl;
+    std::cout << __func__ << ": thread " << thread_idx << " sent " << cnt << " tx in total. All tx of this thread takes " << (end_time_all_block.tv_sec - start_time_all_block.tv_sec)*1000000 + (end_time_all_block.tv_usec - start_time_all_block.tv_usec) << " us." << std::endl;
     totalTxSent += cnt; 
 }
 
@@ -228,26 +217,7 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
 //}
 
 
-uint32_t sendAllTailTx(int noop_count) {
-    /* We have sent all tx but those waiting for prerequisite tx. Poll the 
-     * queue to see if some dependent tx are ready until we sent all tx. */
-    std::cout << "sending " << g_pbft->txResendQueue.size() << " tail tx ... " << std::endl;
-    uint32_t cnt = 0;
-    while (!g_pbft->txResendQueue.empty()) {
-	if (ShutdownRequested())
-	    break;
-
-	TxBlockInfo& txInfo = g_pbft->txResendQueue.front();
-	sendTx(txInfo.tx, txInfo.n, txInfo.blockHeight);
-	g_pbft->txResendQueue.pop_front();
-	cnt++;
-	/* delay by doing noop. */
-	delayByNoop(noop_count);
-    }
-    return cnt;
-}
-
-bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height) {
+bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height, std::vector<std::deque<TypedReq>>& batchBuffers) {
 	/* get the input shards and output shards id*/
 	TxPlacer txPlacer;
 	CCoinsViewCache view(pcoinsTip.get());
@@ -271,7 +241,7 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
         g_pbft->txInFly.insert(std::make_pair(hashTx, std::move(TxBlockInfo(tx, block_height, idx))));
 	if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
 	    /* this is a single shard tx */
-	    g_pbft->add2Batch(shards[0], ClientReqType::TX, tx);
+	    g_pbft->add2Batch(shards[0], ClientReqType::TX, tx, batchBuffers[shards[0]]);
 	    if (shards.size() != 1) {
             /* only count non-coinbase tx b/c coinbase tx do not 
              * have the time-consuming sig verification step. */
@@ -282,7 +252,7 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 	    for (uint i = 1; i < shards.size(); i++) {
             g_pbft->inputShardReplyMap[hashTx].lockReply.insert(std::make_pair(shards[i], std::vector<CInputShardReply>()));
             g_pbft->inputShardReplyMap[hashTx].decision.store('\0', std::memory_order_relaxed);
-            g_pbft->add2Batch(shards[i], ClientReqType::LOCK, tx);
+            g_pbft->add2Batch(shards[i], ClientReqType::LOCK, tx, batchBuffers[shards[i]]);
             g_pbft->vLoad.add(shards[i], CPbft::LOAD_LOCK);
 	    }
 	}

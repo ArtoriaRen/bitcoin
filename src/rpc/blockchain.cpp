@@ -1478,10 +1478,12 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
         vThread.emplace_back(sendTxOfThread, txStartBlock, txEndBlock, i, num_threads, noopCount);
         //vThread.emplace_back(sendRecordedTxOfThread, txStartBlock, txEndBlock, i, num_threads, noopCount);
     }
+    /* a thread dedicated to pushing messages */
+    vThread.emplace_back(sendAllBatch);
 
     gettimeofday(&startTime, NULL); 
     g_pbft->logThruput(startTime);
-    for (uint i = 0; i < num_threads; i++) {
+    for (uint i = 0; i < vThread.size(); i++) {
 	if (vThread[i].joinable())
 	    vThread[i].join();
     }
