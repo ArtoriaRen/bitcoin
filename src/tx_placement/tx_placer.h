@@ -124,7 +124,7 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
 uint32_t sendAllTailTx(int noop_count);
 
 /* return true if the tx is sent, false if the tx is queued. */
-bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height);
+bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height, std::vector<std::deque<TypedReq>>& batchBuffers);
 
 inline std::string getDependencyFilename() {
     return "dependency_file/dependency.out";

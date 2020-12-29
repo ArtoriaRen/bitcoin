@@ -307,6 +307,7 @@ public:
     std::atomic<uint32_t> nAborted; /* number of cross-shard aborte tx */
     ThreadSafeVector vLoad; // the load of all shards.
     std::vector<CReqBatch> batchBuffers;
+    std::vector<std::mutex> vBatchBufferMutex; /* guard access to batchBuffers by tx_sending threads and the msg_pushing thread. */
 
     CPbft();
     ~CPbft();
@@ -314,8 +315,7 @@ public:
     void logThruput(struct timeval& endTime);
     void loadDependencyGraph(uint32_t startBlock, uint32_t endBlock);
     /* only adding LOCK_REQ to the batch requires utxoIdxToLock. */
-    void add2Batch(const uint32_t shardID, const ClientReqType type, const CTransactionRef txRef, const std::vector<uint32_t>* utxoIdxToLock = nullptr);
-    void sendAllBatch();
+    void add2Batch(const uint32_t shardID, const ClientReqType type, const CTransactionRef txRef, std::deque<TypedReq>& threadLocalBatchBuffer, const std::vector<uint32_t>* utxoIdxToLock = nullptr);
     /* called by the rpc thread to load all blocks about to send. */
     void loadBlocks(uint32_t startBlock, uint32_t endBlock);
     /* a queue of tx that have no prereq tx (independent tx). called by the rpc thread. */
@@ -351,6 +351,8 @@ inline struct timeval operator-(const struct timeval& t0, const struct timeval& 
 inline bool operator>=(const struct timeval& t0, const struct timeval& t1) {
     return (t0.tv_sec > t1.tv_sec) || (t0.tv_sec == t1.tv_sec && t0.tv_usec >= t1.tv_usec);
 }
+
+void sendAllBatch();
 
 extern std::unique_ptr<CPbft> g_pbft;
 

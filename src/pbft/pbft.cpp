@@ -8,6 +8,7 @@
 #include "tx_placement/tx_placer.h"
 #include "netmessagemaker.h"
 #include "chainparams.h"
+#include <init.h>
 
 int32_t pbftID;
 struct timeval thruInterval; // calculate throughput once every "thruInterval" seconds
@@ -114,7 +115,7 @@ const float CPbft::LOAD_TX = 1.0f;
 const float CPbft::LOAD_LOCK = 3.85f;
 const float CPbft::LOAD_COMMIT = 4.82f;
 
-CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nSucceed(0), nFail(0), nCommitted(0), nAborted(0), vLoad(num_committees, 0), batchBuffers(num_committees), privateKey(CKey()) {
+CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nSucceed(0), nFail(0), nCommitted(0), nAborted(0), vLoad(num_committees, 0), batchBuffers(num_committees), vBatchBufferMutex(num_committees), privateKey(CKey()) {
     testStartTime = {0, 0};
     nextLogTime = {0, 0};
     privateKey.MakeNewKey(false);
@@ -182,12 +183,10 @@ void CPbft::loadDependencyGraph(uint32_t startBlock, uint32_t endBlock) {
     dependencyFileStream.close();
 }
 
-static long totalPushMessageTime = 0;
-static uint totalPushMessageCnt = 0;
-void CPbft::add2Batch(const uint32_t shardId, const ClientReqType type, const CTransactionRef txRef, const std::vector<uint32_t>* utxoIdxToLock) {
-	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-	const uint256& hashTx = txRef->GetHash();
-	struct TxStat stat;
+void CPbft::add2Batch(const uint32_t shardId, const ClientReqType type, const CTransactionRef txRef, std::deque<TypedReq>& threadLocalBatchBuffer, const std::vector<uint32_t>* utxoIdxToLock) {
+    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+    const uint256& hashTx = txRef->GetHash();
+    struct TxStat stat;
     std::shared_ptr<CClientReq> req;
     if (type == ClientReqType::TX) { 
         stat.type = TxType::SINGLE_SHARD;
@@ -197,40 +196,50 @@ void CPbft::add2Batch(const uint32_t shardId, const ClientReqType type, const CT
         stat.type = TxType::CROSS_SHARD;
         req = std::make_shared<LockReq>(*txRef, *utxoIdxToLock);
     }
-    req->UpdateHash();
-    batchBuffers[shardId].emplace_back(type, req);
+    req->UpdateHash(); 
     mapTxStartTime.insert(std::make_pair(hashTx, stat));
-
-    /* if batch for the shard is full, send the batch. */
-    if (batchBuffers[shardId].isFull()) {
-        for (uint i = 0; i < batchBuffers[shardId].vReq.size(); i++) { 
-            const uint256& hashTx = batchBuffers[shardId].vReq[i].pReq->hash;
-            /* all req in the batch have the same start time. */
-            gettimeofday(&(mapTxStartTime[hashTx].startTime), NULL);
-        }
-
-        struct timeval start, end;
-        totalPushMessageCnt += batchBuffers[shardId].vReq.size();
-        gettimeofday(&start, NULL);
-        g_connman->PushMessage(leaders[shardId], msgMaker.Make(NetMsgType::REQ_BATCH, std::move(batchBuffers[shardId])));
-        gettimeofday(&end, NULL);
-        totalPushMessageTime += (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec);
-        std::cout << "send a batch of " << batchBuffers[shardId].vReq.size() << " req takes " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec)  << " us, average push message time = " << totalPushMessageTime/totalPushMessageCnt << " usec/tx " << std::endl;
-        batchBuffers[shardId].vReq.clear();
+    if (vBatchBufferMutex[shardId].try_lock()) {
+        batchBuffers[shardId].emplace_back(type, req);
+        batchBuffers[shardId].vReq.insert(batchBuffers[shardId].vReq.end(), threadLocalBatchBuffer.begin(), threadLocalBatchBuffer.end());
+        vBatchBufferMutex[shardId].unlock();
+    } else {
+        threadLocalBatchBuffer.emplace_back(type, req);
     }
 }
 
+static long totalPushMessageTime = 0;
+static uint totalPushMessageCnt = 0;
 /* no matter any batch is full or not, send all batches. */
-void CPbft::sendAllBatch() {
-	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-    for (uint shardId = 0; shardId < num_committees; shardId++) {
-        for (uint i = 0; i < batchBuffers[shardId].vReq.size(); i++) { 
-            const uint256& hashTx = batchBuffers[shardId].vReq[i].pReq->hash;
-            /* all req in the batch have the same start time. */
-            gettimeofday(&(mapTxStartTime[hashTx].startTime), NULL);
+void sendAllBatch() {
+    bool fShutdown = ShutdownRequested();
+    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+    bool pushedSomething = false;
+    CPbft& pbft = *g_pbft;
+    while (!fShutdown && !(sendingDone && totalPushMessageCnt == totalTxSent))
+    {
+        pushedSomething = false;
+        for (uint shardId = 0; shardId < num_committees; shardId++) {
+            if (pbft.batchBuffers[shardId].vReq.empty())
+                continue;
+            for (uint i = 0; i < pbft.batchBuffers[shardId].vReq.size(); i++) { 
+                const uint256& hashTx =  pbft.batchBuffers[shardId].vReq[i].pReq->hash;
+                /* all req in the batch have the same start time. */
+                gettimeofday(&(pbft.mapTxStartTime[hashTx].startTime), NULL);
+            }
+            struct timeval start, end;
+            totalPushMessageCnt += pbft.batchBuffers[shardId].vReq.size();
+            gettimeofday(&start, NULL);
+            g_connman->PushMessage(pbft.leaders[shardId], msgMaker.Make(NetMsgType::REQ_BATCH, pbft.batchBuffers[shardId]));
+            gettimeofday(&end, NULL);
+            totalPushMessageTime += (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec);
+            pushedSomething = true;
+            std::cout << "send a batch of " << pbft.batchBuffers[shardId].vReq.size() << " req takes " << (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec)  << " us, average push message time = " << totalPushMessageTime/totalPushMessageCnt << " usec/tx " << std::endl;
+            pbft.batchBuffers[shardId].vReq.clear();
         }
-        g_connman->PushMessage(leaders[shardId], msgMaker.Make(NetMsgType::REQ_BATCH, batchBuffers[shardId]));
-        batchBuffers[shardId].vReq.clear();
+        if (!pushedSomething) {
+            MilliSleep(200);
+        }
+        fShutdown = ShutdownRequested();
     }
 }
 
