@@ -166,16 +166,18 @@ void CPbft::logThruput(struct timeval& endTime) {
     thruputFile << endTime.tv_sec << "." << endTime.tv_usec << "," << nCompletedTxCopy << "," << thruput << std::endl;
 }
 
-void CPbft::loadDependencyGraph (){
+void CPbft::loadDependencyGraph(uint32_t startBlock, uint32_t endBlock) {
     std::ifstream dependencyFileStream;
     dependencyFileStream.open(getDependencyFilename());
     assert(!dependencyFileStream.fail());
     DependencyRecord dpRec;
     dpRec.Unserialize(dependencyFileStream);
     while (!dependencyFileStream.eof()) {
-        mapRemainingPrereq[dpRec.tx]++;
-        mapDependentTx[dpRec.prereq_tx].push_back(dpRec.tx);
-	dpRec.Unserialize(dependencyFileStream);
+        if (dpRec.tx.block_height < endBlock) {
+            mapRemainingPrereq[dpRec.tx]++;
+            mapDependentTx[dpRec.prereq_tx].push_back(dpRec.tx);
+        }
+        dpRec.Unserialize(dependencyFileStream);
     }
     dependencyFileStream.close();
 }
@@ -278,6 +280,7 @@ void CPbft::loadBlocks(uint32_t startBlock, uint32_t endBlock) {
 }
 
 void CPbft::BuildIndepTxQueue(uint32_t startBlock, uint32_t endBlock) {
+    indepTx2Send.resize(endBlock - startBlock);
     for (uint block_height = startBlock; block_height < endBlock; block_height++) {
         for (uint i = 0; i < blocks2Send[block_height - startBlock].vtx.size(); i++) {
             if (mapRemainingPrereq.find(TxIndexOnChain(block_height, i)) == mapRemainingPrereq.end()) {

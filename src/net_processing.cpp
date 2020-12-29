@@ -1496,9 +1496,8 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, const std::ve
 }
 
 /* temporaraliy store tx when we did not hold the lock the insert them to the global deque.*/
-static std::deque<TxIndexOnChain> bufferedDepTxReady2Send;
 
-void static decrementPrereqCnt(const uint256& txid){
+void static decrementPrereqCnt(const uint256& txid, std::deque<TxIndexOnChain>& bufferedDepTxReady2Send) {
     const TxBlockInfo& txInfo = g_pbft->txInFly[txid];
     TxIndexOnChain txIndex(txInfo.blockHeight, txInfo.n);
     CPbft& pbft = *g_pbft;
@@ -1507,24 +1506,21 @@ void static decrementPrereqCnt(const uint256& txid){
         for (const TxIndexOnChain& dependent : pbft.mapDependentTx[txIndex]) {
             uint32_t old_val = pbft.mapRemainingPrereq[dependent].fetch_sub(1, std::memory_order_relaxed);
             if (old_val == 1) {
-                bool locked = pbft.depTxMutex.try_lock();
-                if (locked) {
-                    pbft.depTxReady2Send.push_back(std::move(txIndex));
-                    if (!bufferedDepTxReady2Send.empty()) {
-                        pbft.depTxReady2Send.insert(pbft.depTxReady2Send.end(), bufferedDepTxReady2Send.begin(), bufferedDepTxReady2Send.end());
-                    }
-                    pbft.depTxMutex.unlock();
-                    bufferedDepTxReady2Send.clear();
-                } else {
-                    /* store the txIdx and insert them the next time. */
-                    bufferedDepTxReady2Send.push_back(std::move(txIndex));
-                }
+                bufferedDepTxReady2Send.push_back(dependent);
             }
+        }
+        if (!bufferedDepTxReady2Send.empty()) {
+            bool locked = pbft.depTxMutex.try_lock();
+            if (locked) {
+                    pbft.depTxReady2Send.insert(pbft.depTxReady2Send.end(), bufferedDepTxReady2Send.begin(), bufferedDepTxReady2Send.end());
+            }
+            pbft.depTxMutex.unlock();
+            bufferedDepTxReady2Send.clear();
         }
     }
 }
 
-bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman* connman, const std::atomic<bool>& interruptMsgProc, uint32_t& nLocalCompletedTxPerInterval, uint32_t& nLocalTotalFailedTxPerInterval, const uint threadIdx, std::vector<TxIndexOnChain>& vCommittedTxIndex)
+bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman* connman, const std::atomic<bool>& interruptMsgProc, uint32_t& nLocalCompletedTxPerInterval, uint32_t& nLocalTotalFailedTxPerInterval, const uint threadIdx, std::deque<TxIndexOnChain>& bufferedDepTxReady2Send)
 {
     //std::cout << __func__ << ": " << strCommand << std::endl;
     LogPrint(BCLog::NET, "received: %s (%u bytes) peer=%d\n", SanitizeString(strCommand), vRecv.size(), pfrom->GetId());
@@ -1898,7 +1894,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		//std::cout << "tx " << reply.digest.GetHex().substr(0,10);
 		if (reply.reply == 'y') {
 			g_pbft->nSucceed.fetch_add(1, std::memory_order_relaxed);
-			decrementPrereqCnt(reply.digest);
+			decrementPrereqCnt(reply.digest, bufferedDepTxReady2Send);
 			g_pbft->txInFly.erase(reply.digest);
 			nLocalCompletedTxPerInterval++;
 		} else if (reply.reply == 'n') {
@@ -1920,7 +1916,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 			 * printing info more than once for a tx. 
 			 */
 			g_pbft->nCommitted.fetch_add(1, std::memory_order_relaxed);
-			decrementPrereqCnt(txid);
+			decrementPrereqCnt(txid, bufferedDepTxReady2Send);
 			g_pbft->txInFly.erase(txid);
 			nLocalCompletedTxPerInterval++;
 		} else if (reply.reply == 'y' && inputShardRplMap[txid].decision.load(std::memory_order_relaxed) == 'a') {
@@ -2659,7 +2655,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         } // cs_main
 
         if (fProcessBLOCKTXN)
-            return ProcessMessage(pfrom, NetMsgType::BLOCKTXN, blockTxnMsg, nTimeReceived, chainparams, connman, interruptMsgProc, nLocalCompletedTxPerInterval, nLocalTotalFailedTxPerInterval, threadIdx, vCommittedTxIndex);
+            return ProcessMessage(pfrom, NetMsgType::BLOCKTXN, blockTxnMsg, nTimeReceived, chainparams, connman, interruptMsgProc, nLocalCompletedTxPerInterval, nLocalTotalFailedTxPerInterval, threadIdx, bufferedDepTxReady2Send);
 
         if (fRevertToHeaderProcessing) {
             // Headers received from HB compact block peers are permitted to be
@@ -3076,7 +3072,7 @@ static bool SendRejectsAndCheckIfBanned(CNode* pnode, CConnman* connman)
     return false;
 }
 
-bool PeerLogicValidation::ProcessMessages(CNode* pfrom, std::atomic<bool>& interruptMsgProc, uint32_t& nLocalCompletedTxPerInterval, uint32_t& nLocalTotalFailedTxPerInterval, const uint threadIdx, std::vector<TxIndexOnChain>& vCommittedTxIndex)
+bool PeerLogicValidation::ProcessMessages(CNode* pfrom, std::atomic<bool>& interruptMsgProc, uint32_t& nLocalCompletedTxPerInterval, uint32_t& nLocalTotalFailedTxPerInterval, const uint threadIdx, std::deque<TxIndexOnChain>& bufferedDepTxReady2Send)
 {
     const CChainParams& chainparams = Params();
     //
@@ -3151,7 +3147,7 @@ bool PeerLogicValidation::ProcessMessages(CNode* pfrom, std::atomic<bool>& inter
     bool fRet = false;
     try
     {
-        fRet = ProcessMessage(pfrom, strCommand, vRecv, msg.nTime, chainparams, connman, interruptMsgProc, nLocalCompletedTxPerInterval, nLocalTotalFailedTxPerInterval, threadIdx, vCommittedTxIndex);
+        fRet = ProcessMessage(pfrom, strCommand, vRecv, msg.nTime, chainparams, connman, interruptMsgProc, nLocalCompletedTxPerInterval, nLocalTotalFailedTxPerInterval, threadIdx, bufferedDepTxReady2Send);
         if (interruptMsgProc)
             return false;
         if (!pfrom->vRecvGetData.empty())

@@ -312,7 +312,7 @@ public:
     ~CPbft();
     bool checkReplySig(const CReply* pReply) const;
     void logThruput(struct timeval& endTime);
-    void loadDependencyGraph();
+    void loadDependencyGraph(uint32_t startBlock, uint32_t endBlock);
     /* only adding LOCK_REQ to the batch requires utxoIdxToLock. */
     void add2Batch(const uint32_t shardID, const ClientReqType type, const CTransactionRef txRef, const std::vector<uint32_t>* utxoIdxToLock = nullptr);
     void sendAllBatch();

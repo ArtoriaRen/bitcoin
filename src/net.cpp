@@ -2005,8 +2005,7 @@ void CConnman::ThreadMessageHandler(uint threadIdx)
     struct timeval lastGlobalStateUpdateTime;
     gettimeofday(&lastGlobalStateUpdateTime, NULL);
     uint32_t nLocalCompletedTxPerInterval = 0, nLocalTotalFailedTxPerInterval = 0;
-    std::vector<TxIndexOnChain> vCommittedTxIndex;
-    vCommittedTxIndex.reserve(localCommittedTxCapacity);
+    std::deque<TxIndexOnChain> bufferedDepTxReady2Send;
     while (!flagInterruptMsgProc)
     {
         std::vector<CNode*> vNodesCopy;
@@ -2026,7 +2025,7 @@ void CConnman::ThreadMessageHandler(uint threadIdx)
                 continue;
 
             // Receive messages
-            bool fMoreNodeWork = m_msgproc->ProcessMessages(pnode, flagInterruptMsgProc, nLocalCompletedTxPerInterval, nLocalTotalFailedTxPerInterval, threadIdx, vCommittedTxIndex);
+            bool fMoreNodeWork = m_msgproc->ProcessMessages(pnode, flagInterruptMsgProc, nLocalCompletedTxPerInterval, nLocalTotalFailedTxPerInterval, threadIdx, bufferedDepTxReady2Send);
             fMoreWork |= (fMoreNodeWork && !pnode->fPauseSend);
             if (flagInterruptMsgProc)
                 return;

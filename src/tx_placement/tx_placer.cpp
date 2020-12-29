@@ -227,15 +227,20 @@ static uint32_t sendTxChunk(const CBlock& block, const uint start_height, const 
 static uint32_t sendQueuedTx(const int startBlock, const int noop_count) {
     int txSentCnt = 0;
     CPbft& pbft = *g_pbft;
+    if (pbft.depTxReady2Send.empty())
+        return txSentCnt; 
     
     bool locked = pbft.depTxMutex.try_lock();
     /* only send all tx in the queue if we hold the lock. */
     if (locked) {
-	txSentCnt += pbft.depTxReady2Send.size();
-        for (const TxIndexOnChain& txIdx: pbft.depTxReady2Send) {
-	    sendTx(pbft.blocks2Send[txIdx.block_height - startBlock].vtx[txIdx.offset_in_block], txIdx.offset_in_block, txIdx.block_height);
+        if (!pbft.depTxReady2Send.empty()) {
+            txSentCnt += pbft.depTxReady2Send.size();
+            for (const TxIndexOnChain& txIdx: pbft.depTxReady2Send) {
+                //std::cout << "found queued tx " << txIdx.ToString() << std::endl;
+                sendTx(pbft.blocks2Send[txIdx.block_height - startBlock].vtx[txIdx.offset_in_block], txIdx.offset_in_block, txIdx.block_height);
+            }
+            pbft.depTxReady2Send.clear();
         }
-        pbft.depTxReady2Send.clear();
         pbft.depTxMutex.unlock();
     }
     

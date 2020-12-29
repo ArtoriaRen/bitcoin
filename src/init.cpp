@@ -1767,26 +1767,5 @@ bool AppInitMain()
     StartWallets(scheduler);
 #endif
 
-    /* test smart placement */
-    //CBlock block;
-    //int32_t block_height = 601000;
-    // CBlockIndex* pblockindex = chainActive[block_height];
-    // if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
-    //     std::cerr << "Block not found on disk" << std::endl;
-    // }
-    // std::cout << __func__ << " sending " << block.vtx.size() << " tx in block " << block_height << std::endl;
-    // TxPlacer txPlacer;
-    // CCoinsViewCache view(pcoinsTip.get());
-    // for (uint j = 0; j < block.vtx.size(); j++) {
-    //     CTransactionRef tx = block.vtx[j];
-    //     const uint256& hashTx = tx->GetHash();
-    //     /* get the input shards and output shards id*/
-    //     std::vector<int32_t> shards = txPlacer.smartPlace(*tx, view, block_height);
-    // }
-
-    //if (buildWaitGraph)
-    //   buildDependencyGraph(601000);
-    g_pbft->loadDependencyGraph();
-
     return true;
 }
