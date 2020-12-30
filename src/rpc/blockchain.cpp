@@ -1595,26 +1595,26 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
     g_pbft->BuildIndepTxQueue(txStartBlock, txEndBlock);
     assert(num_threads >= 1);
     g_pbft->loadShardInfo(txStartBlock, txEndBlock);
-    std::vector<std::thread> vThread;
+    std::deque<std::thread> vThread;
 
     struct timeval startTime, endTime;
 
+    /* a thread dedicated to pushing messages */
+    vThread.emplace_back(sendAllBatch);
     /* creat threads to send tx.*/
     for (uint i = 0; i < num_threads; i++) {
         vThread.emplace_back(sendTxOfThread, txStartBlock, txEndBlock, i, num_threads, noopCount);
         //vThread.emplace_back(sendRecordedTxOfThread, txStartBlock, txEndBlock, i, num_threads, noopCount);
     }
-    /* a thread dedicated to pushing messages */
-    vThread.emplace_back(sendAllBatch);
-
     gettimeofday(&startTime, NULL); 
     g_pbft->logThruput(startTime);
-    for (uint i = 0; i < vThread.size(); i++) {
-	if (vThread[i].joinable())
-	    vThread[i].join();
+    for (uint i = 1; i < vThread.size(); i++) {
+        if (vThread[i].joinable())
+            vThread[i].join();
     }
-    gettimeofday(&endTime, NULL);
     sendingDone = true;
+    vThread[0].join(); /* wait for the msg-pushing thread to finish. */
+    gettimeofday(&endTime, NULL);
     long sendDuration = (endTime.tv_sec - startTime.tv_sec) * 1000000 + (endTime.tv_usec - startTime.tv_usec);
     std::cout << __func__ << ": totally sent " << totalTxSent << " tx in " << sendDuration << " us, sending rate = " << (double)totalTxSent * 1000000 / sendDuration  << " tx/sec" << std::endl;
     return NullUniValue;

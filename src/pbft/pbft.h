@@ -316,6 +316,7 @@ public:
     void loadDependencyGraph(uint32_t startBlock, uint32_t endBlock);
     /* only adding LOCK_REQ to the batch requires utxoIdxToLock. */
     void add2Batch(const uint32_t shardID, const ClientReqType type, const CTransactionRef txRef, std::deque<TypedReq>& threadLocalBatchBuffer, const std::vector<uint32_t>* utxoIdxToLock = nullptr);
+    void add2BatchOnlyBuffered(const uint32_t shardId, std::deque<TypedReq>& threadLocalBatchBuffer);
     /* called by the rpc thread to load all blocks about to send. */
     void loadBlocks(uint32_t startBlock, uint32_t endBlock);
     /* a queue of tx that have no prereq tx (independent tx). called by the rpc thread. */

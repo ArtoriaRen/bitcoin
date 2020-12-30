@@ -1512,10 +1512,10 @@ void static decrementPrereqCnt(const uint256& txid, std::deque<TxIndexOnChain>& 
         if (!bufferedDepTxReady2Send.empty()) {
             bool locked = pbft.depTxMutex.try_lock();
             if (locked) {
-                    pbft.depTxReady2Send.insert(pbft.depTxReady2Send.end(), bufferedDepTxReady2Send.begin(), bufferedDepTxReady2Send.end());
+                pbft.depTxReady2Send.insert(pbft.depTxReady2Send.end(), bufferedDepTxReady2Send.begin(), bufferedDepTxReady2Send.end());
+                pbft.depTxMutex.unlock();
+                bufferedDepTxReady2Send.clear();
             }
-            pbft.depTxMutex.unlock();
-            bufferedDepTxReady2Send.clear();
         }
     }
 }
