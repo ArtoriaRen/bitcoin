@@ -1554,17 +1554,20 @@ UniValue printshardinfo(const JSONRPCRequest& request)
             + HelpExampleRpc("printshardinfo", "\"blockheight\"")
         );
 
-    int block_height = request.params[0].get_int();
+    int start_height = 601000;
+    int end_height = request.params[0].get_int();
     
     CPbft& pbft = *g_pbft;
-    pbft.loadShardInfo(601000, block_height);
-    for (unsigned int i = 0; i < pbft.allBlockShardInfo[block_height].size(); i++) {
-	std::cout << i << "-th" << " tx "  << " : ";
-//	auto& shards = txPlacer.vShardInfo[i].shards;
-//	for (int shard : shards)
-//	    std::cout << shard << ", ";
-//	std::cout << std::endl;
-	pbft.allBlockShardInfo[block_height][i].print();
+    pbft.loadShardInfo(start_height, end_height);
+    for (unsigned int block_height = start_height; block_height < end_height; block_height++) {
+        for (unsigned int i = 0; i < pbft.allBlockShardInfo[block_height - start_height].size(); i++) {
+            std::cout << i << "-th" << " tx ";
+            auto& shards = pbft.allBlockShardInfo[block_height - start_height][i].shards;
+            //for (int shard : shards)
+            //    std::cout << shard << ", ";
+            //std::cout << std::endl;
+            pbft.allBlockShardInfo[block_height - start_height][i].print();
+        }
     }
     return NullUniValue;
 }

@@ -280,7 +280,7 @@ void CPbft::loadShardInfo(const int txStartBlock, const int txEndBlock) {
         assert(shardInfoFile.is_open());
         /* we did not clear allBlockShardInfo b/c it will be overwirtten during file unserialization. */
         allBlockShardInfo[block_height - txStartBlock].resize(block_size);
-        for (uint i = 0; i < allBlockShardInfo.size(); i++) {
+        for (uint i = 0; i < allBlockShardInfo[block_height - txStartBlock].size(); i++) {
             allBlockShardInfo[block_height - txStartBlock][i].Unserialize(shardInfoFile);
         }
         shardInfoFile.close();

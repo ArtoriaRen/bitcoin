@@ -116,7 +116,7 @@ void extractRawTxInBlock();
 void smartPlaceTxInBlock(const std::shared_ptr<const CBlock> pblock);
 
 inline std::string getShardInfoFilename(int block_height) {
-    return "/home/l27ren/shard_info_files/" + std::to_string(num_committees) + "committees/"+ std::to_string(block_height) + "_shardinfo.out";
+    return "/hdd2/davina/shard_info_files/" + std::to_string(num_committees) + "committees/"+ std::to_string(block_height) + "_shardinfo.out";
 }
 void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thread_idx, const uint32_t num_threads, const int noop_count);
 //void sendRecordedTxOfThread(const int startBlock, const int endBlock, const uint32_t thread_idx, const uint32_t num_threads, const int noop_count);
@@ -124,10 +124,10 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
 uint32_t sendAllTailTx(int noop_count);
 
 /* return true if the tx is sent, false if the tx is queued. */
-bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height, std::vector<std::deque<TypedReq>>& batchBuffers, uint32_t& reqSentCnt);
+bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height, const uint32_t start_height, std::vector<std::deque<TypedReq>>& batchBuffers, uint32_t& reqSentCnt);
 
 inline std::string getDependencyFilename() {
-    return "dependency_file/dependency.out";
+    return "/hdd2/davina/dependency_file/dependency.out";
 }
 
 #endif /* TX_PLACER_H */

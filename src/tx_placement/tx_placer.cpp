@@ -215,7 +215,7 @@ static uint32_t sendTxChunk(const CBlock& block, const uint start_height, const 
 
     for (uint j = start_tx; j < end_tx; j++) {
         uint32_t tx_offset = pbft.indepTx2Send[block_height - start_height][j];
-        sendTx(block.vtx[tx_offset], tx_offset, block_height, batchBuffers, reqSentCnt);
+        sendTx(block.vtx[tx_offset], tx_offset, block_height, start_height, batchBuffers, reqSentCnt);
         cnt++;
         //txIdx.Serialize(g_pbft->recordedSentTx);
         /* delay by doing noop. */
@@ -236,7 +236,7 @@ static uint32_t sendQueuedTx(const int startBlock, const int noop_count, std::ve
             //txSentCnt += pbft.depTxReady2Send.size();
             for (const TxIndexOnChain& txIdx: pbft.depTxReady2Send) {
                 //std::cout << "found queued tx. addr =  " << &txIdx << ", tx = " << txIdx.ToString() << std::endl;
-                sendTx(pbft.blocks2Send[txIdx.block_height - startBlock].vtx[txIdx.offset_in_block], txIdx.offset_in_block, txIdx.block_height, batchBuffers, reqSentCnt);
+                sendTx(pbft.blocks2Send[txIdx.block_height - startBlock].vtx[txIdx.offset_in_block], txIdx.offset_in_block, txIdx.block_height, startBlock, batchBuffers, reqSentCnt);
                 txSentCnt++;
             }
 std::cout << "depTxReady2Send size = " << pbft.depTxReady2Send.size() << ", tx sent cnt = " << txSentCnt << std::endl;
@@ -468,21 +468,22 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
     totalTxSent += cnt; 
 }
 
-bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height, std::vector<std::deque<TypedReq>>& batchBuffers, uint32_t& reqSentCnt) {
+bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height, const uint32_t start_height, std::vector<std::deque<TypedReq>>& batchBuffers, uint32_t& reqSentCnt) {
     CPbft& pbft = *g_pbft;
     const uint256& hashTx = tx->GetHash();
     /* get the input shards and output shards id*/
-    const ShardInfo& shardInfo = pbft.allBlockShardInfo[block_height][idx];
+    const ShardInfo& shardInfo = pbft.allBlockShardInfo[block_height - start_height][idx];
 
     const std::vector<int32_t>& shards = shardInfo.shards;
 
     const std::deque<std::vector<uint32_t> >& vShardUtxoIdxToLock = shardInfo.vShardUtxoIdxToLock;
 
-    assert((tx->IsCoinBase() && shards.size() == 1) || (!tx->IsCoinBase() && shards.size() >= 2)); // there must be at least one output shard and one input shard for non-coinbase tx.
     //std::cout << idx << "-th" << " tx "  <<  hashTx.GetHex().substr(0, 10) << " : ";
     //for (int shard : shards)
     //    std::cout << shard << ", ";
     //std::cout << std::endl;
+
+    assert((tx->IsCoinBase() && shards.size() == 1) || (!tx->IsCoinBase() && shards.size() >= 2)); // there must be at least one output shard and one input shard for non-coinbase tx.
 
     /* send tx and collect time info to calculate latency. 
      * We also remove all reply msg for this req for resending aborted tx. */
