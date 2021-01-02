@@ -22,6 +22,7 @@
 #include "pbft/pbft.h"
 
 extern std::atomic<uint32_t> totalTxSent;
+extern std::atomic<uint32_t> globalReqSentCnt;
 extern bool sendingDone;
 extern uint32_t num_committees;
 extern int lastAssignedAffinity;

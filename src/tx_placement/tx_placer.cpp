@@ -21,6 +21,7 @@
 #include <algorithm>
 
 std::atomic<uint32_t> totalTxSent(0);
+std::atomic<uint32_t> globalReqSentCnt(0);
 bool sendingDone = false;
 static const uint32_t SEC = 1000000; // 1 sec = 10^6 microsecond
 
@@ -239,7 +240,7 @@ static uint32_t sendQueuedTx(const int startBlock, const int noop_count, std::ve
                 sendTx(pbft.blocks2Send[txIdx.block_height - startBlock].vtx[txIdx.offset_in_block], txIdx.offset_in_block, txIdx.block_height, startBlock, batchBuffers, reqSentCnt);
                 txSentCnt++;
             }
-std::cout << "depTxReady2Send size = " << pbft.depTxReady2Send.size() << ", tx sent cnt = " << txSentCnt << std::endl;
+            //std::cout << "depTxReady2Send size = " << pbft.depTxReady2Send.size() << ", tx sent cnt = " << txSentCnt << std::endl;
             pbft.depTxReady2Send.clear();
         }
         pbft.depTxMutex.unlock();
@@ -466,6 +467,7 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
     gettimeofday(&end_time_all_block, NULL);
     std::cout << __func__ << ": thread " << thread_idx << " sent " << cnt << " tx in total. All tx of this thread takes " << (end_time_all_block.tv_sec - start_time_all_block.tv_sec)*1000000 + (end_time_all_block.tv_usec - start_time_all_block.tv_usec) << " us. Totally sentReqCnt = " << reqSentCnt << std::endl;
     totalTxSent += cnt; 
+    globalReqSentCnt += reqSentCnt;
 }
 
 bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height, const uint32_t start_height, std::vector<std::deque<TypedReq>>& batchBuffers, uint32_t& reqSentCnt) {

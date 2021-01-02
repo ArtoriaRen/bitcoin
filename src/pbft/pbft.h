@@ -235,7 +235,7 @@ public:
     CPubKey myPubKey;
     std::vector<CNode*> leaders; // pbft leader
 //    CPubKey myPubKey;
-    std::unordered_map<int32_t, CPubKey> pubKeyMap;
+    std::deque<CPubKey> pubKeys;
 
     /* <single-shard txid or cross-shard commit or abort req disgest,
      *  set_of_reply-sender_addressName>
