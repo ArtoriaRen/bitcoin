@@ -234,7 +234,7 @@ public:
     
     ThreadSafeQueue txResendQueue;
 
-    std::map<TxIndexOnChain, std::vector<TxIndexOnChain>> mapDependentTx; // <tx, all_dependent_tx>
+    std::map<TxIndexOnChain, std::set<TxIndexOnChain>> mapDependentTx; // <tx, all_dependent_tx>
     std::map<TxIndexOnChain, std::atomic<uint32_t>> mapRemainingPrereq; // <tx, num_remaining_uncommitted_prereq_tx_cnt>
     std::deque<CBlock> blocks2Send;
     std::deque<std::deque<uint32_t>> indepTx2Send; /* tx without prereq tx*/
