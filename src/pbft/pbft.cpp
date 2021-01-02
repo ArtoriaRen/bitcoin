@@ -110,7 +110,7 @@ const float CPbft::LOAD_TX = 1.0f;
 const float CPbft::LOAD_LOCK = 3.85f;
 const float CPbft::LOAD_COMMIT = 4.82f;
 
-CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nSucceed(0), nFail(0), nCommitted(0), nAborted(0), vLoad(num_committees, 0), batchBuffers(num_committees), vBatchBufferMutex(num_committees), privateKey(CKey()) {
+CPbft::CPbft() : leaders(num_committees), pubKeys(num_committees * groupSize), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nSucceed(0), nFail(0), nCommitted(0), nAborted(0), vLoad(num_committees, 0), batchBuffers(num_committees), vBatchBufferMutex(num_committees), privateKey(CKey()) {
     testStartTime = {0, 0};
     nextLogTime = {0, 0};
     privateKey.MakeNewKey(false);
@@ -130,15 +130,15 @@ CPbft::~CPbft() {
 
 bool CPbft::checkReplySig(const CReply* pReply) const {
     // verify signature and return wrong if sig is wrong
-    auto it = pubKeyMap.find(pReply->peerID);
-    if (it == pubKeyMap.end()) {
-        std::cerr << "no pub key for sender " << pReply->peerID << std::endl;
+    CPubKey pubKey = pubKeys[pReply->peerID];
+    if (!pubKey.IsValid()) {
+        std::cout << "no pub key for peer" << pReply->peerID << std::endl;
         return false;
     }
     uint256 msgHash;
     pReply->getHash(msgHash);
-    if (!it->second.Verify(msgHash, pReply->vchSig)) {
-        std::cerr << "verification sig fail for sender " << pReply->peerID << std::endl;
+    if (!pubKey.Verify(msgHash, pReply->vchSig)) {
+        std::cout << "verification sig fail for peer" << pReply->peerID << std::endl;
         return false;
     }
     return true;
@@ -223,15 +223,15 @@ void CPbft::add2BatchOnlyBuffered(const uint32_t shardId, std::deque<TypedReq>& 
     }
 }
 
-static long totalPushMessageTime = 0;
-static uint totalPushMessageCnt = 0;
 /* no matter any batch is full or not, send all batches. */
 void sendAllBatch() {
+    long totalPushMessageTime = 0;
+    uint totalPushMessageCnt = 0;
     bool fShutdown = ShutdownRequested();
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
     CPbft& pbft = *g_pbft;
     bool bufferEmpty = false;
-    while (!fShutdown && !(sendingDone && bufferEmpty))
+    while (!fShutdown && !(sendingDone && totalPushMessageCnt == globalReqSentCnt))
     {
         bufferEmpty = true;
         for (uint shardId = 0; shardId < num_committees; shardId++) {
