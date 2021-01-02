@@ -220,7 +220,7 @@ static uint32_t sendTxChunk(const CBlock& block, const uint start_height, const 
         cnt++;
         //txIdx.Serialize(g_pbft->recordedSentTx);
         /* delay by doing noop. */
-        //delayByNoop(noop_count);
+        delayByNoop(noop_count);
     }
     return cnt;
 }
@@ -239,6 +239,8 @@ static uint32_t sendQueuedTx(const int startBlock, const int noop_count, std::ve
                 //std::cout << "found queued tx. addr =  " << &txIdx << ", tx = " << txIdx.ToString() << std::endl;
                 sendTx(pbft.blocks2Send[txIdx.block_height - startBlock].vtx[txIdx.offset_in_block], txIdx.offset_in_block, txIdx.block_height, startBlock, batchBuffers, reqSentCnt);
                 txSentCnt++;
+                /* delay by doing noop. */
+                delayByNoop(noop_count);
             }
             //std::cout << "depTxReady2Send size = " << pbft.depTxReady2Send.size() << ", tx sent cnt = " << txSentCnt << std::endl;
             pbft.depTxReady2Send.clear();
