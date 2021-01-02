@@ -172,13 +172,18 @@ void CPbft::loadDependencyGraph(uint32_t startBlock, uint32_t endBlock) {
     dependencyFileStream.open(getDependencyFilename());
     assert(!dependencyFileStream.fail());
     DependencyRecord dpRec;
+    /* key is dependent tx, value is a set of all prereqTx indices of this tx.*/
+    std::map<TxIndexOnChain, std::set<TxIndexOnChain>> mapRemainingPrereqTxIdx;
     dpRec.Unserialize(dependencyFileStream);
     while (!dependencyFileStream.eof()) {
-        if (dpRec.tx.block_height < endBlock) {
-            mapRemainingPrereq[dpRec.tx]++;
-            mapDependentTx[dpRec.prereq_tx].push_back(dpRec.tx);
+        if (dpRec.tx.block_height < endBlock) { 
+            mapRemainingPrereqTxIdx[dpRec.tx].insert(dpRec.prereq_tx);
+            mapDependentTx[dpRec.prereq_tx].insert(dpRec.tx);
         }
         dpRec.Unserialize(dependencyFileStream);
+    }
+    for (auto const& p: mapRemainingPrereqTxIdx) {
+            mapRemainingPrereq[p.first] = p.second.size();
     }
     dependencyFileStream.close();
 }
