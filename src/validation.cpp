@@ -3813,6 +3813,7 @@ bool LoadChainTip(const CChainParams& chainparams)
     if (it == mapBlockIndex.end())
         return false;
     chainActive.SetTip(it->second);
+    std::cout << "pcoinsTip best block height = " << it->second->nHeight << std::endl;;
 
     g_chainstate.PruneBlockIndexCandidates();
 

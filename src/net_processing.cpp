@@ -1902,7 +1902,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 			g_pbft->txResendQueue.push_back(g_pbft->txInFly[reply.digest]);
 			nLocalTotalFailedTxPerInterval++;
 		} 
-		g_pbft->latencySingleShardFile << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << "\n";
+            std::string latency = std::to_string((endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000) + "\n";
+		g_pbft->latencySingleShardFile << latency;
 	    } else {
 		/* cross-shard tx */
 		auto& inputShardRplMap = g_pbft->inputShardReplyMap;
@@ -1932,7 +1933,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		} else if (reply.reply == 'n') {
 			std::cout << " fail to commit or abort, ";
 		} 
-		g_pbft->latencyCrossShardFile << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << "\n";
+            std::string latency = std::to_string((endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000) + "\n";
+		g_pbft->latencyCrossShardFile << latency;
 	    }
 	}
     }
