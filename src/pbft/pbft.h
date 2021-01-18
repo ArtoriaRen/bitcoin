@@ -107,6 +107,7 @@ public:
     /* detailed execution time and count*/
     unsigned long detailTime[STEP::NUM_STEPS];
     unsigned long inputCount[INPUT_CNT::NUM_INPUT_CNTS];
+    uint32_t nInputShardSigs;
     int lastReplySentSeq; // the highest block we have sent reply to the client. Used only by the main thread.
         
     
