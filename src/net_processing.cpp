@@ -1880,7 +1880,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	//} 
 	//std::cout << __func__ << ": received PBFT_REPLY for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
 	g_pbft->replyMap[reply.digest]++;
-	if (g_pbft->replyMap[reply.digest] == 2 * CPbft::nFaulty + 1) {
+	if (g_pbft->replyMap[reply.digest] == CPbft::nFaulty + 1) {
 	    struct timeval endTime;
 	    gettimeofday(&endTime, NULL);
 	    /* ---- calculate latency ---- */
@@ -1968,7 +1968,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	}
 
 	/* Check if we should send a unlock_to_abort req for the tx */
-	uint reply_threshold = 2 * CPbft::nFaulty + 1;
+	uint reply_threshold = CPbft::nFaulty + 1;
 	if (shardReplies.size() == reply_threshold && reply.reply == 'n') {
 	    /* mark the tx as final and no further unlock_to_abort or unlock_to_commit should be sent. 'a' stands for abort. */
 	    char freshDecision = g_pbft->inputShardReplyMap[reply.digest].decision.exchange('a', std::memory_order_relaxed); 
@@ -2007,8 +2007,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    std::vector<CInputShardReply> vReply;
 	    vReply.reserve(reply_threshold * g_pbft->inputShardReplyMap[reply.digest].lockReply.size());
 	    for (auto& p : g_pbft->inputShardReplyMap[reply.digest].lockReply) {
-		/* add the first (2f+1) replies of the current shard to the vector */
-		vReply.insert(vReply.end(), p.second.begin(), p.second.begin() + 3);
+		/* add the first (f+1) replies of the current shard to the vector */
+		vReply.insert(vReply.end(), p.second.begin(), p.second.begin() + reply_threshold);
 	    }
             
 	    assert(g_pbft->txInFly.exist(reply.digest));
