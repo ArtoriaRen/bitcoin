@@ -2003,7 +2003,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		return true;
 	    }
 	    //std::cout << "tx " << reply.digest.GetHex().substr(0,10) << ", LOCK_OK, ";
-	    /* assemble a vector including (2f + 1) replies for every shard */
+	    /* assemble a vector including (f + 1) replies for every shard */
 	    std::vector<CInputShardReply> vReply;
 	    vReply.reserve(reply_threshold * g_pbft->inputShardReplyMap[reply.digest].lockReply.size());
 	    for (auto& p : g_pbft->inputShardReplyMap[reply.digest].lockReply) {

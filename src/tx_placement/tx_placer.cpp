@@ -172,6 +172,16 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
         }
     }
 
+    /* send remaing tx. For time measurement only */
+    uint32_t nAllTx = 0;
+    for (int block_height = startBlock; block_height < endBlock; block_height++) {
+        nAllTx += g_pbft->blocks2Send[block_height - startBlock].vtx.size();
+    }
+    while (cnt < nAllTx) {
+        cnt += sendQueuedTx(startBlock, noop_count, batchBuffers, reqSentCnt);
+        usleep(200);
+    }
+
     /* add all req in our local batch buffer to the global batch buffer. */
     bool localBuffersEmpty = false;
     while (!localBuffersEmpty) {
