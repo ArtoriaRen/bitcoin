@@ -278,7 +278,7 @@ char UnlockToCommitReq::Execute(const int seq, CCoinsViewCache& view) const {
      * We use INT_MAX as block height, so that we never fail coinbase maturity check.
      */
     gettimeofday(&start_time, NULL);
-    uint sigsPerInputShard = 2 * CPbft::nFaulty + 1;
+    uint sigsPerInputShard = CPbft::nFaulty + 1;
     CAmount totalInputValue = 0;
     for (uint i = 0; i < vInputShardReply.size(); i += sigsPerInputShard) {
 	totalInputValue += vInputShardReply[i].totalValueInOfShard;
