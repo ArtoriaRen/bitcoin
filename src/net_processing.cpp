@@ -1953,9 +1953,17 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	//    std::cout << std::endl;
 	//}
 
+    /* If we have collected enough reply msg, ignore this one. */
+	uint reply_threshold = CPbft::nFaulty + 1;
 	int shardID = reply.peerID/CPbft::groupSize;
-	std::vector<CInputShardReply>& shardReplies = g_pbft->inputShardReplyMap[reply.digest].lockReply[shardID];
-	shardReplies.push_back(reply);
+    if (g_pbft->inputShardReplyMap[reply.digest].lockReply[shardID].size() >= reply_threshold) {
+        return true;
+    }
+
+    //std::string insert_reply = "inserted LOCK_REPLY from peer " + std::to_string(reply.peerID) + " for tx " + reply.digest.GetHex().substr(0,10) + ", sig size = " + std::to_string(reply.vchSig.size()) + "\n";
+    g_pbft->inputShardReplyMap[reply.digest].lockReply[shardID].push_back(reply);
+    //std::cout << insert_reply;
+	std::vector<CInputShardReply> shardReplies = g_pbft->inputShardReplyMap[reply.digest].lockReply[shardID];
 
 	/* Check if the client has accumulated enough replies from every shard. If so, send a unlock_to_commit req to the output shard. */
 	bool isLeastReplyShard = true;
@@ -1968,7 +1976,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	}
 
 	/* Check if we should send a unlock_to_abort req for the tx */
-	uint reply_threshold = CPbft::nFaulty + 1;
 	if (shardReplies.size() == reply_threshold && reply.reply == 'n') {
 	    /* mark the tx as final and no further unlock_to_abort or unlock_to_commit should be sent. 'a' stands for abort. */
 	    char freshDecision = g_pbft->inputShardReplyMap[reply.digest].decision.exchange('a', std::memory_order_relaxed); 
@@ -1978,11 +1985,12 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		return true;
 	    }
 
-	    std::cout << "tx " << reply.digest.GetHex().substr(0,10) << ", LOCK_NOT_OK, ";
+	    std::cout << "tx " << reply.digest.GetHex() << ", LOCK_NOT_OK, ";
 	    /* assemble a unlock_to_abort req including (2f + 1) replies from this shard */
 	    assert(g_pbft->txInFly.exist(reply.digest));
 	    UnlockToAbortReq abortReq(std::move(CMutableTransaction(*g_pbft->txInFly[reply.digest].tx)), shardReplies);
 
+        assert(reply.vchSig.size() > 0);
 	    g_pbft->txUnlockReqMap.insert(std::make_pair(abortReq.GetDigest(), reply.digest));
 
 	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
@@ -1994,6 +2002,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		std::cout << shards[i] << ", ";
 		connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_UNLOCK_ABORT, abortReq));
 	    }
+        std::cout << std::endl;
 	} else if (isLeastReplyShard && shardReplies.size() == reply_threshold && reply.reply == 'y') {
 	    /* mark the tx is final so that we do not need to process future replies for this req. 'c' stands for commit. */
 	    char freshDecision = g_pbft->inputShardReplyMap[reply.digest].decision.exchange('c', std::memory_order_relaxed); 
@@ -2010,6 +2019,12 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		/* add the first (f+1) replies of the current shard to the vector */
 		vReply.insert(vReply.end(), p.second.begin(), p.second.begin() + reply_threshold);
 	    }
+
+        for (auto& r: vReply) {
+            if (r.vchSig.size() == 0) {
+            std::cout << "empty sig. peer = " << r.peerID << ", tx = " << reply.digest.GetHex().substr(0,10) << std::endl;
+            }
+        }
             
 	    assert(g_pbft->txInFly.exist(reply.digest));
 	    UnlockToCommitReq commitReq(std::move(CMutableTransaction(*g_pbft->txInFly[reply.digest].tx)), vReply.size(), std::move(vReply));

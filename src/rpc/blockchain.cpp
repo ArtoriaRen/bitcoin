@@ -1490,7 +1490,8 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
     vThread[0].join(); /* wait for the msg-pushing thread to finish. */
     gettimeofday(&endTime, NULL);
     long sendDuration = (endTime.tv_sec - startTime.tv_sec) * 1000000 + (endTime.tv_usec - startTime.tv_usec);
-    std::cout << __func__ << ": totally sent " << totalTxSent << " tx in " << sendDuration << " us, sending rate = " << (double)totalTxSent * 1000000 / sendDuration  << " tx/sec" << std::endl;
+    std::string rateStr = "sendtxinblocks: totally sent " + std::to_string(totalTxSent) +  " tx in " + std::to_string(sendDuration) + " us, sending rate = " + std::to_string((double)totalTxSent * 1000000 / sendDuration) + " tx/sec\n";
+    std::cout << rateStr;
     return NullUniValue;
 }
 

@@ -107,8 +107,8 @@ void ThreadSafeVector::print() {
 }
 
 const float CPbft::LOAD_TX = 1.0f;
-const float CPbft::LOAD_LOCK = 3.85f;
-const float CPbft::LOAD_COMMIT = 4.82f;
+const float CPbft::LOAD_LOCK = 2.12f;
+const float CPbft::LOAD_COMMIT = 1.24f;
 
 CPbft::CPbft() : leaders(num_committees), pubKeys(num_committees * groupSize), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nSucceed(0), nFail(0), nCommitted(0), nAborted(0), vLoad(num_committees, 0), batchBuffers(num_committees), vBatchBufferMutex(num_committees), privateKey(CKey()) {
     testStartTime = {0, 0};
