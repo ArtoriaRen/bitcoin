@@ -67,11 +67,11 @@ uint256 UnlockToCommitReq::GetDigest() const {
 }
 
 UnlockToAbortReq::UnlockToAbortReq(): CClientReq(CMutableTransaction()) {
-    vNegativeReply.resize(2 * CPbft::nFaulty + 1);
+    vNegativeReply.resize(CPbft::nFaulty + 1);
 }
 
 UnlockToAbortReq::UnlockToAbortReq(const CTransaction& txIn, const std::vector<CInputShardReply>& lockFailReplies) : CClientReq(txIn), vNegativeReply(lockFailReplies){
-    assert(vNegativeReply.size() == 2 * CPbft::nFaulty + 1);
+    assert(vNegativeReply.size() == CPbft::nFaulty + 1);
 }
 
 uint256 UnlockToAbortReq::GetDigest() const {
