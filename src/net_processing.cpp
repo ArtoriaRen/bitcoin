@@ -1951,9 +1951,16 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    std::cout << strCommand << " from " << reply.peerID << " sig verification fail"  << std::endl;
 	}
 
+    /* If we have collected enough reply msg, ignore this one. */
+	uint reply_threshold = CPbft::nFaulty + 1;
 	int shardID = reply.peerID/CPbft::groupSize;
-	std::vector<CInputShardReply>& shardReplies = g_pbft->inputShardReplyMap[reply.digest].lockReply[shardID];
-	shardReplies.push_back(reply);
+    if (g_pbft->inputShardReplyMap[reply.digest].lockReply[shardID].size() >= reply_threshold) {
+        return true;
+    }
+    //std::string insert_reply = "inserted LOCK_REPLY from peer " + std::to_string(reply.peerID) + " for tx " + reply.digest.GetHex().substr(0,10) + ", sig size = " + std::to_string(reply.vchSig.size()) + "\n";
+    g_pbft->inputShardReplyMap[reply.digest].lockReply[shardID].push_back(reply);
+    //std::cout << insert_reply;
+    std::vector<CInputShardReply> shardReplies = g_pbft->inputShardReplyMap[reply.digest].lockReply[shardID];
 
 	/* Check if the client has accumulated enough replies from every shard. If so, send a unlock_to_commit req to the output shard. */
 	bool isLeastReplyShard = true;
@@ -1966,7 +1973,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	}
 
 	/* Check if we should send a unlock_to_abort req for the tx */
-	uint reply_threshold = CPbft::nFaulty + 1;
 	if (shardReplies.size() == reply_threshold && reply.reply == 'n') {
 	    /* mark the tx as final and no further unlock_to_abort or unlock_to_commit should be sent. 'a' stands for abort. */
 	    char freshDecision = g_pbft->inputShardReplyMap[reply.digest].decision.exchange('a', std::memory_order_relaxed); 
