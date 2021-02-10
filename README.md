@@ -1,33 +1,36 @@
-Research on Blockchain
+Smart Transaction Placement 
+
+This branch implements a research on Blockchain, namely Smart Transaction Placement (STP). Below are details about how to measure the performance of STP.
 =====================================
 
 # Smart Transaction Placement (STP) Overview
-----------------
 STP is a transaction placement algorithm for blockchain sharding protocols. It improves the performance by reducing cross-shard transactions. 
 The paper compares the performance of STP with that of Hashing Placment(HP).
 
 # Source Code
 This branch (`omniledger_smartPlace_client`) is for STP client code.
+
 See branch [tx_place_pbft_omniledger_smartPlace](https://github.com/ArtoriaRen/bitcoin/tree/tx_place_pbft_omniledger_smartPlace) for STP server code.
+
 See branch [tx_place_omniledger_block_allowAbort](https://github.com/ArtoriaRen/bitcoin/tree/tx_place_omniledger_block_allowAbort) for HP client code.
+
 See branch [tx_place_client_correct_throughput_measure](https://github.com/ArtoriaRen/bitcoin/tree/tx_place_client_correct_throughput_measure) for HP server code.
 
 
-# Reproducing the 2-shard Exprimental Result in the paper
--------
-1. Install Dependencies of Bitcoin Core 
+# Reproducing the 2-shard Exprimental Results in the paper
+## 1. Install Dependencies of Bitcoin Core 
 See [Rich Apodaca's post](https://bitzuma.com/posts/compile-bitcoin-core-from-source-on-ubuntu/).
 
-2. Download the blockchain of Bitcoin
-Experiments in the paper use the system state at block height 600999. [Here](https://github.com/ArtoriaRen/bitcoin/tree/0.16_controlled_sync) is the Bitcoin Core code with minor modification to download blocks to a specific height. 
+## 2. Download the blockchain of Bitcoin
+Experiments in the paper use the system state at block height 600999. [Branch `16_controlled_sync`](https://github.com/ArtoriaRen/bitcoin/tree/0.16_controlled_sync) is the Bitcoin Core code with minor modification to download blocks to a specific height. 
 And [here]() is the configuration file (i.e. `sync_from_public.conf`) where you specify the height using the `synctoheight` field. Follow the steps below to download the Bitcoin blockchain.
 - download the above source code, i.e., the `0.16_controlled_sync` branch, compile it.
-- Create an empty folder, e.g. named `blocks_600999`, rename the above `sync_from_public.conf` file to `bitcoin.conf`, and put it into the empty folder.
-- Start `bitcoind` to download blocks:  `<git_repo_folder>/src/bitcoind --datadir=blocks_600999`. 
+- create an empty folder, e.g. named `blocks_600999`, rename the above `sync_from_public.conf` file to `bitcoin.conf`, and put it into the empty folder.
+- start `bitcoind` to download blocks:  `<git_repo_folder>/src/bitcoind --datadir=blocks_600999`. 
 
 Make sure your machine has Internet access. Once started, `bitcoind` will automatically connect to some Bitcoin peers and sync blocks from them. Depending on your CPU and network bandwidth, the downloading process may last several hours to several days.
 
-3. Set Shard Affinities of UTXOs
+## 3. Set Shard Affinities of UTXOs
 At the beginning of the experiments, UTXOs are evenly distributed among shards, so we need to assign all UTXOs in the `chainstate` database of height 600999 to 2 shards. Follow the steps below.
 - shutdown `bitcoind` after downloading blocks: `<git_repo_folder>/src/bitcoin-cli --datadir=blocks_600999 stop`.
 - make a copy of the `blocks_600999/chainstate` folder and store it somewhere because we are going to modify the UTXOs, which are stored in this folder.
@@ -39,7 +42,7 @@ At the beginning of the experiments, UTXOs are evenly distributed among shards, 
 - once the RPC returns, shutdown the bitcoind instance. Then move the `blocks_600999/chainstate` folder outside the `blocks_600999` folder and rename it as `chainstate_withAffinity_2shard`, and move back the orginal `chainstate` folder.
 - uncomment line 80 of file `src/coins.h` (i.e., `::Unserialize(s, shardAffinity);`), and compile the code again.
 
-4. Set Up a 2-shard Bitcoin Network
+## 4. Set Up a 2-shard Bitcoin Network
 Servers run the server-version bitcoind, so you need to compile the `tx_place_pbft_omniledger_smartPlace` branch. But before checking out the branch and compile, be sure to make a copy of the STP-client-version `bitcoind` and `bitcoin-cli`, because they will be overwritten when we compile the STP-server-version countparts.  
 
 Every shard has 4 servers, so measuring the performance of two shards requires 9 machines (or VMs) in total: 8 servers and 1 client. Every machine must have its own bitcoin data folder, so copy the `blocks_600999/` folder to all machines. Also, copy the STP-server-version `bitcoind` to all servers, and the the STP-client-version `bitcoind` to the client.
@@ -55,7 +58,7 @@ An example of all 9 `bitcoin.conf` files is given under `<git_repo_folder>/STP_f
 Start `bitcoind` on all servers and then the client. After a while, you can check if servers have already connected to each other using the `getpeerinfo` RPC, i.e., `<git_repo_folder>/src/bitcoin-cli --datadir=blocks_600999 getpeerinfo`. You should seeevery PBFT followers and the client have 8 peers each, and the PBFT leaders have 7 peers. 
 
 
-5. Prepare the Client
+## 5. Prepare the Client
 Because the client is going to send transactions in Bitcoin blocks starting from height 601000, the client need to download more blocks from the public Bitcoin network. Redo step 2 but set `synctoheight = 601120` in the `bitcoin.conf` because we will use at most 120 blocks. Rename the `blocks_600999` folder to `blocks_601120`.
 
 The client tracks transaction dependency so that we can avoid aborting tranactions. Transaction dependency analysis is done offline, and the results are saved in a folder called `dependency_file/`. Manually create this folder at the path where you are going to run `bitcoind`. Follow the steps below.
@@ -64,7 +67,7 @@ The client tracks transaction dependency so that we can avoid aborting tranactio
 - shut down the `bitcoind`
 
 
-## 7. Test STP
+## 6. Test STP
 ### Prepare Placement Result Files (only for offline STP)
 Replace `blocks_601120/chainstate` with `chainstate_withAffinity_2shard`, so that the client knows shard affinities of all UTXOs to run STP for transactions in blocks 601000 to 601120.
 
@@ -91,5 +94,5 @@ Before running formal tests, we must run tests for 3 times to warm up memory pag
 ### Run test
 See the steps in warming up memory page cache.
 
-6. Test Hashing Placement
+## 7. Test Hashing Placement
 Same as [Test STP](#7-test-stp), but without preparing placement result files. Also, use HP-sever-verison and HP-client-version `bitcoind`s (See the corresponding branch in section [Source Code](#source-code)).
