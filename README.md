@@ -1,9 +1,8 @@
-#Smart Transaction Placement 
-This branch implements a research on Blockchain, namely Smart Transaction Placement (STP). Below are details about how to measure the performance of STP.
-
-# Smart Transaction Placement (STP) Overview
+# Smart Transaction Placement 
+This branch implements a research on Blockchain, namely Smart Transaction Placement (STP). 
 STP is a transaction placement algorithm for blockchain sharding protocols. It improves the performance by reducing cross-shard transactions. 
 The paper compares the performance of STP with that of Hashing Placment(HP).
+Below are details about how to measure the performance of STP.
 
 # Source Code
 This branch (`omniledger_smartPlace_client`) is for STP client code.
@@ -46,10 +45,9 @@ Servers run the server-version bitcoind, so you need to compile the `tx_place_pb
 Every shard has 4 servers, so measuring the performance of two shards requires 9 machines (or VMs) in total: 8 servers and 1 client. Every machine must have its own bitcoin data folder, so copy the `blocks_600999/` folder to all machines. Also, copy the STP-server-version `bitcoind` to all servers, and the the STP-client-version `bitcoind` to the client.
 
 Nodes connect to each other using port 8330, and PBFT leaders also listen on port 28830 for client connection. Every node has a distinct `pbftid` in their `bitcoin.conf` file. Client use `pbftid = 65`. The `pbftid`s of PBFT leaders are multiples of 4.
+A node will initiate  an outbound connnection to another node if the latter's IP address is provided in the former's `bitcoin.conf` file, i.e. `connect=<IP>:8330`. 
 
 To faclitate publickey exchange, we let all servers connect with each other, and the client connect to all servers no matter they are PBFT leaders or followers. However, one can modify the code to disconnect a node with servers in other shards and disconnect the client from PBFT follower servers once the initial public key exchange is done. 
-
-A node will initiate  an outbound connnection to another node if the latter's IP address is provided in the former's `bitcoin.conf` file, i.e. `connect=<IP>:8330`. 
 
 An example of all 9 `bitcoin.conf` files is given under [`STP_files/2shards_conf`](https://github.com/ArtoriaRen/bitcoin/tree/omniledger_smartPlace_client/STP_files/2shards_conf). Make sure you replace the IP addresses in those files with the IP addresses of you machines. Then put these 9 files to the correct machine to replace the original `bitcoin.conf`. 
 
