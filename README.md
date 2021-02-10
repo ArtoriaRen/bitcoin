@@ -1,7 +1,5 @@
-Smart Transaction Placement 
-
+#Smart Transaction Placement 
 This branch implements a research on Blockchain, namely Smart Transaction Placement (STP). Below are details about how to measure the performance of STP.
-=====================================
 
 # Smart Transaction Placement (STP) Overview
 STP is a transaction placement algorithm for blockchain sharding protocols. It improves the performance by reducing cross-shard transactions. 
@@ -23,7 +21,7 @@ See [Rich Apodaca's post](https://bitzuma.com/posts/compile-bitcoin-core-from-so
 
 ## 2. Download the blockchain of Bitcoin
 Experiments in the paper use the system state at block height 600999. [Branch `16_controlled_sync`](https://github.com/ArtoriaRen/bitcoin/tree/0.16_controlled_sync) is the Bitcoin Core code with minor modification to download blocks to a specific height. 
-And [here]() is the configuration file (i.e. `sync_from_public.conf`) where you specify the height using the `synctoheight` field. Follow the steps below to download the Bitcoin blockchain.
+And [`STP_files/sync_from_public.conf`](https://github.com/ArtoriaRen/bitcoin/blob/omniledger_smartPlace_client/STP_files/sync_from_public.conf) is the configuration file where you specify the height using the `synctoheight` field. Follow the steps below to download the Bitcoin blockchain.
 - download the above source code, i.e., the `0.16_controlled_sync` branch, compile it.
 - create an empty folder, e.g. named `blocks_600999`, rename the above `sync_from_public.conf` file to `bitcoin.conf`, and put it into the empty folder.
 - start `bitcoind` to download blocks:  `<git_repo_folder>/src/bitcoind --datadir=blocks_600999`. 
@@ -34,7 +32,7 @@ Make sure your machine has Internet access. Once started, `bitcoind` will automa
 At the beginning of the experiments, UTXOs are evenly distributed among shards, so we need to assign all UTXOs in the `chainstate` database of height 600999 to 2 shards. Follow the steps below.
 - shutdown `bitcoind` after downloading blocks: `<git_repo_folder>/src/bitcoin-cli --datadir=blocks_600999 stop`.
 - make a copy of the `blocks_600999/chainstate` folder and store it somewhere because we are going to modify the UTXOs, which are stored in this folder.
-- replace the `bitcoin.conf` with [this file](), where you can specify the number of shards by setting the `numcommittees` field. This file also sets `connect=0` so that the peer will not initiate outbound connection to Bitcoin peers. Make sure the new file is renamed as `bitcoin.conf`.
+- replace the `bitcoin.conf` with [`STP_files/assign_to_shards.conf`](https://github.com/ArtoriaRen/bitcoin/blob/omniledger_smartPlace_client/STP_files/assign_to_shards.conf), where you can specify the number of shards by setting the `numcommittees` field. This file also sets `connect=0` so that the peer will not initiate outbound connection to Bitcoin peers. Make sure the new file is renamed as `bitcoin.conf`.
 - checkout the `omniledger_smartPlace_client` branch, comment out line 80 of file `src/coins.h` (i.e., `//::Unserialize(s, shardAffinity);`). This change is only for reading in UTXOs without the `shardAffinity` field. This feature is only required for assigning affinities. We will change it back later when running experiments.
 - compile the STP client code.
 - start the STP-client-version bitcoind: `<git_repo_folder>/src/bitcoind --datadir=blocks_600999`
@@ -53,7 +51,7 @@ To faclitate publickey exchange, we let all servers connect with each other, and
 
 A node will initiate  an outbound connnection to another node if the latter's IP address is provided in the former's `bitcoin.conf` file, i.e. `connect=<IP>:8330`. 
 
-An example of all 9 `bitcoin.conf` files is given under `<git_repo_folder>/STP_files/2shards_conf`. Make sure you replace the IP addresses in those files with the IP addresses of you machines. Then put these 9 files to the correct machine to replace the original `bitcoin.conf`. 
+An example of all 9 `bitcoin.conf` files is given under [`STP_files/2shards_conf`](https://github.com/ArtoriaRen/bitcoin/tree/omniledger_smartPlace_client/STP_files/2shards_conf). Make sure you replace the IP addresses in those files with the IP addresses of you machines. Then put these 9 files to the correct machine to replace the original `bitcoin.conf`. 
 
 Start `bitcoind` on all servers and then the client. After a while, you can check if servers have already connected to each other using the `getpeerinfo` RPC, i.e., `<git_repo_folder>/src/bitcoin-cli --datadir=blocks_600999 getpeerinfo`. You should seeevery PBFT followers and the client have 8 peers each, and the PBFT leaders have 7 peers. 
 
