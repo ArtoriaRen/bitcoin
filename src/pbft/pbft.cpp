@@ -20,6 +20,9 @@
 #include "netmessagemaker.h"
 #include <memory>
 #include "tx_placement/tx_placer.h"
+#include "init.h"
+
+extern std::unique_ptr<CConnman> g_connman;
 
 bool fIsClient; // if this node is a pbft client.
 std::string leaderAddrString;
@@ -210,37 +213,6 @@ bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
         // enter reply phase
         std::cout << "enter reply phase" << std::endl;
         log[cMsg.seq].phase = PbftPhase::reply;
-//	nReqInFly--; 
-	/* if some seq ahead of the cMsg.seq is not in the reply phase yet, 
-	 * cMsg.seq will not be executed.
-	 */
-	int startReplySeq = lastExecutedSeq + 1; 
-	executeTransaction(cMsg.seq); // this updates the lastExecutedIndex  
-	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-	/* send reply to for all log slots that are in the reply phase.
-	 * Since lastExecutedSeq increaes monotonically, this logic guarantees 
-	 * to send reply to client only once. 
-	 */
-	for (int i = startReplySeq; i <= lastExecutedSeq; i++) {
-	    ClientReqType& reqType = log[cMsg.seq].ppMsg.type; 
-	    if (reqType == ClientReqType::TX 
-		    || reqType == ClientReqType::UNLOCK_TO_COMMIT  
-		    || reqType == ClientReqType::UNLOCK_TO_ABORT) {
-		CReply reply = assembleReply(cMsg.seq);
-		connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
-	    } else if (log[cMsg.seq].ppMsg.type == ClientReqType::LOCK) {
-		CInputShardReply reply = assembleInputShardReply(cMsg.seq);
-		connman->PushMessage(client, msgMaker.Make(NetMsgType::OMNI_LOCK_REPLY, reply));
-	    } 
-	}
-	/* wake up the client-listening thread to send results to clients. The 
-	 * client-listening thread is probably already up if the client sends 
-	 * request too frequently. 
-	 * The following code cause linking errors still not fixed.
-	 */
-	if (isLeader()) {
-	    clientConnMan->WakeMessageHandler();
-	}
     }
     return true;
 }
@@ -322,28 +294,41 @@ CInputShardReply CPbft::assembleInputShardReply(const uint32_t seq) {
     return toSent;
 }
 
-int CPbft::executeTransaction(const int seq) {
-    // execute all lower-seq tx until this one if possible.
-    int i = lastExecutedSeq + 1;
-    /* We should go on to execute all log slots that are in reply phase even
-     * their seqs are greater than the seq passed in. If we only execute up to
-     * the seq passed in, a slot missing a pbftc msg might permanently block
-     * log slots after it to be executed. */
+int CPbft::executeLog() {
+    /* execute all lower-seq tx until this one if possible. */
+    CCoinsViewCache view(pcoinsTip.get());
+    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+    int startReplySeq = lastExecutedSeq + 1; 
+    uint i = lastExecutedSeq + 1;
     for (; i < logSize; i++) {
         if (log[i].phase == PbftPhase::reply) {
-	    log[i].result = log[i].ppMsg.req->Execute(i);
+            log[i].result = log[i].ppMsg.req->Execute(i);
+            /* send reply */
+            CReply reply = assembleReply(i);
+            g_connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
         } else {
             break;
         }
     }
     lastExecutedSeq = i - 1;
-    /* if lastExecutedIndex is less than seq, we delay sending reply until 
-     * the all requsts up to seq has been executed. This may be triggered 
-     * by future requests.
+    /* wake up the client-listening thread to send results to clients. The 
+     * client-listening thread is probably already up if the client sends 
+     * request too frequently. 
+     * The following code cause linking errors still not fixed.
      */
+    if (isLeader()) {
+        clientConnMan->WakeMessageHandler();
+    }
     return lastExecutedSeq;
 }
 
+void ThreadConsensusLogExe() {
+    RenameThread("bitcoin-logexe");
+    while (!ShutdownRequested()) {
+        g_pbft->executeLog();
+        MilliSleep(50);
+    }
+}
 
 std::unique_ptr<CPbft> g_pbft;
 /* In case we receive an omniledger unlock_to_abort req, store a copy of all locked coins

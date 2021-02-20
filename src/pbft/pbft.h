@@ -104,8 +104,7 @@ public:
     CReply assembleReply(const uint32_t seq);
     CInputShardReply assembleInputShardReply(const uint32_t seq);
     bool checkMsg(CPbftMessage* msg);
-    /*return the last executed seq */
-    int executeTransaction(const int seq);
+    int executeLog();
 
     inline void printQueueSize(){
 	    /* log queue size if we have reached the period. */
@@ -124,6 +123,8 @@ private:
     // private ECDSA key used to sign messages
     CKey privateKey;
 };
+
+void ThreadConsensusLogExe();
 
 extern std::unique_ptr<CPbft> g_pbft;
 #endif /* PBFT_H */

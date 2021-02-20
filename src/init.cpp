@@ -1698,6 +1698,8 @@ bool AppInitMain()
     }
 
     // ********************************************************* Step 11: start node
+    /*----create consensus log execution thread ------ */
+    threadGroup.create_thread(&ThreadConsensusLogExe);
 
     int chain_active_height;
 
