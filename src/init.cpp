@@ -1698,9 +1698,6 @@ bool AppInitMain()
     }
 
     // ********************************************************* Step 11: start node
-    /*----create consensus log execution thread ------ */
-    threadGroup.create_thread(&ThreadConsensusLogExe);
-
     int chain_active_height;
 
     //// debug print
@@ -1816,16 +1813,8 @@ bool AppInitMain()
     StartWallets(scheduler);
 #endif
 
-    /* Create or re-assign a shardAffnity field to Coins in the chainstate database.
-     * Coins are evenly distributed to all shards.
-     * !!! NOTE: When creating shardAffinity field for the first time, must comment out 
-     * 1. " ::Unserialize(s, shardAffinity); " in the Unserialize method of Coin class 
-     * 2. " ::Unserialize(s, txout->shardAffinity); " in the Unserialize method of 
-     *     TxInUndoDeserializer class
-     * because coins on disk have no such attribute yet. */
-    //assignShardAffinity();
-    //printShardAffinity();
-    //randomPlaceTxInBlock();
-    //extractRawTxInBlock();
+    /*----create consensus log execution thread ------ */
+    threadGroup.create_thread(&ThreadConsensusLogExe);
+
     return true;
 }

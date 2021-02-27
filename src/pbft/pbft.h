@@ -116,7 +116,8 @@ public:
     }
 
     inline bool isLeader(){
-	return pbftID % groupSize == 0;
+	/*All nodes are in the same committee so there is only one leader. */
+	return pbftID == 0;
     }
 
 private:
