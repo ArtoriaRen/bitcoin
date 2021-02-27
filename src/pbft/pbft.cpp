@@ -8,6 +8,7 @@
 #include "tx_placement/tx_placer.h"
 int32_t pbftID;
 struct timeval thruInterval; // calculate throughput once every "thruInterval" 
+std::atomic<uint32_t> totalTxSent(0);
 
 TxBlockInfo::TxBlockInfo(): blockHeight(0), n(0) { }
 TxBlockInfo::TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn): tx(txIn), blockHeight(blockHeightIn), n(nIn) { }
@@ -65,8 +66,8 @@ CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), nLastCompletedTx(
     nextLogTime = {0, 0};
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
-    latencyFile.open ("/home/l27ren/collab_verify/latency.out");
-    thruputFile.open ("/home/l27ren/collab_verify/thruput.out");
+    latencyFile.open ("bft/latency.out");
+    thruputFile.open ("bft/thruput.out");
 }
 
 CPbft::~CPbft() {

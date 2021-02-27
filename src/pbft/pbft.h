@@ -27,6 +27,7 @@
 
 extern int32_t pbftID;
 extern struct timeval thruInterval;
+extern std::atomic<uint32_t> totalTxSent;
 
 struct LockReply{
     std::map<int32_t, std::vector<CInputShardReply>> lockReply;

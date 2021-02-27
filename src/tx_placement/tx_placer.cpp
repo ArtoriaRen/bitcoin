@@ -108,7 +108,7 @@ uint32_t sendTxInBlock(uint32_t block_height, int noop_count) {
 	    	return cnt;
 	    oprand ^= k;
 	}
-	std::cout << "loop noop for " << k << " times. oprand becomes " << oprand << std::endl;
+	std::cerr << "loop noop for " << k << " times. oprand becomes " << oprand << std::endl;
 
 	/* send one aborted tx every four tx */
 	if ((j & 0x04) == 0) {
