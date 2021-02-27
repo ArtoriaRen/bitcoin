@@ -1462,31 +1462,20 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
     int txStartBlock = request.params[0].get_int();
     int txEndBlock = request.params[1].get_int();
     int noopCount = request.params[2].get_int();
-    struct timeval startTime, tailStartTime, tailEndTime;
-    uint32_t txCnt = 0, nonTailCnt = 0;
+    struct timeval startTime, endTime;
+    uint32_t txCnt = 0;
     gettimeofday(&startTime, NULL); 
     g_pbft->logThruput(startTime);
     for (int i = txStartBlock; i < txEndBlock; i++) {
-	txCnt += sendTxInBlock(i, noopCount);
-	std::cout << txCnt << " tx upto block " << i << " are sent. " << std::endl;
+        txCnt += sendTxInBlock(i, noopCount);
     }
-    nonTailCnt = txCnt;
-    gettimeofday(&tailStartTime, NULL);
-    //txCnt += sendAllTailTx(txSendPeriod);
-    //std::cout << txCnt << " tail tx are sent. " << std::endl;
-
-    gettimeofday(&tailEndTime, NULL);
-    long sendDuration = (tailStartTime.tv_sec - startTime.tv_sec) * 1000000 
-	    + (tailStartTime.tv_usec - startTime.tv_usec);
-    //long tailDuration = (tailEndTime.tv_sec - tailStartTime.tv_sec) * 1000000 
-    //	    + (tailEndTime.tv_usec - tailStartTime.tv_usec);
-    std::cout << __func__ << ": send " << nonTailCnt << " non-tail tx in " << sendDuration
-	    << " us, actual sending rate = " << (double)nonTailCnt * 1000000 / sendDuration  
+    totalTxSent = txCnt;
+    gettimeofday(&endTime, NULL);
+    long sendDuration = (endTime.tv_sec - startTime.tv_sec) * 1000000 
+	    + (endTime.tv_usec - startTime.tv_usec);
+    std::cout << __func__ << ": send " <<  txCnt << " tx in " << sendDuration
+	    << " us, actual sending rate = " << (double)txCnt * 1000000 / sendDuration  
 	    << " tx/sec" << std::endl;
-//    uint32_t tailCnt = txCnt - nonTailCnt;
-//    std::cout << __func__ << ": send " << tailCnt << " tail tx in " << tailDuration
-//	    << " us, actual sending rate = " << (double)tailCnt * 1000000 / tailDuration  
-//	    << " tx/sec" << std::endl;
 
     return NullUniValue;
 }

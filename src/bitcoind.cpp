@@ -43,24 +43,33 @@
 void WaitForShutdown()
 {
     bool fShutdown = ShutdownRequested();
+    CPbft& pbft = *g_pbft;
+    bool testStarted = false, testFinished = false, testFinishedNew = false;
+    struct timeval currentTime;
     // Tell the main threads to shutdown.
     while (!fShutdown)
     {
         MilliSleep(200);
 
-	/* print throughput */
-	/* log throughput if enough long time has elapsed. */
-	CPbft& pbft = *g_pbft;
-	bool testIsRunning = pbft.nTotalSentTx > 0  // test has started
-		&& pbft.nCompletedTx.load(std::memory_order_relaxed) + pbft.nTotalFailedTx.load(std::memory_order_relaxed) < pbft.nTotalSentTx; // test has not yet finished
-	struct timeval currentTime;
-	gettimeofday(&currentTime, NULL);
-	if (testIsRunning && currentTime >= pbft.nextLogTime) {
-	    pbft.logThruput(currentTime);
-	}
-
+        if (!testStarted) {
+            testStarted = pbft.testStartTime.tv_sec > 0;  // test has started
+        }
+        if (totalTxSent.load(std::memory_order_relaxed) > 0 && !testFinished) {
+            testFinishedNew = pbft.nCompletedTx.load(std::memory_order_relaxed) + pbft.nTotalFailedTx.load(std::memory_order_relaxed) >= totalTxSent.load(std::memory_order_relaxed); // test has finished
+        }
+        /* log throughput if enough long time has elapsed. */
+        gettimeofday(&currentTime, NULL);
+        if (testStarted && !testFinished && (currentTime >= pbft.nextLogTime || testFinishedNew)) {
+            pbft.logThruput(currentTime);
+            if (testFinishedNew) {
+            std::cout << "SUCCEED: " << pbft.nCompletedTx.load(std::memory_order_relaxed) << ", FAIL: " << pbft.nTotalFailedTx.load(std::memory_order_relaxed) << std::endl;
+            }
+        }
+        testFinished = testFinishedNew;
         fShutdown = ShutdownRequested();
     }
+    /* log stats at shutdown */
+    std::cout << "SUCCEED: " << pbft.nCompletedTx.load(std::memory_order_relaxed) << ", FAIL: " << pbft.nTotalFailedTx.load(std::memory_order_relaxed) << ". txInFly cnt = " << pbft.txInFly.size() << std::endl;
     Interrupt();
 }
 
