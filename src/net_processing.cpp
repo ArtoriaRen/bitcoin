@@ -1854,7 +1854,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	//}
 	//std::cout << __func__ << ": received PBFT_REPLY for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
 	g_pbft->replyMap[reply.digest]++;
-	if (g_pbft->replyMap[reply.digest] == 2 * CPbft::nFaulty + 1) {
+	if (g_pbft->replyMap[reply.digest] == CPbft::nFaulty + 1) {
 	    struct timeval endTime;
 	    gettimeofday(&endTime, NULL);
 	    /* ---- calculate latency ---- */
@@ -1895,9 +1895,17 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    std::cout << std::endl;
 	}
 
+        /* If we have collected enough reply msg, ignore this one. */
+	uint reply_threshold = CPbft::nFaulty + 1;
 	int shardID = reply.peerID/CPbft::groupSize;
-	std::vector<CInputShardReply>& shardReplies = g_pbft->inputShardReplyMap[reply.digest].lockReply[shardID];
-	shardReplies.push_back(reply);
+        if (g_pbft->inputShardReplyMap[reply.digest].lockReply[shardID].size() >= reply_threshold) {
+            return true;
+        }
+
+        //std::string insert_reply = "inserted LOCK_REPLY from peer " + std::to_string(reply.peerID) + " for tx " + reply.digest.GetHex().substr(0,10) + ", sig size = " + std::to_string(reply.vchSig.size()) + "\n";
+        g_pbft->inputShardReplyMap[reply.digest].lockReply[shardID].push_back(reply);
+        //std::cout << insert_reply;
+        std::vector<CInputShardReply> shardReplies = g_pbft->inputShardReplyMap[reply.digest].lockReply[shardID];
 
 	/* Check if the client has accumulated enough replies from every shard. If so, send a unlock_to_commit req to the output shard. */
 	bool isLeastReplyShard = true;
@@ -1910,7 +1918,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	}
 
 	/* Check if we should send a unlock_to_abort req for the tx */
-	uint reply_threshold = 2 * CPbft::nFaulty + 1;
 	if (shardReplies.size() == reply_threshold && reply.reply == 'n') {
 	    std::cout << "tx " << reply.digest.GetHex().substr(0,10) << ", LOCK_NOT_OK, ";
 	    /* assemble a unlock_to_abort req including (2f + 1) replies from this shard */
@@ -1936,8 +1943,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    std::vector<CInputShardReply> vReply;
 	    vReply.reserve(reply_threshold * g_pbft->inputShardReplyMap[reply.digest].lockReply.size());
 	    for (auto& p : g_pbft->inputShardReplyMap[reply.digest].lockReply) {
-		/* add the first (2f+1) replies of the current shard to the vector */
-		vReply.insert(vReply.end(), p.second.begin(), p.second.begin() + 3);
+                /* add the first (f+1) replies of the current shard to the vector */
+                vReply.insert(vReply.end(), p.second.begin(), p.second.begin() + reply_threshold);
 	    }
             
 	    assert(g_pbft->txInFly.exist(reply.digest));
