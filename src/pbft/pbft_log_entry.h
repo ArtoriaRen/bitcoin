@@ -29,15 +29,12 @@ public:
     uint32_t commitCount;
 
     PbftPhase phase;
-    // execution result for this log entry
-    uint32_t txCnt;
 
-    std::atomic<bool> blockVerified;
     /* a set of peerId who sent us collab verifying results. */
     std::set<uint32_t> setCollabPeerID;
 
     //---placeholder. default phase should be pre-prepare.
-    CPbftLogEntry(): prepareCount(0), commitCount(0), phase(PbftPhase::pre_prepare), txCnt(0), blockVerified(false) {}
+    CPbftLogEntry(): prepareCount(0), commitCount(0), phase(PbftPhase::pre_prepare){}
 };
 
 

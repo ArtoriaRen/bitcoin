@@ -4,7 +4,6 @@
  * and open the template in the editor.
  */
 
-
 #include "pbft/pbft_msg.h"
 #include "hash.h"
 #include "pbft.h"
@@ -40,7 +39,7 @@ CPre_prepare::CPre_prepare(const CPbftMessage& msg): CPbftMessage(msg), pPbftBlo
 
 
 
-static char VerifyTx(const CTransaction& tx, const int seq, CCoinsViewCache& view) {
+static bool VerifyTx(const CTransaction& tx, const int seq, CCoinsViewCache& view) {
     /* -------------logic from Bitcoin code for tx processing--------- */
     CValidationState state;
     if(!tx.IsCoinBase()) {
@@ -52,7 +51,7 @@ static char VerifyTx(const CTransaction& tx, const int seq, CCoinsViewCache& vie
          * maturity check. */
         if (!Consensus::CheckTxInputs(tx, state, view, INT_MAX, txfee)) {
             std::cerr << __func__ << ": Consensus::CheckTxInputs: " << tx.GetHash().ToString() << ", " << FormatStateMessage(state) << std::endl;
-            return 'n';
+            return false;
         }
 
         // GetTransactionSigOpCost counts 3 types of sigops:
@@ -63,7 +62,7 @@ static char VerifyTx(const CTransaction& tx, const int seq, CCoinsViewCache& vie
         nSigOpsCost += GetTransactionSigOpCost(tx, view, flags);
         if (nSigOpsCost > MAX_BLOCK_SIGOPS_COST) { 
             std::cerr << __func__ << ": ConnectBlock(): too many sigops" << std::endl;
-            return 'n';
+            return false;
         }
 
         PrecomputedTransactionData txdata(tx);
@@ -74,11 +73,11 @@ static char VerifyTx(const CTransaction& tx, const int seq, CCoinsViewCache& vie
                     << tx.GetHash().ToString() 
                     << " failed with " << FormatStateMessage(state)
                     << std::endl;
-            return 'n';
+            return false;
         }
     }
     UpdateCoins(tx, view, seq);
-    return 'y';
+    return true;
 }
 
 static char ExecuteTx(const CTransaction& tx, const int seq, CCoinsViewCache& view) {
@@ -126,31 +125,50 @@ void CPbftBlock::ComputeHash(){
     hasher.Finalize((unsigned char*)&hash);
 }
 
-uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view, bool* quit) const {
-    if (quit == nullptr) {
-	/* During memory page cache warm up, quit is nullptr for blocks of the other subgroup. */
-	for (uint i = 0; i < vReq.size(); i++) {
-	    VerifyTx(*vReq[i], seq, view);
-	}
-    } else {
-	uint i = 0;
-	for (; i < vReq.size() && !(*quit); i++) {
-	    /* the block is not yet collab verified. We have to verify tx.*/
-	    VerifyTx(*vReq[i], seq, view);
-	    if (g_pbft->log[seq].blockVerified.load(std::memory_order_relaxed)) {
-		/* enough collab msg is received. */ 
-		*quit = true;
-		std::cout << "quit verifying block " << seq << " of the other subgroup" << std::endl;
-	    }
-	}
-	if (*quit) {
-	    /* the block is collab verified. We execute remaining tx without verification. */
-	    for (; i < vReq.size(); i++) {
-		ExecuteTx(*vReq[i], seq, view);
-	    }
-	}
+/* check if the tx have create-spend or spend-spend dependency with tx not yet verified. */
+static bool havePrereqTx(const CTransaction& tx) {
+    CPbft& pbft= *g_pbft;
+    std::unordered_set<uint256, uint256Hasher> preReqTxs;
+    for (const CTxIn& inputUtxo: tx.vin) {
+        /* check create-spend dependency. */
+        if (pbft.mapTxDependency.find(inputUtxo.prevout.hash) != pbft.mapTxDependency.end()) {
+            preReqTxs.emplace(inputUtxo.prevout.hash);
+        }
+        /* check spend-spend dependency. */
+        if (pbft.mapUtxoConflict.find(inputUtxo.prevout) != pbft.mapUtxoConflict.end()) {
+            for (uint256& conflictTx: pbft.mapUtxoConflict[inputUtxo.prevout]) {
+                 preReqTxs.emplace(conflictTx);
+            }
+            /* add this tx to de UTXO spending list so that future tx spending this UTXO
+             * know this tx is a prerequisite tx for it. */
+            pbft.mapUtxoConflict[inputUtxo.prevout].emplace_back(tx.GetHash());
+        }
     }
-    return vReq.size();
+    /* add this tx to the dependency graph. */
+    for (const uint256& prereqTx: preReqTxs) {
+        pbft.mapTxDependency[prereqTx].emplace_back(tx.GetHash());
+        pbft.mapTxDependency.emplace(tx.GetHash(), std::list<uint256>()); // create an empty entry for this tx
+    }
+    pbft.mapPrereqCnt[tx.GetHash()] = preReqTxs.size();
+    return preReqTxs.size() != 0;
+
+}
+
+uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view, std::vector<char>& validTxs, std::vector<uint32_t>& invalidTxs) const {
+    uint32_t validTxCnt = 0;
+    for (uint i = 0; i < vReq.size(); i++) {
+        /* the block is not yet collab verified. We have to verify tx.*/
+        if (havePrereqTx(*vReq[i]))
+            continue;
+        if (VerifyTx(*vReq[i], seq, view)) {
+            char bit = 1 << (i % 8); 
+            validTxs[i >> 3] |= bit; 
+            validTxCnt++;
+        } else {
+            invalidTxs.push_back(i);
+        }
+    }
+    return validTxCnt;
 }
 
 uint32_t CPbftBlock::Execute(const int seq, CCoinsViewCache& view) const {

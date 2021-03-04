@@ -31,11 +31,10 @@ int32_t maxBlockSize = 2000;
 int32_t nWarmUpBlocks;
 bool testStarted = false;
 
-CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalVerifyTime(0), totalVerifyCnt(0), totalExeTime(0), lastBlockValidSeq(-1), lastBlockValidSentSeq(-1), lastReplySentSeq(-1), lastTentaExecutedSeq(-1), privateKey(CKey()) {
+CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastConsecutiveSeqInReplyPhase(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalVerifyTime(0), totalVerifyCnt(0), totalExeTime(0), lastBlockVerifiedThisGroup(-1), lastBlockValidSentSeq(-1), lastReplySentSeq(-1), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
-    pviewTenta.reset(new CCoinsViewCache(pcoinsTip.get()));
 }
 
 ThreadSafeQueue::ThreadSafeQueue() { }
@@ -226,6 +225,10 @@ bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
         // enter reply phase
         std::cout << "block " << cMsg.seq << " enters reply phase" << std::endl;
         log[cMsg.seq].phase = PbftPhase::reply;
+        /* update greatest consecutive seq in reply phase. */
+        while (log[lastConsecutiveSeqInReplyPhase + 1].phase == PbftPhase::reply) {
+            lastConsecutiveSeqInReplyPhase++;
+        }
         /* the log-exe thread will execute blocks in reply phase sequentially. */
     }
     return true;
@@ -298,108 +301,45 @@ CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char e
 }
 
 
-int CPbft::executeLog(struct timeval& start_process_first_block) {
+void CPbft::executeLog(struct timeval& start_process_first_block) {
+    /* 1. Verify and execute prereq-clear tx in sequece and in the granularty 
+     * of blocks for blocks belonging to our subgroup.
+     * 2. Execute COLLAB_VERIFIED tx. If some tx belonging to our subgroup 
+     * becomes prerequisite, verifiy and execute them.
+     * 3. If there is nothing to be verified in Steps 1 or 2, verify the first 
+     * not yet verified block belonging to the other subgroup (in the granularity
+     * of tx). And remove them from the dependency graph.  
+     */
     struct timeval start_time, end_time;
-    /* Step 1: sequentialy execute all slots in reply phase and verified. */
-    int lastExecutedSeqStart = lastExecutedSeq;
-    uint i = lastExecutedSeq + 1;
-    for (; i < logSize && log[i].phase == PbftPhase::reply && log[i].blockVerified.load(std::memory_order_relaxed); i++) {
-	gettimeofday(&start_time, NULL);
-	log[i].txCnt = log[i].ppMsg.pPbftBlock->Execute(i, *pcoinsTip);
-	gettimeofday(&end_time, NULL);
-	lastExecutedSeq = i;
-	nCompletedTx += log[i].txCnt;
-	std::cout << "Average execution time of block " << i << ": " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / log[i].txCnt << " us/req" << std::endl; 
-	logServerSideThruput(start_process_first_block, end_time, i);
-    }
-
-    /* Step 2: if the next block is ready to be processed and in our subgroup (it is not executed in step one indicates it is not verified), verify it using the real system state. */
-    if (log[i].phase == PbftPhase::reply && isBlockInOurVerifyGroup(i)){
-        /* This is a block to be verified by our subgroup. Verify it directly using the real system state. (The Verify call includes executing tx.) */
-	gettimeofday(&start_time, NULL);
-	log[i].txCnt = log[i].ppMsg.pPbftBlock->Verify(i, *pcoinsTip);
-	gettimeofday(&end_time, NULL);
-	lastBlockValidSeq = i;
-	lastExecutedSeq = i;
-	nCompletedTx += log[i].txCnt;
-        /*Anounce the update-to-date verifying result to peers in the other subgroup.*/
-        std::cout << "Average verify-amid-execution time of block " << i << ": " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / log[i].txCnt << " us/req" << std::endl;
-	logServerSideThruput(start_process_first_block, end_time, i);
-    }
-
-    int localLastExecutedSeq = lastExecutedSeq; // use a local copy to avoid reading the volatile global copy repeatedly. 
-    bool executedSomeLogSlot = localLastExecutedSeq > lastExecutedSeqStart;
-
-    /* Step 3: verify one block belonging to our subgroup if we did not execute any blocks in Step 1 and 2.  We verify only one block per loop so that the collab msg of the other group have some time to arrive. */
-    int blockIdxToBeVerified = -1;
-    if (!executedSomeLogSlot) {
-	for (uint j = std::max(localLastExecutedSeq, lastTentaExecutedSeq) + 1; j < logSize && log[j].phase == PbftPhase::reply; j++) {
-	    if (isBlockInOurVerifyGroup(j) && !log[j].blockVerified.load(std::memory_order_relaxed)){
-		blockIdxToBeVerified = j;
-		break;
-	    }
-
-	}
-	if (blockIdxToBeVerified > -1) {
-	    /* tentative execution view. do not update system state b/c the view will be discarded. */
-	    if (localLastExecutedSeq > lastTentaExecutedSeq) {
-		/* The tentative view is not fresh enough, create a new tentative view from the current pcoinsTip. */
-		pviewTenta.reset(new CCoinsViewCache(pcoinsTip.get()));
-		lastTentaExecutedSeq = localLastExecutedSeq;
-	    }
-	
-	    for (int j = lastTentaExecutedSeq + 1; j < blockIdxToBeVerified; j++) {
-		gettimeofday(&start_time, NULL);
-		log[j].txCnt = log[j].ppMsg.pPbftBlock->Execute(j, *pviewTenta);
-		gettimeofday(&end_time, NULL);
-		lastTentaExecutedSeq = j;
-		std::cout << "Average tentative exe time of block " << j << ": " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / log[j].txCnt << " us/req" << std::endl;
-	    }
-
-	    gettimeofday(&start_time, NULL);
-	    log[blockIdxToBeVerified].txCnt = log[blockIdxToBeVerified].ppMsg.pPbftBlock->Verify(blockIdxToBeVerified, *pviewTenta);
-	    gettimeofday(&end_time, NULL);
-	    lastBlockValidSeq = blockIdxToBeVerified;
-	    log[blockIdxToBeVerified].blockVerified.store(true, std::memory_order_relaxed);
-	    lastTentaExecutedSeq = blockIdxToBeVerified;
-	    std::cout << "Average verify time of block " << blockIdxToBeVerified << " in my subgroup: " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / log[blockIdxToBeVerified].txCnt << " us/req" << std::endl;
-	}
-    }
-
-    /* Step 4: if we have done nothing, and the next log slot is in the reply state, then we must be blocked by the other subgroup. Verify only the next block. */
-    if (!executedSomeLogSlot && blockIdxToBeVerified == -1 && log[i].phase == PbftPhase::reply) {
-	bool quit = false;
-	gettimeofday(&start_time, NULL);
-        log[i].txCnt = log[i].ppMsg.pPbftBlock->Verify(i, *pcoinsTip, &quit);
-	gettimeofday(&end_time, NULL);
-	lastExecutedSeq = i;
-	nCompletedTx += log[i].txCnt;
-	std::cout << "Average verify time of block " << i << " in the other subgroup : " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / log[i].txCnt << " us/req. quit = " << quit << std::endl;
-	logServerSideThruput(start_process_first_block, end_time, i);
-    }
-
-    return lastExecutedSeq;
-}
-
-void CPbft::UpdateBlockValidity(const CCollabMessage& msg) {
-    if (!checkCollabMsg(msg)) {
-        return;
-    }
-    if (isBlockInOurVerifyGroup(msg.blockValidUpto)) {
-        /* BLOCK_VALID from the peer in the same subgroup as us. Ignore it. */
-        return;
-    }
-    std::cout << "received  BLOCK_VALID msg from peer " << msg.peerID << ", blockValidUpto = " << msg.blockValidUpto << ", current lastExecutedSeq = " << lastExecutedSeq << std::endl;
-    uint32_t start_seq = isBlockInOurVerifyGroup(lastExecutedSeq + 1) ? lastExecutedSeq + 2 : lastExecutedSeq + 1;
-    for (uint i = start_seq; i <= msg.blockValidUpto; i += 2) {
-        if (log[i].setCollabPeerID.size() < nFaulty + 1) {
-            log[i].setCollabPeerID.insert(msg.peerID);
-            if (log[i].setCollabPeerID.size() == nFaulty + 1) {
-                log[i].blockVerified.store(true, std::memory_order_relaxed);
-                std::cout << "seq " << i << " get collab verified." << std::endl;
-            }
+    /* Step 1: verify the successor block of the last block we have verified. if it belongs to our group. */
+    if (lastBlockVerifiedThisGroup < lastConsecutiveSeqInReplyPhase){
+        uint32_t curHeight = lastBlockVerifiedThisGroup + 1;
+        CPbftBlock& block = *log[curHeight].ppMsg.pPbftBlock;
+        if(isBlockInOurVerifyGroup(block.hash)) {
+            /* This is a block to be verified by our subgroup. 
+             * Verify and Execute prerequiste-clear tx in this block.
+             * (The VerifyTx call includes executing tx.) 
+             */
+            gettimeofday(&start_time, NULL);
+            std::vector<char> validTxs(block.vReq.size() >> 3);
+            std::vector<uint32_t> invalidTxs;
+            uint32_t validTxCnt = block.Verify(curHeight, *pcoinsTip, validTxs, invalidTxs);
+            gettimeofday(&end_time, NULL);
+            lastBlockVerifiedThisGroup++;
+            nCompletedTx += validTxCnt;
+            /*TODO: Anounce the verifying result to peers in the other subgroup.*/
+    //        AssembleAndSendCollabMsg();
+            std::cout << "Average verify time of block " << curHeight << ": " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / validTxCnt << " us/req" << std::endl;
+            logServerSideThruput(start_process_first_block, end_time, curHeight);
         }
     }
+
+    /* TODO: Step 2: Execute COLLAB_VERIFIED tx. */
+    /* for each COLLAB message, check if the tx are in the dependency graph.
+     * If yes, executed it provided valid, othewise check the next tx. */
+
+    /* TODO: Step 3: If there is nothing to be verified in Steps 1 or 2, verify the first 
+     * not yet verified block belonging to the other subgroup . */
 }
 
 bool CPbft::checkCollabMsg(const CCollabMessage& msg) {
@@ -419,7 +359,7 @@ bool CPbft::checkCollabMsg(const CCollabMessage& msg) {
 }
 
 bool CPbft::AssembleAndSendCollabMsg() {
-    int localLastBlockValidSeq = lastBlockValidSeq; 
+    int localLastBlockValidSeq = lastBlockVerifiedThisGroup; 
     if (localLastBlockValidSeq > lastBlockValidSentSeq) {
 	CCollabMessage toSent; 
 	toSent.blockValidUpto = localLastBlockValidSeq; 
@@ -446,21 +386,23 @@ bool CPbft::AssembleAndSendCollabMsg() {
 }
 
 bool CPbft::sendReplies(CConnman* connman) {
+    /*TODO: use a queue of valid tx bit vector to remember what tx has been executed.*/
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-    if (lastExecutedSeq > lastReplySentSeq) {
-        /* sent reply msg for only one block per loop .*/
-        int seq = ++lastReplySentSeq;
-        const uint num_tx = log[seq].ppMsg.pPbftBlock->vReq.size();
-	std::cout << "sending reply for block " << seq <<",  lastReplySentSeq = "<<  lastReplySentSeq << std::endl;
-        for (uint i = 0; i < num_tx; i++) {
-            /* hard code execution result as 'y' since we are replaying tx on Bitcoin's chain. */
-            CReply reply = assembleReply(seq, i,'y');
-            connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
-        }
-	return true;
-    } else {
-	return false;
-    }
+//    if (lastExecutedSeq > lastReplySentSeq) {
+//        /* sent reply msg for only one block per loop .*/
+//        int seq = ++lastReplySentSeq;
+//        const uint num_tx = log[seq].ppMsg.pPbftBlock->vReq.size();
+//	std::cout << "sending reply for block " << seq <<",  lastReplySentSeq = "<<  lastReplySentSeq << std::endl;
+//        for (uint i = 0; i < num_tx; i++) {
+//            /* hard code execution result as 'y' since we are replaying tx on Bitcoin's chain. */
+//            CReply reply = assembleReply(seq, i,'y');
+//            connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
+//        }
+//	return true;
+//    } else {
+//	return false;
+//    }
+    return true;
 }
 
 void CPbft::saveBlocks2File(const int numBlock) const {
@@ -496,13 +438,16 @@ void CPbft::readBlocksFromFile(const int numBlock) {
 }
 
 void CPbft::WarmUpMemoryCache() {
-    CCoinsViewCache view_tenta(pcoinsTip.get());
-    readBlocksFromFile(nWarmUpBlocks);
-    for (int i = 0; i < nWarmUpBlocks; i++) {
-        log[i].ppMsg.pPbftBlock->Verify(i, view_tenta);
-        /* Discard the block to prepare for performance test. */
-        log[i].ppMsg.pPbftBlock.reset();
-    }
+    /*TODO: may not need warm up anymore if using SSD, but still, they are slower
+     * than memory. The goal of warm up is to load UTXOs to be spent into memory,
+     * and this match the practical use case. */
+//    CCoinsViewCache view_tenta(pcoinsTip.get());
+//    readBlocksFromFile(nWarmUpBlocks);
+//    for (int i = 0; i < nWarmUpBlocks; i++) {
+//        log[i].ppMsg.pPbftBlock->Verify(i, view_tenta);
+//        /* Discard the block to prepare for performance test. */
+//        log[i].ppMsg.pPbftBlock.reset();
+//    }
 }
 
 void ThreadConsensusLogExe() {
@@ -512,6 +457,59 @@ void ThreadConsensusLogExe() {
         g_pbft->executeLog(start_process_first_block);
         MilliSleep(50);
     }
+}
+
+TxIndexOnChain::TxIndexOnChain(): block_height(0), offset_in_block(0) { }
+
+TxIndexOnChain::TxIndexOnChain(uint32_t block_height_in, uint32_t offset_in_block_in):
+ block_height(block_height_in), offset_in_block(offset_in_block_in) { }
+
+bool TxIndexOnChain::IsNull() {
+    return block_height == 0 && offset_in_block == 0;
+}
+
+bool operator<(const TxIndexOnChain& a, const TxIndexOnChain& b)
+{
+    return a.block_height < b.block_height || 
+	    (a.block_height == b.block_height && a.offset_in_block < b.offset_in_block);
+}
+
+bool operator>(const TxIndexOnChain& a, const TxIndexOnChain& b)
+{
+    return a.block_height > b.block_height || 
+	    (a.block_height == b.block_height && a.offset_in_block > b.offset_in_block);
+}
+
+bool operator==(const TxIndexOnChain& a, const TxIndexOnChain& b) {
+    return a.block_height == b.block_height && a.offset_in_block == b.offset_in_block;
+}
+
+bool operator!=(const TxIndexOnChain& a, const TxIndexOnChain& b) {
+    return ! (a == b);
+}
+
+bool operator<=(const TxIndexOnChain& a, const TxIndexOnChain& b) {
+    return a.block_height < b.block_height || 
+	    (a.block_height == b.block_height && a.offset_in_block <= b.offset_in_block);
+}
+
+TxIndexOnChain TxIndexOnChain::operator+(const unsigned int oprand) {
+    const unsigned int cur_block_size = chainActive[block_height]->nTx;
+    if (offset_in_block + oprand < cur_block_size) {
+	return TxIndexOnChain(block_height, offset_in_block + oprand);
+    } else {
+	uint32_t cur_block = block_height + 1;
+	uint32_t cur_oprand = oprand - (cur_block_size - offset_in_block);
+	while (cur_oprand >= chainActive[cur_block]->nTx) {
+	    cur_oprand -= chainActive[cur_block]->nTx;
+	    cur_block++;
+	}
+	return TxIndexOnChain(cur_block, cur_oprand);
+    }
+}
+
+std::string TxIndexOnChain::ToString() const {
+    return "(" + std::to_string(block_height) + ", " + std::to_string(offset_in_block) + ")";
 }
 
 std::unique_ptr<CPbft> g_pbft;

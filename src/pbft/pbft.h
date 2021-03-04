@@ -32,6 +32,38 @@ extern int32_t maxBlockSize;
 extern int32_t nWarmUpBlocks;
 extern bool testStarted;
 
+class TxIndexOnChain {
+public:
+    uint32_t block_height;
+    uint32_t offset_in_block;
+
+    TxIndexOnChain();
+    TxIndexOnChain(const uint32_t block_height_in, const uint32_t offset_in_block_in);
+    bool IsNull();
+
+    template<typename Stream>
+    void Serialize(Stream& s) const{
+	s.write(reinterpret_cast<const char*>(&block_height), sizeof(block_height));
+	s.write(reinterpret_cast<const char*>(&offset_in_block), sizeof(offset_in_block));
+    }
+
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+	s.read(reinterpret_cast<char*>(&block_height), sizeof(block_height));
+	s.read(reinterpret_cast<char*>(&offset_in_block), sizeof(offset_in_block));
+    }
+
+    TxIndexOnChain operator+(const unsigned int oprand);
+
+    friend bool operator<(const TxIndexOnChain& a, const TxIndexOnChain& b);
+    friend bool operator>(const TxIndexOnChain& a, const TxIndexOnChain& b);
+    friend bool operator==(const TxIndexOnChain& a, const TxIndexOnChain& b);
+    friend bool operator!=(const TxIndexOnChain& a, const TxIndexOnChain& b);
+    friend bool operator<=(const TxIndexOnChain& a, const TxIndexOnChain& b);
+
+    std::string ToString() const;
+};
+
 class ThreadSafeQueue {
 public:
     ThreadSafeQueue();
@@ -54,6 +86,22 @@ private:
     std::condition_variable cond_;
 };
 
+class uint256Hasher
+{
+public:
+    size_t operator()(const uint256& id) const {
+        return id.GetCheapHash();
+    }
+};
+
+class OutpointHasher
+{
+public:
+    size_t operator()(const COutPoint& outpoint) const {
+        return outpoint.hash.GetCheapHash() ^ outpoint.n;
+    }
+};
+
 class CPbft{
 public:
     // TODO: may need to recycle log slots for throughput test. Consider deque.
@@ -65,7 +113,8 @@ public:
     // pbft log. The index is sequence number.
     std::vector<CPbftLogEntry> log;
     uint32_t nextSeq; // next available seq that has not been attached to any client request.
-    volatile int lastExecutedSeq; 
+    /* the highest seq whose previous seqs are all in PBFT REPLY phase */
+    volatile int lastConsecutiveSeqInReplyPhase; 
     CPubKey myPubKey;
 
     CNode* client; // pbft client
@@ -90,13 +139,31 @@ public:
     unsigned long totalVerifyCnt; // in us
     unsigned long totalExeTime; // in us
 
-    volatile int lastBlockValidSeq; // the highest block has been verified by our subgroup
+    volatile int lastBlockVerifiedThisGroup; // the highest block has been verified by our subgroup
+    int lastBlockVerifiedOtherSubgroup; // the highest block has been verified by our subgroup
     int lastBlockValidSentSeq; // the highest block has been verified by our subgroup and announced to the other group.
     int lastReplySentSeq; // the highest block we have sent reply to the client. Used only by the msg_hand thread. 
 
-    std::unique_ptr<CCoinsViewCache> pviewTenta;
-    int lastTentaExecutedSeq; 
-
+    /* adjancy matrix for dependency graph for unverified tx.
+     * Key is an unverified tx; Value is all tx depend on the Key tx
+     * (both create-spend and spend-spend dependency).
+     * Also used to decide if a tx should be added to the dependency graph
+     * due to create-spend dependency.
+     */
+    std::unordered_map<uint256, std::list<uint256>, uint256Hasher> mapTxDependency;
+    /* prerequite tx count map.
+     * Key is an unverified tx; Value is the count of the remaining 
+     * not-yet-verified prerequite tx. 
+     * Used to decide if a tx can be removed from the dependency graph and executed.
+     */
+    std::unordered_map<uint256, uint32_t, uint256Hasher> mapPrereqCnt;
+    /* UTXO conflict list.
+     * Key is an UTXO, value is a list of unverified tx spending this UTXO.
+     * Used to detect if a tx should be added to the dependency graph due to 
+     * spend-spend dependency. 
+     */
+    std::unordered_map<COutPoint, std::list<uint256>, OutpointHasher> mapUtxoConflict;
+    
 
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
@@ -113,10 +180,9 @@ public:
     CReply assembleReply(const uint32_t seq, const uint32_t idx, const char exe_res) const;
     bool checkMsg(CPbftMessage* msg);
     /*return the last executed seq */
-    int executeLog(struct timeval& start_process_first_block);
+    void executeLog(struct timeval& start_process_first_block);
     /* when received collab msg from the other subgroup, update our block valid bit.
      * Called by the net_processing theread. */
-    void UpdateBlockValidity(const CCollabMessage& msg);
     bool checkCollabMsg(const CCollabMessage& msg);
     bool AssembleAndSendCollabMsg();
     bool sendReplies(CConnman* connman);
@@ -134,8 +200,8 @@ public:
 	return pbftID % groupSize == 0;
     }
 
-    inline bool isBlockInOurVerifyGroup(uint32_t seq){
-	return ((pbftID & 1) ^ (seq & 1)) == 0;
+    inline bool isBlockInOurVerifyGroup(uint256& block_hash){
+	return ((pbftID & 1) ^ (block_hash.GetCheapHash() & 1)) == 0;
     }
 
     void saveBlocks2File(const int numBlock) const;
@@ -147,8 +213,7 @@ public:
 	    start_process_first_block = end_time;
 	} else if (seq == nWarmUpBlocks - 2) {
 	    unsigned long time_us = (end_time.tv_sec - start_process_first_block.tv_sec) * 1000000 + (end_time.tv_usec -  start_process_first_block.tv_usec);
-	    unsigned long completedTxForMeasure = nCompletedTx - log[0].txCnt;
-	    std::cout << "Process " << completedTxForMeasure << " tx in " << time_us << " us. Throughput = " << 1000000 * completedTxForMeasure / time_us  << " tx/sec."  << std::endl;
+	    std::cout << "Process " << nCompletedTx << " tx in " << time_us << " us. Throughput = " << 1000000 * nCompletedTx / time_us  << " tx/sec."  << std::endl;
 	}
     }
 

@@ -1925,7 +1925,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     else if (strCommand == NetMsgType::COLLAB_BLOCK_VALID) {
         CCollabMessage collabMsg;
         vRecv >> collabMsg;
-        pbft->UpdateBlockValidity(collabMsg);
+        /* TODO: put the message into a queue for the log-execute thread to process
+         * the msg latter. */
     }
 
     else if (strCommand == NetMsgType::SENDHEADERS)

@@ -122,7 +122,8 @@ public:
     CPbftBlock();
     CPbftBlock(std::deque<CTransactionRef> vReqIn);
     void ComputeHash();
-    uint32_t Verify(const int seq, CCoinsViewCache& view, bool* quit = nullptr) const;
+    /* verify and execute prereq-clear tx in this block. */
+    uint32_t Verify(const int seq, CCoinsViewCache& view, std::vector<char>& validTxs, std::vector<uint32_t>& invalidTxs) const;
     uint32_t Execute(const int seq, CCoinsViewCache& view) const;
     void Clear();
 
