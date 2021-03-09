@@ -621,25 +621,6 @@ void CPbft::UpdateTxValidity(const CCollabMultiBlockMsg& msg) {
     }
 }
 
-bool CPbft::sendReplies(CConnman* connman) {
-    /*TODO: use a queue of valid tx bit vector to remember what tx has been executed.*/
-    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-//    if (lastExecutedSeq > lastReplySentSeq) {
-//        /* sent reply msg for only one block per loop .*/
-//        int seq = ++lastReplySentSeq;
-//        const uint num_tx = log[seq].ppMsg.pPbftBlock->vReq.size();
-//	std::cout << "sending reply for block " << seq <<",  lastReplySentSeq = "<<  lastReplySentSeq << std::endl;
-//        for (uint i = 0; i < num_tx; i++) {
-//            /* hard code execution result as 'y' since we are replaying tx on Bitcoin's chain. */
-//            CReply reply = assembleReply(seq, i,'y');
-//            connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
-//        }
-//	return true;
-//    } else {
-//	return false;
-//    }
-    return true;
-}
 
 void CPbft::saveBlocks2File(const int numBlock) const {
     FILE* file = fsbridge::fopen("pbft_blocks.out", "wb+");

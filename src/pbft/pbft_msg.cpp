@@ -157,6 +157,14 @@ static bool havePrereqTx(uint32_t height, uint32_t txSeq) {
 
 }
 
+static bool sendReplies(const uint32_t height, const uint32_t tx_seq, const char res) {
+    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+    const CPbft& pbft = *g_pbft;
+    CReply reply = pbft.assembleReply(height, tx_seq, res);
+    g_connman->PushMessage(pbft.client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
+    return true;
+}
+
 uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view, std::vector<char>& validTxs, std::vector<uint32_t>& invalidTxs) const {
     uint32_t validTxCnt = 0;
     for (uint i = 0; i < vReq.size(); i++) {
@@ -167,8 +175,12 @@ uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view, std::vector<ch
             char bit = 1 << (i % 8); 
             validTxs[i >> 3] |= bit; 
             validTxCnt++;
+            /* Send reply to client */
+            sendReplies(seq, i, 'y');
         } else {
             invalidTxs.push_back(i);
+            /* Send reply to client */
+            sendReplies(seq, i, 'n');
         }
     }
     return validTxCnt;
@@ -178,6 +190,8 @@ uint32_t CPbftBlock::Execute(const int seq, CCoinsViewCache& view) const {
     /* this is for tentative execution. */
     for (uint i = 0; i < vReq.size(); i++) {
 	ExecuteTx(*vReq[i], seq, view);
+        /* Send reply to client */
+        sendReplies(seq, i, 'y');
     }
     return vReq.size();
 }
