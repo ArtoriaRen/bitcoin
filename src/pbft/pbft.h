@@ -205,7 +205,6 @@ public:
     bool checkCollabMulBlkMsg(const CCollabMultiBlockMsg& msg);
     bool SendCollabMsg(uint32_t height, std::vector<char>& validTxs, std::vector<uint32_t>& invalidTxs);
     bool SendCollabMultiBlkMsg(const std::vector<TxIndexOnChain>& validTxs, const std::vector<TxIndexOnChain>& invalidTxs); 
-    bool sendReplies(CConnman* connman);
 
     inline void printQueueSize(){
 	    /* log queue size if we have reached the period. */
