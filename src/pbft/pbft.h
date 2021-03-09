@@ -200,7 +200,9 @@ public:
     /* when received collab msg from the other subgroup, update our block valid bit.
      * Called by the net_processing theread. */
     void UpdateTxValidity(const CCollabMessage& msg);
+    void UpdateTxValidity(const CCollabMultiBlockMsg& msg);
     bool checkCollabMsg(const CCollabMessage& msg);
+    bool checkCollabMulBlkMsg(const CCollabMultiBlockMsg& msg);
     bool SendCollabMsg(uint32_t height, std::vector<char>& validTxs, std::vector<uint32_t>& invalidTxs);
     bool SendCollabMultiBlkMsg(const std::vector<TxIndexOnChain>& validTxs, const std::vector<TxIndexOnChain>& invalidTxs); 
     bool sendReplies(CConnman* connman);

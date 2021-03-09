@@ -275,12 +275,12 @@ public:
     void Serialize(Stream& s) const{
         uint32_t vector_size = validTxs.size();
 	s.write((char*)&vector_size, sizeof(vector_size));
-        for (int i = 0; i < vector_size; i++) {
+        for (uint i = 0; i < vector_size; i++) {
             validTxs[i].Serialize(s);
         }
         vector_size = invalidTxs.size();
 	s.write((char*)&vector_size, sizeof(vector_size));
-        for (int i = 0; i < vector_size; i++) {
+        for (uint i = 0; i < vector_size; i++) {
             invalidTxs[i].Serialize(s);
         }
 
@@ -294,12 +294,12 @@ public:
         uint32_t vector_size = 0;
         s.read((char*)&vector_size, sizeof(vector_size));
 	validTxs.resize(vector_size);
-        for (int i = 0; i < vector_size; i++) {
+        for (uint i = 0; i < vector_size; i++) {
             validTxs[i].Unserialize(s);
         }
         s.read((char*)&vector_size, sizeof(vector_size));
 	invalidTxs.resize(vector_size);
-        for (int i = 0; i < vector_size; i++) {
+        for (uint i = 0; i < vector_size; i++) {
             invalidTxs[i].Unserialize(s);
         }
 

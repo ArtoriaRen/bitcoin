@@ -427,6 +427,22 @@ bool CPbft::checkCollabMsg(const CCollabMessage& msg) {
     return true;
 }
 
+bool CPbft::checkCollabMulBlkMsg(const CCollabMultiBlockMsg& msg) {
+    // verify signature and return wrong if sig is wrong
+    auto it = pubKeyMap.find(msg.peerID);
+    if (it == pubKeyMap.end()) {
+        std::cerr << "checkCollabMsg: no pub key for sender " << msg.peerID << std::endl;
+        return false;
+    }
+    uint256 msgHash;
+    msg.getHash(msgHash);
+    if (!it->second.Verify(msgHash, msg.vchSig)) {
+        std::cerr << "collab sig fail" << std::endl;
+        return false;
+    }
+    return true;
+}
+
 bool CPbft::SendCollabMsg(uint32_t height, std::vector<char>& validTxs, std::vector<uint32_t>& invalidTxs) {
     CCollabMessage toSent(height, std::move(validTxs), std::move(invalidTxs)); 
     uint256 hash;
@@ -466,7 +482,7 @@ bool CPbft::SendCollabMultiBlkMsg(const std::vector<TxIndexOnChain>& validTxs, c
         toSent.getHash(hash);
         privateKey.Sign(hash, toSent.vchSig);
         toSent.sigSize = toSent.vchSig.size();
-        g_connman->PushMessage(peers[i], msgMaker.Make(NetMsgType::COLLAB_MULTI_BLK, std::move(toSent)));
+        g_connman->PushMessage(peers[i], msgMaker.Make(NetMsgType::COLLAB_MULTI_BLK, toSent));
         toSent.clear();
     }
 
@@ -525,6 +541,74 @@ void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
             mapBlockCollabRes.erase(lastCollabFullBlock);
         }
     }
+    
+    /* check if the pointers of queue pairs should be switched. */
+    if (qValidEmpty.load(std::memory_order_relaxed) && !qInvalidTx[1 - validTxQIdx].empty()) {
+        validTxQIdx = 1 - validTxQIdx; 
+        qValidEmpty.store(false, std::memory_order_relaxed);
+    }
+    if (qInValidEmpty.load(std::memory_order_relaxed) && !qInvalidTx[1 - validTxQIdx].empty()) {
+        invalidTxQIdx = 1 - invalidTxQIdx; 
+        qInValidEmpty.store(false, std::memory_order_relaxed);
+    }
+}
+
+void CPbft::UpdateTxValidity(const CCollabMultiBlockMsg& msg) {
+    if (!checkCollabMulBlkMsg(msg)) 
+        return;
+
+    /* add valid tx to the BlockCollabRes map*/
+    for (TxIndexOnChain txIdx: msg.validTxs) {
+        /* because CollabMulBlkMsg contains only info for previous blockly verified tx,
+         * the entry for the block must exist in  mapBlockCollabRes. */
+        BlockCollabRes& block_collab_res = mapBlockCollabRes[txIdx.block_height];
+
+        if (block_collab_res.collab_msg_full_tx_cnt == block_collab_res.tx_collab_valid_cnt.size()) {
+            /* all tx in this block has accumlated enough collab_verify res. ignore this msg.
+             * This block is not pruned yet because we prune blocks consequtively.
+             */
+            return;
+        }
+
+        if (block_collab_res.tx_collab_valid_cnt[txIdx.offset_in_block] == nFaulty + 1) {
+            /* this tx has collect enough collab_valid msg. */
+            continue;
+        }
+        block_collab_res.tx_collab_valid_cnt[txIdx.offset_in_block]++;
+        if (block_collab_res.tx_collab_valid_cnt[txIdx.offset_in_block] == nFaulty + 1) {
+            block_collab_res.collab_msg_full_tx_cnt++;
+            /* add the tx to validTxQ */
+            qValidTx[1 - validTxQIdx].push_back(std::move(txIdx));
+        }
+        /* prune entries in mapBlockCollabRes */
+        if (block_collab_res.collab_msg_full_tx_cnt == block_collab_res.tx_collab_valid_cnt.size()) {
+            for(; lastCollabFullBlock <= lastConsecutiveSeqInReplyPhase 
+                    && mapBlockCollabRes[lastCollabFullBlock + 1].collab_msg_full_tx_cnt == mapBlockCollabRes[lastCollabFullBlock + 1].tx_collab_valid_cnt.size(); 
+                    lastCollabFullBlock++) {
+                mapBlockCollabRes.erase(lastCollabFullBlock);
+            }
+        }
+    }
+
+    /* add invalid tx to the BlockCollabRes map*/
+    for (TxIndexOnChain txIdx: msg.invalidTxs) {
+        BlockCollabRes& block_collab_res = mapBlockCollabRes[txIdx.block_height];
+        block_collab_res.map_collab_invalid_cnt[txIdx.offset_in_block]++;
+        if (block_collab_res.map_collab_invalid_cnt[txIdx.offset_in_block] == nFaulty + 1) {
+            block_collab_res.collab_msg_full_tx_cnt++;
+            /* add the tx to inValidTxQ */
+            qInvalidTx[1 - validTxQIdx].push_back(std::move(txIdx));
+        }
+        /* prune entries in mapBlockCollabRes */
+        if (block_collab_res.collab_msg_full_tx_cnt == block_collab_res.tx_collab_valid_cnt.size()) {
+            for(; lastCollabFullBlock <= lastConsecutiveSeqInReplyPhase 
+                    && mapBlockCollabRes[lastCollabFullBlock + 1].collab_msg_full_tx_cnt == mapBlockCollabRes[lastCollabFullBlock + 1].tx_collab_valid_cnt.size(); 
+                    lastCollabFullBlock++) {
+                mapBlockCollabRes.erase(lastCollabFullBlock);
+            }
+        }
+    }
+
     
     /* check if the pointers of queue pairs should be switched. */
     if (qValidEmpty.load(std::memory_order_relaxed) && !qInvalidTx[1 - validTxQIdx].empty()) {

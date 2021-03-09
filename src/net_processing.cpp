@@ -1928,6 +1928,12 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         pbft->UpdateTxValidity(collabMsg);
     }
 
+    else if (strCommand == NetMsgType::COLLAB_MULTI_BLK) {
+        CCollabMultiBlockMsg collabMulBlkMsg;
+        vRecv >> collabMulBlkMsg;
+        pbft->UpdateTxValidity(collabMulBlkMsg);
+    }
+
     else if (strCommand == NetMsgType::SENDHEADERS)
     {
         LOCK(cs_main);
