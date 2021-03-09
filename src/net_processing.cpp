@@ -1922,11 +1922,10 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	}
     }
 
-    else if (strCommand == NetMsgType::COLLAB_BLOCK_VALID) {
+    else if (strCommand == NetMsgType::COLLAB_VRF) {
         CCollabMessage collabMsg;
         vRecv >> collabMsg;
-        /* TODO: put the message into a queue for the log-execute thread to process
-         * the msg latter. */
+        pbft->UpdateTxValidity(collabMsg);
     }
 
     else if (strCommand == NetMsgType::SENDHEADERS)

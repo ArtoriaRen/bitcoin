@@ -52,8 +52,8 @@ void WaitForShutdown()
     // Tell the main threads to shutdown.
     while (!fShutdown)
     {
-	sentSomething = g_pbft->AssembleAndSendCollabMsg();
-	sentSomething |= g_pbft->sendReplies(g_connman.get());
+//	sentSomething = g_pbft->SendCollabMsg();
+//	sentSomething |= g_pbft->sendReplies(g_connman.get());
 	if (!sentSomething) {
 	    MilliSleep(10);
 	    //nanosleep(&sleep_length, NULL);

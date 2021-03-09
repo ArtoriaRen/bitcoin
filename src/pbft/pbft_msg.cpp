@@ -39,7 +39,7 @@ CPre_prepare::CPre_prepare(const CPbftMessage& msg): CPbftMessage(msg), pPbftBlo
 
 
 
-static bool VerifyTx(const CTransaction& tx, const int seq, CCoinsViewCache& view) {
+bool VerifyTx(const CTransaction& tx, const int seq, CCoinsViewCache& view) {
     /* -------------logic from Bitcoin code for tx processing--------- */
     CValidationState state;
     if(!tx.IsCoinBase()) {
@@ -80,17 +80,9 @@ static bool VerifyTx(const CTransaction& tx, const int seq, CCoinsViewCache& vie
     return true;
 }
 
-static char ExecuteTx(const CTransaction& tx, const int seq, CCoinsViewCache& view) {
-//	    CTxUndo undoDummy;
-//	    if (i > 0) {
-//		blockundo.vtxundo.push_back(CTxUndo());
-//	    }
+bool ExecuteTx(const CTransaction& tx, const int seq, CCoinsViewCache& view) {
     UpdateCoins(tx, view, seq);
-    /* -------------logic from Bitcoin code for tx processing--------- */
-
-    //std::cout << __func__ << ": excuted tx " << tx.GetHash().ToString()
-//	    << " at log slot " << seq << std::endl;
-    return 'y';
+    return true;
 }
 
 CReply::CReply(): reply(), digest(), peerID(pbftID), sigSize(0), vchSig(){ 
@@ -126,10 +118,11 @@ void CPbftBlock::ComputeHash(){
 }
 
 /* check if the tx have create-spend or spend-spend dependency with tx not yet verified. */
-static bool havePrereqTx(const CTransaction& tx) {
+static bool havePrereqTx(uint32_t height, uint32_t txSeq) {
     CPbft& pbft= *g_pbft;
+    CTransactionRef tx = pbft.log[height].ppMsg.pPbftBlock->vReq[txSeq];
     std::unordered_set<uint256, uint256Hasher> preReqTxs;
-    for (const CTxIn& inputUtxo: tx.vin) {
+    for (const CTxIn& inputUtxo: tx->vin) {
         /* check create-spend dependency. */
         if (pbft.mapTxDependency.find(inputUtxo.prevout.hash) != pbft.mapTxDependency.end()) {
             preReqTxs.emplace(inputUtxo.prevout.hash);
@@ -141,16 +134,26 @@ static bool havePrereqTx(const CTransaction& tx) {
             }
             /* add this tx to de UTXO spending list so that future tx spending this UTXO
              * know this tx is a prerequisite tx for it. */
-            pbft.mapUtxoConflict[inputUtxo.prevout].emplace_back(tx.GetHash());
+            pbft.mapUtxoConflict[inputUtxo.prevout].emplace_back(tx->GetHash());
         }
     }
-    /* add this tx to the dependency graph. */
-    for (const uint256& prereqTx: preReqTxs) {
-        pbft.mapTxDependency[prereqTx].emplace_back(tx.GetHash());
-        pbft.mapTxDependency.emplace(tx.GetHash(), std::list<uint256>()); // create an empty entry for this tx
+
+    if (preReqTxs.size() != 0) {
+        /* add this tx as a dependent tx to the dependency graph. */
+        for (const uint256& prereqTx: preReqTxs) {
+            pbft.mapTxDependency[prereqTx].emplace_back(height, txSeq);
+        }
+        pbft.mapPrereqCnt[TxIndexOnChain(height, txSeq)] = preReqTxs.size();
+        /* add this tx as a potential prereqTx to the dependency graph. */
+        pbft.mapTxDependency.emplace(tx->GetHash(), std::list<TxIndexOnChain>()); 
+        for (const CTxIn& inputUtxo: tx->vin) {
+            if (pbft.mapUtxoConflict.find(inputUtxo.prevout) == pbft.mapUtxoConflict.end()) {
+                pbft.mapUtxoConflict.emplace(inputUtxo.prevout, std::list<uint256>(1, tx->GetHash())); // create an entry for this UTXO and put this tx in the list
+            }
+        }
+        return true;
     }
-    pbft.mapPrereqCnt[tx.GetHash()] = preReqTxs.size();
-    return preReqTxs.size() != 0;
+    return false;
 
 }
 
@@ -158,7 +161,7 @@ uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view, std::vector<ch
     uint32_t validTxCnt = 0;
     for (uint i = 0; i < vReq.size(); i++) {
         /* the block is not yet collab verified. We have to verify tx.*/
-        if (havePrereqTx(*vReq[i]))
+        if (havePrereqTx(seq, i))
             continue;
         if (VerifyTx(*vReq[i], seq, view)) {
             char bit = 1 << (i % 8); 
@@ -184,11 +187,42 @@ void CPbftBlock::Clear() {
     vReq.clear();
 }
 
-CCollabMessage::CCollabMessage(): peerID(pbftID), blockValidUpto(-1), sigSize(0), vchSig(){
+CCollabMessage::CCollabMessage(): peerID(pbftID), sigSize(0), vchSig() {
+    vchSig.reserve(72); // the expected sig size is 72 bytes.
+}
+
+CCollabMessage::CCollabMessage(uint32_t heightIn, std::vector<char>&& validTxsIn, std::vector<uint32_t>&& invalidTxsIn): height(heightIn), validTxs(validTxsIn),invalidTxs(invalidTxsIn), peerID(pbftID), sigSize(0), vchSig() {
     vchSig.reserve(72); // the expected sig size is 72 bytes.
 }
 
 void CCollabMessage::getHash(uint256& result) const {
-    CHash256().Write((const unsigned char*)&blockValidUpto, sizeof(blockValidUpto))
+    CHash256().Write((const unsigned char*)&height, sizeof(height))
+            .Write((const unsigned char*)validTxs.data(), validTxs.size())
+            .Write((const unsigned char*)invalidTxs.data(), invalidTxs.size() * sizeof(uint32_t))
 	    .Finalize((unsigned char*)&result);
+}
+
+/* fetch the bit for this tx. If the bit is 1, then the tx is valid. */
+bool CCollabMessage::isValidTx(const uint32_t txSeq) const {
+    char bit_mask = 1 << (txSeq % 8);
+    return  validTxs[txSeq >> 3] & bit_mask;
+}
+
+CCollabMultiBlockMsg::CCollabMultiBlockMsg(): peerID(pbftID), sigSize(0), vchSig() {
+    vchSig.reserve(72); // the expected sig size is 72 bytes.
+}
+
+CCollabMultiBlockMsg::CCollabMultiBlockMsg(std::vector<TxIndexOnChain>&& validTxsIn, std::vector<TxIndexOnChain>&& invalidTxsIn): validTxs(validTxsIn),invalidTxs(invalidTxsIn), peerID(pbftID), sigSize(0), vchSig() {
+    vchSig.reserve(72); // the expected sig size is 72 bytes.
+}
+
+void CCollabMultiBlockMsg::getHash(uint256& result) const {
+    CHash256().Write((const unsigned char*)validTxs.data(), validTxs.size())
+            .Write((const unsigned char*)invalidTxs.data(), invalidTxs.size() * sizeof(uint32_t))
+	    .Finalize((unsigned char*)&result);
+}
+
+void CCollabMultiBlockMsg::clear() {
+    validTxs.clear();
+    invalidTxs.clear();
 }

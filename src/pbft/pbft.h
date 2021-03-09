@@ -32,37 +32,6 @@ extern int32_t maxBlockSize;
 extern int32_t nWarmUpBlocks;
 extern bool testStarted;
 
-class TxIndexOnChain {
-public:
-    uint32_t block_height;
-    uint32_t offset_in_block;
-
-    TxIndexOnChain();
-    TxIndexOnChain(const uint32_t block_height_in, const uint32_t offset_in_block_in);
-    bool IsNull();
-
-    template<typename Stream>
-    void Serialize(Stream& s) const{
-	s.write(reinterpret_cast<const char*>(&block_height), sizeof(block_height));
-	s.write(reinterpret_cast<const char*>(&offset_in_block), sizeof(offset_in_block));
-    }
-
-    template<typename Stream>
-    void Unserialize(Stream& s) {
-	s.read(reinterpret_cast<char*>(&block_height), sizeof(block_height));
-	s.read(reinterpret_cast<char*>(&offset_in_block), sizeof(offset_in_block));
-    }
-
-    TxIndexOnChain operator+(const unsigned int oprand);
-
-    friend bool operator<(const TxIndexOnChain& a, const TxIndexOnChain& b);
-    friend bool operator>(const TxIndexOnChain& a, const TxIndexOnChain& b);
-    friend bool operator==(const TxIndexOnChain& a, const TxIndexOnChain& b);
-    friend bool operator!=(const TxIndexOnChain& a, const TxIndexOnChain& b);
-    friend bool operator<=(const TxIndexOnChain& a, const TxIndexOnChain& b);
-
-    std::string ToString() const;
-};
 
 class ThreadSafeQueue {
 public:
@@ -86,11 +55,34 @@ private:
     std::condition_variable cond_;
 };
 
+class BlockCollabRes{
+public:
+    /* for each tx, cnt = f+1 means the tx has been deemed valid by f+1 nodes.
+     * index is tx index in the block
+     */
+    std::vector<uint32_t> tx_collab_valid_cnt;
+    /* key is tx index, value is collab msg cnt. 
+     * cnt = f+1 means the tx has been deemed invalid by f+1 nodes. 
+     */
+    std::map<uint32_t, uint32_t> map_collab_invalid_cnt;
+    uint32_t collab_msg_full_tx_cnt;
+    BlockCollabRes();
+    BlockCollabRes(uint32_t txCnt);
+};
+
 class uint256Hasher
 {
 public:
     size_t operator()(const uint256& id) const {
         return id.GetCheapHash();
+    }
+};
+
+class txHasher
+{
+public:
+    size_t operator()(const CTransactionRef tx) const {
+        return tx->GetHash().GetCheapHash();
     }
 };
 
@@ -150,13 +142,13 @@ public:
      * Also used to decide if a tx should be added to the dependency graph
      * due to create-spend dependency.
      */
-    std::unordered_map<uint256, std::list<uint256>, uint256Hasher> mapTxDependency;
+    std::unordered_map<uint256, std::list<TxIndexOnChain>, uint256Hasher> mapTxDependency;
     /* prerequite tx count map.
      * Key is an unverified tx; Value is the count of the remaining 
      * not-yet-verified prerequite tx. 
      * Used to decide if a tx can be removed from the dependency graph and executed.
      */
-    std::unordered_map<uint256, uint32_t, uint256Hasher> mapPrereqCnt;
+    std::map<TxIndexOnChain, uint32_t> mapPrereqCnt;
     /* UTXO conflict list.
      * Key is an UTXO, value is a list of unverified tx spending this UTXO.
      * Used to detect if a tx should be added to the dependency graph due to 
@@ -164,6 +156,29 @@ public:
      */
     std::unordered_map<COutPoint, std::list<uint256>, OutpointHasher> mapUtxoConflict;
     
+    /* key is block height, value is the collab_valid status of this block. 
+     * Used for avoiding process more than necessary Collab Message for a tx.
+     */
+    std::map<uint32_t, BlockCollabRes> mapBlockCollabRes;
+    /* The last block that all its tx has been collab validated. 
+     * Used to prune the above map.
+     */
+    int lastCollabFullBlock; 
+    
+    std::deque<std::deque<TxIndexOnChain>> qValidTx; 
+    std::deque<std::deque<TxIndexOnChain>> qInvalidTx; 
+    /* which queue is currently used by the log-exe thread. The other one is used
+     * by the net_handling thread. The net_handling thread flips the number 
+     * when the  queue used by the log-exe thread is empty and the one used 
+     * by the net_handling thread is not empty. 
+     */
+    uint32_t validTxQIdx, invalidTxQIdx; 
+    /* guard the queues and the indice. */
+    std::atomic_bool qValidEmpty, qInValidEmpty;
+    /* key is peerID, value is the  CCollabMultiBlockMsg to be sent. */
+    std::deque<CCollabMultiBlockMsg> otherSubgroupSendQ;
+    /* key is block height, value is the ids of peers in the other subgroup of this block. */
+    std::map<uint32_t, std::deque<int32_t>> mapBlockOtherSubgroup;
 
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
@@ -181,10 +196,13 @@ public:
     bool checkMsg(CPbftMessage* msg);
     /*return the last executed seq */
     void executeLog(struct timeval& start_process_first_block);
+    void executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnChain>& validTxs, std::vector<TxIndexOnChain>& invalidTxs);
     /* when received collab msg from the other subgroup, update our block valid bit.
      * Called by the net_processing theread. */
+    void UpdateTxValidity(const CCollabMessage& msg);
     bool checkCollabMsg(const CCollabMessage& msg);
-    bool AssembleAndSendCollabMsg();
+    bool SendCollabMsg(uint32_t height, std::vector<char>& validTxs, std::vector<uint32_t>& invalidTxs);
+    bool SendCollabMultiBlkMsg(const std::vector<TxIndexOnChain>& validTxs, const std::vector<TxIndexOnChain>& invalidTxs); 
     bool sendReplies(CConnman* connman);
 
     inline void printQueueSize(){
@@ -200,8 +218,8 @@ public:
 	return pbftID % groupSize == 0;
     }
 
-    inline bool isBlockInOurVerifyGroup(uint256& block_hash){
-	return ((pbftID & 1) ^ (block_hash.GetCheapHash() & 1)) == 0;
+    inline bool isInVerifySubGroup(int32_t peer_id, const uint256& block_hash){
+	return ((peer_id & 1) ^ (block_hash.GetCheapHash() & 1)) == 0;
     }
 
     void saveBlocks2File(const int numBlock) const;

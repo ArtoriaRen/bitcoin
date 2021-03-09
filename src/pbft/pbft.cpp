@@ -31,7 +31,7 @@ int32_t maxBlockSize = 2000;
 int32_t nWarmUpBlocks;
 bool testStarted = false;
 
-CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastConsecutiveSeqInReplyPhase(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalVerifyTime(0), totalVerifyCnt(0), totalExeTime(0), lastBlockVerifiedThisGroup(-1), lastBlockValidSentSeq(-1), lastReplySentSeq(-1), privateKey(CKey()) {
+CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastConsecutiveSeqInReplyPhase(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalVerifyTime(0), totalVerifyCnt(0), totalExeTime(0), lastBlockVerifiedThisGroup(-1), lastBlockValidSentSeq(-1), lastReplySentSeq(-1), lastCollabFullBlock(-1), otherSubgroupSendQ(groupSize), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
@@ -315,7 +315,7 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
     if (lastBlockVerifiedThisGroup < lastConsecutiveSeqInReplyPhase){
         uint32_t curHeight = lastBlockVerifiedThisGroup + 1;
         CPbftBlock& block = *log[curHeight].ppMsg.pPbftBlock;
-        if(isBlockInOurVerifyGroup(block.hash)) {
+        if(isInVerifySubGroup(pbftID, block.hash)) {
             /* This is a block to be verified by our subgroup. 
              * Verify and Execute prerequiste-clear tx in this block.
              * (The VerifyTx call includes executing tx.) 
@@ -328,7 +328,7 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
             lastBlockVerifiedThisGroup++;
             nCompletedTx += validTxCnt;
             /*TODO: Anounce the verifying result to peers in the other subgroup.*/
-    //        AssembleAndSendCollabMsg();
+            SendCollabMsg(curHeight, validTxs, invalidTxs);
             std::cout << "Average verify time of block " << curHeight << ": " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / validTxCnt << " us/req" << std::endl;
             logServerSideThruput(start_process_first_block, end_time, curHeight);
         }
@@ -337,16 +337,85 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
     /* TODO: Step 2: Execute COLLAB_VERIFIED tx. */
     /* for each COLLAB message, check if the tx are in the dependency graph.
      * If yes, executed it provided valid, othewise check the next tx. */
+    if (!qValidEmpty.load(std::memory_order_relaxed)) {
+        std::vector<TxIndexOnChain> validTxs;
+        std::vector<TxIndexOnChain> invalidTxs;
+        for (const TxIndexOnChain& txIdx: qValidTx[validTxQIdx]) {
+            CTransactionRef pTx = log[txIdx.block_height].ppMsg.pPbftBlock->vReq[txIdx.offset_in_block];
+            executePrereqTx(txIdx, validTxs, invalidTxs);
+        }
+        SendCollabMultiBlkMsg(validTxs, invalidTxs);
+        qValidTx[validTxQIdx].clear();
+        qValidEmpty.store(true, std::memory_order_relaxed);
+    }
+    /* TODO: for tx in qInValidTx, remove them without executing. 
+     * Update the prereq cnt of its dependent tx. 
+     * Verify a dependent tx if it is prereq-clear and belongs to our group.
+     */
+    
 
-    /* TODO: Step 3: If there is nothing to be verified in Steps 1 or 2, verify the first 
+    /* TODO: Step 3 (Optional): If there is nothing to be verified in Steps 1 or 2, verify the first 
      * not yet verified block belonging to the other subgroup . */
+}
+
+void CPbft::executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnChain>& validTxs, std::vector<TxIndexOnChain>& invalidTxs) {
+    std::queue<TxIndexOnChain> q;
+    /* execute this prereq tx */
+    CTransactionRef pTx = log[txIdx.block_height].ppMsg.pPbftBlock->vReq[txIdx.offset_in_block];
+    ExecuteTx(*pTx, txIdx.block_height, *pcoinsTip);
+    /* add dependent tx to the queue. */
+    for (const TxIndexOnChain& depTx: mapTxDependency[pTx->GetHash()]) {
+        if (mapPrereqCnt.find(depTx) == mapPrereqCnt.end()){
+            /* this dependent tx has been executed due to collab vrf.*/
+            continue;
+        }
+        if(--mapPrereqCnt[depTx] == 0 && isInVerifySubGroup(pbftID, log[depTx.block_height].ppMsg.pPbftBlock->hash)) {
+            /* prereqTx clear and in our group. Add it to the queue for verification. */
+            q.push(depTx);
+        }
+    }
+    /* remove this prereq tx from dependency graph */
+    mapTxDependency.erase(pTx->GetHash());
+    std::map<TxIndexOnChain, uint32_t>::iterator it = mapPrereqCnt.find(txIdx);
+    assert(it != mapPrereqCnt.end());
+    mapPrereqCnt.erase(it);
+
+    /* verify the dependent tx belonging to our group. */
+    while (!q.empty()) {
+        const TxIndexOnChain& curTxIdx = q.front();
+        q.pop();
+        pTx = log[curTxIdx.block_height].ppMsg.pPbftBlock->vReq[curTxIdx.offset_in_block];
+        bool isValid = VerifyTx(*pTx, curTxIdx.block_height, *pcoinsTip);
+        if (isValid) {
+            validTxs.push_back(curTxIdx);
+        } else {
+            invalidTxs.push_back(curTxIdx);
+        }
+
+        /* add dependent tx to the queue. */
+        for (const TxIndexOnChain& depTx: mapTxDependency[pTx->GetHash()]) {
+            if (mapPrereqCnt.find(depTx) == mapPrereqCnt.end()){
+                /* this dependent tx has been executed due to collab vrf.*/
+                continue;
+            }
+            if(--mapPrereqCnt[depTx] == 0 && isInVerifySubGroup(pbftID, log[depTx.block_height].ppMsg.pPbftBlock->hash)) {
+                /* prereqTx clear. */
+                q.push(depTx);
+            }
+        }
+        /* remove the tx from dependency graph */
+        mapTxDependency.erase(pTx->GetHash());
+        it = mapPrereqCnt.find(curTxIdx);
+        assert(it != mapPrereqCnt.end());
+        mapPrereqCnt.erase(it);
+    }
 }
 
 bool CPbft::checkCollabMsg(const CCollabMessage& msg) {
     // verify signature and return wrong if sig is wrong
     auto it = pubKeyMap.find(msg.peerID);
     if (it == pubKeyMap.end()) {
-        std::cerr << "no pub key for sender " << msg.peerID << std::endl;
+        std::cerr << "checkCollabMsg: no pub key for sender " << msg.peerID << std::endl;
         return false;
     }
     uint256 msgHash;
@@ -358,30 +427,113 @@ bool CPbft::checkCollabMsg(const CCollabMessage& msg) {
     return true;
 }
 
-bool CPbft::AssembleAndSendCollabMsg() {
-    int localLastBlockValidSeq = lastBlockVerifiedThisGroup; 
-    if (localLastBlockValidSeq > lastBlockValidSentSeq) {
-	CCollabMessage toSent; 
-	toSent.blockValidUpto = localLastBlockValidSeq; 
-	uint256 hash;
-	toSent.getHash(hash);
-	privateKey.Sign(hash, toSent.vchSig);
-	toSent.sigSize = toSent.vchSig.size();
+bool CPbft::SendCollabMsg(uint32_t height, std::vector<char>& validTxs, std::vector<uint32_t>& invalidTxs) {
+    CCollabMessage toSent(height, std::move(validTxs), std::move(invalidTxs)); 
+    uint256 hash;
+    toSent.getHash(hash);
+    privateKey.Sign(hash, toSent.vchSig);
+    toSent.sigSize = toSent.vchSig.size();
 
-	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-	uint32_t start_peerID = pbftID / CPbft::groupSize; 
-	uint32_t end_peerID = start_peerID + CPbft::groupSize;
+    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+    const uint256& block_hash = log[height].ppMsg.pPbftBlock->hash;
+    for (uint32_t i = 0; i < groupSize; i++) {
+        if (!isInVerifySubGroup(i, block_hash)) {
+            /* this is a peer in the other subgroup for this block. */
+            mapBlockOtherSubgroup[height].push_back(i);
+            g_connman->PushMessage(peers[i], msgMaker.Make(NetMsgType::COLLAB_VRF, toSent));
+        }
+    } 
+    return true;
+}
 
-	for (uint32_t i = start_peerID; i < end_peerID; i++) {
-	    if ((i ^ pbftID) & 1) {
-		/* this is a peer in the other subgroup. */
-		g_connman->PushMessage(peers[i], msgMaker.Make(NetMsgType::COLLAB_BLOCK_VALID, toSent));
-	    }
-	} 
-	lastBlockValidSentSeq = localLastBlockValidSeq; 
-	return true;
-    } else {
-	return false;
+bool CPbft::SendCollabMultiBlkMsg(const std::vector<TxIndexOnChain>& validTxs, const std::vector<TxIndexOnChain>& invalidTxs) {
+    for (const TxIndexOnChain& tx: validTxs) {
+        for (auto peerId: mapBlockOtherSubgroup[tx.block_height]) {
+            otherSubgroupSendQ[peerId].validTxs.push_back(tx);
+        }
+    }
+    for (const TxIndexOnChain& tx: invalidTxs) {
+        for (auto peerId: mapBlockOtherSubgroup[tx.block_height]) {
+            otherSubgroupSendQ[peerId].invalidTxs.push_back(tx);
+        }
+    }
+
+    /* send multiBlkCollabMsg. clear the sending queue. */
+    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+    for (uint i = 0; i < groupSize; i++) {
+        CCollabMultiBlockMsg& toSent = otherSubgroupSendQ[i];
+        uint256 hash;
+        toSent.getHash(hash);
+        privateKey.Sign(hash, toSent.vchSig);
+        toSent.sigSize = toSent.vchSig.size();
+        g_connman->PushMessage(peers[i], msgMaker.Make(NetMsgType::COLLAB_MULTI_BLK, std::move(toSent)));
+        toSent.clear();
+    }
+
+    return true;
+}
+
+BlockCollabRes::BlockCollabRes(): collab_msg_full_tx_cnt(0) {
+    std::cout << "BlockCollabRes empty constructor should not be called. " << std::endl;
+}
+BlockCollabRes::BlockCollabRes(uint32_t txCnt): tx_collab_valid_cnt(txCnt), collab_msg_full_tx_cnt(0) { }
+
+void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
+    if (!checkCollabMsg(msg)) 
+        return;
+    
+    if (mapBlockCollabRes.find(msg.height) == mapBlockCollabRes.end()) {
+        mapBlockCollabRes.emplace(msg.height, BlockCollabRes(log[msg.height].ppMsg.pPbftBlock->vReq.size()));
+    }
+    
+    BlockCollabRes& block_collab_res = mapBlockCollabRes[msg.height];
+
+    if (block_collab_res.collab_msg_full_tx_cnt == block_collab_res.tx_collab_valid_cnt.size()) {
+        /* all tx in this block has accumlated enough collab_verify res. ignore this msg.*/
+        return;
+    }
+
+    for (uint i = 0; i < block_collab_res.tx_collab_valid_cnt.size(); i++) {
+        if (block_collab_res.tx_collab_valid_cnt[i] == nFaulty + 1) {
+            /* this tx has collect enough collab_valid msg. */
+            continue;
+        }
+        if (msg.isValidTx(i)) {
+            block_collab_res.tx_collab_valid_cnt[i]++;
+            if (block_collab_res.tx_collab_valid_cnt[i] == nFaulty + 1) {
+                block_collab_res.collab_msg_full_tx_cnt++;
+                /* add the tx to validTxQ */
+                qValidTx[1 - validTxQIdx].emplace_back(msg.height, i);
+            }
+        }
+    }
+
+    for (const auto txSeq: msg.invalidTxs) {
+        block_collab_res.map_collab_invalid_cnt[txSeq]++;
+        if (block_collab_res.map_collab_invalid_cnt[txSeq] == nFaulty + 1) {
+            block_collab_res.collab_msg_full_tx_cnt++;
+            /* add the tx to inValidTxQ */
+            qInvalidTx[1 - validTxQIdx].emplace_back(msg.height, txSeq);
+        }
+    }
+
+    /* prune entries in mapBlockCollabRes */
+    if (block_collab_res.collab_msg_full_tx_cnt == block_collab_res.tx_collab_valid_cnt.size()) {
+        for(; lastCollabFullBlock <= lastConsecutiveSeqInReplyPhase 
+                && mapBlockCollabRes[lastCollabFullBlock + 1].collab_msg_full_tx_cnt == mapBlockCollabRes[lastCollabFullBlock + 1].tx_collab_valid_cnt.size(); 
+                lastCollabFullBlock++) {
+            mapBlockCollabRes.erase(lastCollabFullBlock);
+        }
+    }
+    
+    /* check if the pointers of queue pairs should be switched. */
+    if (qValidEmpty.load(std::memory_order_relaxed) && !qInvalidTx[1 - validTxQIdx].empty()) {
+        validTxQIdx = 1 - validTxQIdx; 
+        qValidEmpty.store(false, std::memory_order_relaxed);
+    }
+    if (qInValidEmpty.load(std::memory_order_relaxed) && !qInvalidTx[1 - validTxQIdx].empty()) {
+        invalidTxQIdx = 1 - invalidTxQIdx; 
+        qInValidEmpty.store(false, std::memory_order_relaxed);
     }
 }
 
