@@ -21,17 +21,14 @@
 
 extern std::unique_ptr<CConnman> g_connman;
 
-bool fIsClient; // if this node is a pbft client.
-std::string leaderAddrString;
-std::string clientAddrString;
 int32_t pbftID; 
-int32_t nMaxReqInFly; 
 int32_t QSizePrintPeriod;
 int32_t maxBlockSize = 2000;
 int32_t nWarmUpBlocks;
 bool testStarted = false;
+int32_t reqWaitTimeout = 1000;
 
-CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastConsecutiveSeqInReplyPhase(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalVerifyTime(0), totalVerifyCnt(0), totalExeTime(0), lastBlockVerifiedThisGroup(-1), lastBlockValidSentSeq(-1), lastReplySentSeq(-1), lastCollabFullBlock(-1), otherSubgroupSendQ(groupSize), privateKey(CKey()) {
+CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastConsecutiveSeqInReplyPhase(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalVerifyTime(0), totalVerifyCnt(0), totalExeTime(0), lastBlockVerifiedThisGroup(-1), lastBlockValidSentSeq(-1), lastReplySentSeq(-1), lastCollabFullBlock(-1), qValidTx(2), qInvalidTx(2), validTxQIdx(0), invalidTxQIdx(0), otherSubgroupSendQ(groupSize), notEnoughReqStartTime(std::chrono::milliseconds::zero()), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
@@ -323,14 +320,24 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
             gettimeofday(&start_time, NULL);
             std::vector<char> validTxs(block.vReq.size() >> 3);
             std::vector<uint32_t> invalidTxs;
+            std::cout << "verifying block " << curHeight << " of size " << block.vReq.size() << std::endl;
             uint32_t validTxCnt = block.Verify(curHeight, *pcoinsTip, validTxs, invalidTxs);
             gettimeofday(&end_time, NULL);
             lastBlockVerifiedThisGroup++;
             nCompletedTx += validTxCnt;
+            std::cout << "block verification: invalidTx cnt = " << invalidTxs.size() << std::endl;
             /*TODO: Anounce the verifying result to peers in the other subgroup.*/
             SendCollabMsg(curHeight, validTxs, invalidTxs);
             std::cout << "Average verify time of block " << curHeight << ": " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / validTxCnt << " us/req" << std::endl;
             logServerSideThruput(start_process_first_block, end_time, curHeight);
+        } else {
+            std::cout << "add " << block.vReq.size() << " tx in block " << curHeight << " to dependency graph." << std::endl;
+            /* tx belongs to the other group are not added to mapPreqCnt b/c we are not interest in its prereq tx until later we have to verify such tx by ourselves. */
+            for (CTransactionRef tx: block.vReq) {
+                mapTxDependency.emplace(tx->GetHash(), std::list<TxIndexOnChain>()); 
+            }
+            /*Although we did not verified tx in this block, we advance the pointer so that we would not check the same block next time. */
+            lastBlockVerifiedThisGroup++;
         }
     }
 
@@ -363,6 +370,7 @@ void CPbft::executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnCh
     /* execute this prereq tx */
     CTransactionRef pTx = log[txIdx.block_height].ppMsg.pPbftBlock->vReq[txIdx.offset_in_block];
     ExecuteTx(*pTx, txIdx.block_height, *pcoinsTip);
+    nCompletedTx++;
     /* add dependent tx to the queue. */
     for (const TxIndexOnChain& depTx: mapTxDependency[pTx->GetHash()]) {
         if (mapPrereqCnt.find(depTx) == mapPrereqCnt.end()){
@@ -374,11 +382,8 @@ void CPbft::executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnCh
             q.push(depTx);
         }
     }
-    /* remove this prereq tx from dependency graph */
+    /* remove this prereq tx from dependency graph. */
     mapTxDependency.erase(pTx->GetHash());
-    std::map<TxIndexOnChain, uint32_t>::iterator it = mapPrereqCnt.find(txIdx);
-    assert(it != mapPrereqCnt.end());
-    mapPrereqCnt.erase(it);
 
     /* verify the dependent tx belonging to our group. */
     while (!q.empty()) {
@@ -388,6 +393,7 @@ void CPbft::executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnCh
         bool isValid = VerifyTx(*pTx, curTxIdx.block_height, *pcoinsTip);
         if (isValid) {
             validTxs.push_back(curTxIdx);
+            nCompletedTx++;
         } else {
             invalidTxs.push_back(curTxIdx);
         }
@@ -405,7 +411,7 @@ void CPbft::executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnCh
         }
         /* remove the tx from dependency graph */
         mapTxDependency.erase(pTx->GetHash());
-        it = mapPrereqCnt.find(curTxIdx);
+        std::map<TxIndexOnChain, uint32_t>::iterator it = mapPrereqCnt.find(curTxIdx);
         assert(it != mapPrereqCnt.end());
         mapPrereqCnt.erase(it);
     }
@@ -477,6 +483,9 @@ bool CPbft::SendCollabMultiBlkMsg(const std::vector<TxIndexOnChain>& validTxs, c
     /* send multiBlkCollabMsg. clear the sending queue. */
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
     for (uint i = 0; i < groupSize; i++) {
+        if (i == pbftID || otherSubgroupSendQ[i].empty())
+            continue;
+
         CCollabMultiBlockMsg& toSent = otherSubgroupSendQ[i];
         uint256 hash;
         toSent.getHash(hash);
@@ -489,12 +498,12 @@ bool CPbft::SendCollabMultiBlkMsg(const std::vector<TxIndexOnChain>& validTxs, c
     return true;
 }
 
-BlockCollabRes::BlockCollabRes(): collab_msg_full_tx_cnt(0) {
-    std::cout << "BlockCollabRes empty constructor should not be called. " << std::endl;
-}
+BlockCollabRes::BlockCollabRes(): collab_msg_full_tx_cnt(0) { }
+
 BlockCollabRes::BlockCollabRes(uint32_t txCnt): tx_collab_valid_cnt(txCnt), collab_msg_full_tx_cnt(0) { }
 
 void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
+    std::cout << "processing collab msg for block " << msg.height << " from peer " << msg.peerID << std::endl;
     if (!checkCollabMsg(msg)) 
         return;
     
@@ -529,7 +538,7 @@ void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
         if (block_collab_res.map_collab_invalid_cnt[txSeq] == nFaulty + 1) {
             block_collab_res.collab_msg_full_tx_cnt++;
             /* add the tx to inValidTxQ */
-            qInvalidTx[1 - validTxQIdx].emplace_back(msg.height, txSeq);
+            qInvalidTx[1 - invalidTxQIdx].emplace_back(msg.height, txSeq);
         }
     }
 
@@ -543,17 +552,18 @@ void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
     }
     
     /* check if the pointers of queue pairs should be switched. */
-    if (qValidEmpty.load(std::memory_order_relaxed) && !qInvalidTx[1 - validTxQIdx].empty()) {
+    if (qValidEmpty.load(std::memory_order_relaxed) && !qValidTx[1 - validTxQIdx].empty()) {
         validTxQIdx = 1 - validTxQIdx; 
         qValidEmpty.store(false, std::memory_order_relaxed);
     }
-    if (qInValidEmpty.load(std::memory_order_relaxed) && !qInvalidTx[1 - validTxQIdx].empty()) {
+    if (qInValidEmpty.load(std::memory_order_relaxed) && !qInvalidTx[1 - invalidTxQIdx].empty()) {
         invalidTxQIdx = 1 - invalidTxQIdx; 
         qInValidEmpty.store(false, std::memory_order_relaxed);
     }
 }
 
 void CPbft::UpdateTxValidity(const CCollabMultiBlockMsg& msg) {
+    std::cout << "processing collabMulBlk msg for block from peer " << msg.peerID << std::endl;
     if (!checkCollabMulBlkMsg(msg)) 
         return;
 
@@ -597,7 +607,7 @@ void CPbft::UpdateTxValidity(const CCollabMultiBlockMsg& msg) {
         if (block_collab_res.map_collab_invalid_cnt[txIdx.offset_in_block] == nFaulty + 1) {
             block_collab_res.collab_msg_full_tx_cnt++;
             /* add the tx to inValidTxQ */
-            qInvalidTx[1 - validTxQIdx].push_back(std::move(txIdx));
+            qInvalidTx[1 - invalidTxQIdx].push_back(std::move(txIdx));
         }
         /* prune entries in mapBlockCollabRes */
         if (block_collab_res.collab_msg_full_tx_cnt == block_collab_res.tx_collab_valid_cnt.size()) {
@@ -611,11 +621,11 @@ void CPbft::UpdateTxValidity(const CCollabMultiBlockMsg& msg) {
 
     
     /* check if the pointers of queue pairs should be switched. */
-    if (qValidEmpty.load(std::memory_order_relaxed) && !qInvalidTx[1 - validTxQIdx].empty()) {
+    if (qValidEmpty.load(std::memory_order_relaxed) && !qValidTx[1 - validTxQIdx].empty()) {
         validTxQIdx = 1 - validTxQIdx; 
         qValidEmpty.store(false, std::memory_order_relaxed);
     }
-    if (qInValidEmpty.load(std::memory_order_relaxed) && !qInvalidTx[1 - validTxQIdx].empty()) {
+    if (qInValidEmpty.load(std::memory_order_relaxed) && !qInvalidTx[1 - invalidTxQIdx].empty()) {
         invalidTxQIdx = 1 - invalidTxQIdx; 
         qInValidEmpty.store(false, std::memory_order_relaxed);
     }
@@ -727,6 +737,24 @@ TxIndexOnChain TxIndexOnChain::operator+(const unsigned int oprand) {
 
 std::string TxIndexOnChain::ToString() const {
     return "(" + std::to_string(block_height) + ", " + std::to_string(offset_in_block) + ")";
+}
+
+bool CPbft::timeoutWaitReq(){
+	/* log queue size if we have reached the period. */
+	std::chrono::milliseconds current = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
+	//std::cout << "notEnoughReqStartTime  =  " << notEnoughReqStartTime.count() << ", current = " << current.count() << ", reqWaitTimeout = " << reqWaitTimeout << std::endl; 
+	if (notEnoughReqStartTime != std::chrono::milliseconds::zero() && current - notEnoughReqStartTime > std::chrono::milliseconds(reqWaitTimeout)) {
+	    notEnoughReqStartTime = std::chrono::milliseconds::zero();
+	    return true;
+	} else { 
+	    return false;
+	}
+}
+
+void CPbft::setReqWaitTimer(){
+	if (notEnoughReqStartTime == std::chrono::milliseconds::zero()) {
+	    notEnoughReqStartTime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
+	}
 }
 
 std::unique_ptr<CPbft> g_pbft;

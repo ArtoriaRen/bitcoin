@@ -26,11 +26,11 @@
 #include <chrono>
 
 extern int32_t pbftID;
-extern int32_t nMaxReqInFly; 
 extern int32_t QSizePrintPeriod;
 extern int32_t maxBlockSize; 
 extern int32_t nWarmUpBlocks;
 extern bool testStarted;
+extern int32_t reqWaitTimeout;
 
 
 class ThreadSafeQueue {
@@ -172,13 +172,16 @@ public:
      * when the  queue used by the log-exe thread is empty and the one used 
      * by the net_handling thread is not empty. 
      */
-    uint32_t validTxQIdx, invalidTxQIdx; 
+    uint32_t validTxQIdx;
+    uint32_t invalidTxQIdx; 
     /* guard the queues and the indice. */
     std::atomic_bool qValidEmpty, qInValidEmpty;
     /* key is peerID, value is the  CCollabMultiBlockMsg to be sent. */
     std::deque<CCollabMultiBlockMsg> otherSubgroupSendQ;
     /* key is block height, value is the ids of peers in the other subgroup of this block. */
     std::map<uint32_t, std::deque<int32_t>> mapBlockOtherSubgroup;
+
+    std::chrono::milliseconds notEnoughReqStartTime;
 
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
@@ -206,6 +209,8 @@ public:
     bool SendCollabMsg(uint32_t height, std::vector<char>& validTxs, std::vector<uint32_t>& invalidTxs);
     bool SendCollabMultiBlkMsg(const std::vector<TxIndexOnChain>& validTxs, const std::vector<TxIndexOnChain>& invalidTxs); 
 
+    bool timeoutWaitReq();
+    void setReqWaitTimer();
     inline void printQueueSize(){
 	    /* log queue size if we have reached the period. */
 	    std::chrono::milliseconds current = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());

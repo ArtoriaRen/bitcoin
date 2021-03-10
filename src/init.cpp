@@ -817,9 +817,6 @@ void InitParameterInteraction()
     if (gArgs.IsArgSet("-pbftid")) {
         pbftID = gArgs.GetArg("-pbftid", -1);
     }
-    if (gArgs.IsArgSet("-maxreqinfly")) {
-        nMaxReqInFly = gArgs.GetArg("-maxreqinfly", 100);
-    }
     if (gArgs.IsArgSet("-qsizeprintperiod")) {
         QSizePrintPeriod = gArgs.GetArg("-qsizeprintperiod", 1000); // in ms
     }

@@ -310,6 +310,7 @@ public:
     }
     void getHash(uint256& result) const;
     void clear();
+    bool empty() const;
 };
 
 bool VerifyTx(const CTransaction& tx, const int seq, CCoinsViewCache& view);

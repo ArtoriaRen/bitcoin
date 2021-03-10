@@ -240,3 +240,7 @@ void CCollabMultiBlockMsg::clear() {
     validTxs.clear();
     invalidTxs.clear();
 }
+
+bool CCollabMultiBlockMsg::empty() const {
+    return validTxs.empty() && invalidTxs.empty();
+}

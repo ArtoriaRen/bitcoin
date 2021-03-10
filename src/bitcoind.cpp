@@ -60,6 +60,7 @@ void WaitForShutdown()
 	}
         fShutdown = ShutdownRequested();
     }
+    std::cout << "total executed tx cnt = " << g_pbft->nCompletedTx << ", still have " << g_pbft->mapTxDependency.size() << " tx in the dependency graph." << std::endl;
     Interrupt();
 }
 
