@@ -308,7 +308,12 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
      * of tx). And remove them from the dependency graph.  
      */
     struct timeval start_time, end_time;
-    /* Step 1: verify the successor block of the last block we have verified. if it belongs to our group. */
+    /* valid and invalid tx array for assembling possible collabMulBlk msg.*/
+    std::vector<TxIndexOnChain> validTxsMulBlk;
+    std::vector<TxIndexOnChain> invalidTxsMulBlk;
+    /* Step 1: verify the successor block of the last block we have verified
+     * if it belongs to our group. Otherwise, use collab_vrf result to execute
+     * tx in the block. */
     if (lastBlockVerifiedThisGroup < lastConsecutiveSeqInReplyPhase){
         uint32_t curHeight = lastBlockVerifiedThisGroup + 1;
         CPbftBlock& block = *log[curHeight].ppMsg.pPbftBlock;
@@ -330,38 +335,82 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
             std::cout << "Average verify time of block " << curHeight << ": " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / validTxCnt << " us/req" << ". valid tx cnt = " << validTxCnt << ". invalid tx cnt = " << invalidTxs.size() << std::endl;
             logServerSideThruput(start_process_first_block, end_time, curHeight);
         } else {
-            std::cout << "add " << block.vReq.size() << " tx in block " << curHeight << " to dependency graph." << std::endl;
-            /* tx belongs to the other group are not added to mapPreqCnt b/c we are not interest in its prereq tx until later we have to verify such tx by ourselves. */
-            for (CTransactionRef tx: block.vReq) {
-                mapTxDependency.emplace(tx->GetHash(), std::list<TxIndexOnChain>()); 
+            /* This is a block of the other subgroup.
+             * Check if we have collab_vrf results for this block. If so, execute
+             * valid tx, and add not yet verified tx to the dependency graph.
+             */
+            if (futureCollabVrfedBlocks.find(curHeight) != futureCollabVrfedBlocks.end()) {
+                    for (uint i = 0; i < futureCollabVrfedBlocks[curHeight].size(); i++) {
+                        CTransactionRef pTx = log[curHeight].ppMsg.pPbftBlock->vReq[i];
+                        if (futureCollabVrfedBlocks[curHeight][i] == 1) {
+                            /* valid tx, execute it. */
+                            executePrereqTx(TxIndexOnChain(curHeight, i), validTxsMulBlk, invalidTxsMulBlk);
+                        } else if (futureCollabVrfedBlocks[curHeight][i] == 0) {
+                            /* not-yet-verified tx, add it to dependency graph. */
+                            mapTxDependency.emplace(pTx->GetHash(), std::list<TxIndexOnChain>()); 
+                        } /* for invalid tx, there is nothing to do. */
+                    }
+            } else {
+                /* we haven't received collab_vrf results for any tx in the block, add
+                 * all tx in the block to the dependency graph.
+                 */
+                std::cout << "add " << block.vReq.size() << " tx in block " << curHeight << " to dependency graph." << std::endl;
+                /* tx belongs to the other group are not added to mapPreqCnt b/c we are not interest in its prereq tx until later we have to verify such tx by ourselves. */
+                for (CTransactionRef tx: block.vReq) {
+                    mapTxDependency.emplace(tx->GetHash(), std::list<TxIndexOnChain>()); 
+                }
+
             }
-            /*Although we did not verified tx in this block, we advance the pointer so that we would not check the same block next time. */
+
+            /*Although we did not verified tx in this block, we advance the 
+             * pointer so that we would not check the same block next time. */
             lastBlockVerifiedThisGroup++;
         }
     }
 
-    /* TODO: Step 2: Execute COLLAB_VERIFIED tx. */
-    /* for each COLLAB message, check if the tx are in the dependency graph.
-     * If yes, executed it provided valid, othewise check the next tx. */
+    /* Step 2: Process collab_vrf results. For block heights less than or equal to
+     * lastBlockVerifiedThisGroup, execute the tx immediately. Otherwise, store the
+     * collab_vrf result in the futureCollabVrfedBlocks map.
+     */
     if (!qValidEmpty.load(std::memory_order_relaxed)) {
-        std::vector<TxIndexOnChain> validTxs;
-        std::vector<TxIndexOnChain> invalidTxs;
         for (const TxIndexOnChain& txIdx: qValidTx[validTxQIdx]) {
-            CTransactionRef pTx = log[txIdx.block_height].ppMsg.pPbftBlock->vReq[txIdx.offset_in_block];
-            executePrereqTx(txIdx, validTxs, invalidTxs);
+            if (txIdx.block_height > lastBlockVerifiedThisGroup) {
+                if (futureCollabVrfedBlocks.find(txIdx.block_height) == futureCollabVrfedBlocks.end()) {
+                    /* we haven't met collab result for any tx in this block, create 
+                     * a new entry for this block.
+                     */
+                    assert(txIdx.block_height <= lastConsecutiveSeqInReplyPhase);
+                    futureCollabVrfedBlocks.emplace(txIdx.block_height, std::deque<char>(log[txIdx.block_height].ppMsg.pPbftBlock->vReq.size()));
+                }
+                futureCollabVrfedBlocks[txIdx.block_height][txIdx.offset_in_block] = 1;
+            } else {
+                /* backlog collab res, execute tx.*/
+                CTransactionRef pTx = log[txIdx.block_height].ppMsg.pPbftBlock->vReq[txIdx.offset_in_block];
+                /* Execute COLLAB_VERIFIED tx. for each COLLAB message, 
+                 * check if the tx are in the dependency graph.*/
+                executePrereqTx(txIdx, validTxsMulBlk, invalidTxsMulBlk);
+            }
         }
-        SendCollabMultiBlkMsg(validTxs, invalidTxs);
         qValidTx[validTxQIdx].clear();
         qValidEmpty.store(true, std::memory_order_relaxed);
     }
-    /* TODO: for tx in qInValidTx, remove them without executing. 
-     * Update the prereq cnt of its dependent tx. 
-     * Verify a dependent tx if it is prereq-clear and belongs to our group.
-     */
-    
 
-    /* TODO: Step 3 (Optional): If there is nothing to be verified in Steps 1 or 2, verify the first 
-     * not yet verified block belonging to the other subgroup . */
+    if (!validTxsMulBlk.empty() || !invalidTxsMulBlk.empty()) {
+        SendCollabMultiBlkMsg(validTxsMulBlk, invalidTxsMulBlk);
+    }
+
+
+    /* TODO: for tx in qInValidTx:
+     * 1) remove them without executing.
+     * 2.1) Update futureCollabVrfedBlocks map if the block height is greater than
+     * lastBlockVerifiedThisGroup
+     * 2.2) Otherwise, remove it from the dependency graph, update the prereq cnt
+     * of its dependent tx, verify a dependent tx if it is prereq-clear and 
+     * belongs to our group.
+     */
+
+    /* TODO: Step 3 (Optional): If there is nothing to be verified in Steps 1 or 2,
+     *  verify the first not yet verified block belonging to the other subgroup . */
 }
 
 void CPbft::executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnChain>& validTxs, std::vector<TxIndexOnChain>& invalidTxs) {

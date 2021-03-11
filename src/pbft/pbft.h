@@ -131,8 +131,16 @@ public:
     unsigned long totalVerifyCnt; // in us
     unsigned long totalExeTime; // in us
 
-    volatile int lastBlockVerifiedThisGroup; // the highest block has been verified by our subgroup
-    int lastBlockVerifiedOtherSubgroup; // the highest block has been verified by our subgroup
+    /* the highest block has been verified by our subgroup */
+    volatile int lastBlockVerifiedThisGroup; 
+    /* key is block id, value is a vector of tx verfication status: 1 ---verified valid
+     * by the other subgroup; -1 --- verified invalid by the other subgroup; 
+     * 0---not verified by the other subgroup. 
+     * This is used by the log-exe thread to decide what tx of an other-subgroup 
+     * block should be added to the dependency graph.
+     */
+    std::map<uint32_t, std::deque<char>> futureCollabVrfedBlocks;
+    int lastBlockVerifiedOtherSubgroup;
     int lastBlockValidSentSeq; // the highest block has been verified by our subgroup and announced to the other group.
     int lastReplySentSeq; // the highest block we have sent reply to the client. Used only by the msg_hand thread. 
 
