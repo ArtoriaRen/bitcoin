@@ -325,10 +325,9 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
             gettimeofday(&end_time, NULL);
             lastBlockVerifiedThisGroup++;
             nCompletedTx += validTxCnt;
-            std::cout << "block verification: invalidTx cnt = " << invalidTxs.size() << std::endl;
             /*TODO: Anounce the verifying result to peers in the other subgroup.*/
             SendCollabMsg(curHeight, validTxs, invalidTxs);
-            std::cout << "Average verify time of block " << curHeight << ": " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / validTxCnt << " us/req" << std::endl;
+            std::cout << "Average verify time of block " << curHeight << ": " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / validTxCnt << " us/req" << ". valid tx cnt = " << validTxCnt << ". invalid tx cnt = " << invalidTxs.size() << std::endl;
             logServerSideThruput(start_process_first_block, end_time, curHeight);
         } else {
             std::cout << "add " << block.vReq.size() << " tx in block " << curHeight << " to dependency graph." << std::endl;
@@ -461,6 +460,7 @@ bool CPbft::SendCollabMsg(uint32_t height, std::vector<char>& validTxs, std::vec
     for (uint32_t i = 0; i < groupSize; i++) {
         if (!isInVerifySubGroup(i, block_hash)) {
             /* this is a peer in the other subgroup for this block. */
+            std::cout << "sending collab msg for block " << height << " to peer " << i << std::endl;
             mapBlockOtherSubgroup[height].push_back(i);
             g_connman->PushMessage(peers[i], msgMaker.Make(NetMsgType::COLLAB_VRF, toSent));
         }
@@ -503,9 +503,11 @@ BlockCollabRes::BlockCollabRes(): collab_msg_full_tx_cnt(0) { }
 BlockCollabRes::BlockCollabRes(uint32_t txCnt): tx_collab_valid_cnt(txCnt), collab_msg_full_tx_cnt(0) { }
 
 void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
-    std::cout << "processing collab msg for block " << msg.height << " from peer " << msg.peerID << std::endl;
-    if (!checkCollabMsg(msg)) 
+    std::cout << "received collab msg for block " << msg.height << " from peer " << msg.peerID << std::endl;
+    if (!checkCollabMsg(msg)) {
+        std::cerr << "collab msg invalid" << std::endl;
         return;
+    }
     
     if (mapBlockCollabRes.find(msg.height) == mapBlockCollabRes.end()) {
         mapBlockCollabRes.emplace(msg.height, BlockCollabRes(log[msg.height].ppMsg.pPbftBlock->vReq.size()));
@@ -518,18 +520,22 @@ void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
         return;
     }
 
+
+    uint32_t validTxCntInMsg = 0;
     for (uint i = 0; i < block_collab_res.tx_collab_valid_cnt.size(); i++) {
         if (block_collab_res.tx_collab_valid_cnt[i] == nFaulty + 1) {
             /* this tx has collect enough collab_valid msg. */
             continue;
         }
         if (msg.isValidTx(i)) {
+            validTxCntInMsg++;
             block_collab_res.tx_collab_valid_cnt[i]++;
             if (block_collab_res.tx_collab_valid_cnt[i] == nFaulty + 1) {
                 block_collab_res.collab_msg_full_tx_cnt++;
                 /* add the tx to validTxQ */
                 qValidTx[1 - validTxQIdx].emplace_back(msg.height, i);
             }
+
         }
     }
 
@@ -541,6 +547,8 @@ void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
             qInvalidTx[1 - invalidTxQIdx].emplace_back(msg.height, txSeq);
         }
     }
+
+    std::cout << "processed collab msg for block " << msg.height << " from peer " << msg.peerID << ". valid tx cnt = " << validTxCntInMsg << ", invalid tx cnt = " << msg.invalidTxs.size() << std::endl;
 
     /* prune entries in mapBlockCollabRes */
     if (block_collab_res.collab_msg_full_tx_cnt == block_collab_res.tx_collab_valid_cnt.size()) {
