@@ -157,7 +157,7 @@ static bool havePrereqTx(uint32_t height, uint32_t txSeq) {
 
 }
 
-static bool sendReplies(const uint32_t height, const uint32_t tx_seq, const char res) {
+bool sendReplies(const uint32_t height, const uint32_t tx_seq, const char res) {
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
     const CPbft& pbft = *g_pbft;
     CReply reply = pbft.assembleReply(height, tx_seq, res);

@@ -315,6 +315,7 @@ public:
 
 bool VerifyTx(const CTransaction& tx, const int seq, CCoinsViewCache& view);
 bool ExecuteTx(const CTransaction& tx, const int seq, CCoinsViewCache& view);
+bool sendReplies(const uint32_t height, const uint32_t tx_seq, const char res);
 
 #endif /* PBFT_MSG_H */
 

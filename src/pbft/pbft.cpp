@@ -526,6 +526,7 @@ void CPbft::executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnCh
                 if (isValid) {
                     validTxs.push_back(curTxIdx);
                     nCompletedTx++;
+                    sendReplies(curTxIdx.block_height, curTxIdx.offset_in_block, 'y');
                 } else {
                     invalidTxs.push_back(curTxIdx);
                 }
