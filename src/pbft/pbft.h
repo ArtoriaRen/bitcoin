@@ -131,7 +131,7 @@ public:
     std::unordered_map<int32_t, CPubKey> pubKeyMap;
 
     int nReqInFly; 
-    uint32_t nCompletedTx;
+    volatile uint32_t nCompletedTx;
     /* a queue storing client req waiting for being processed. */
     ThreadSafeQueue reqQueue;
     /* we need the client conn man to wake up the client listening thread to send

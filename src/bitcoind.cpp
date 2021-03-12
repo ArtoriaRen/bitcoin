@@ -61,10 +61,10 @@ void WaitForShutdown()
 	}
         fShutdown = ShutdownRequested();
     }
-    std::cout << "total executed tx cnt = " << g_pbft->nCompletedTx << ", still have " << g_pbft->mapTxDependency.size() << " tx in the dependency graph." << std::endl;
+    std::cout << "total executed tx cnt = " << pbft.nCompletedTx << ", still have " << pbft.mapTxDependency.size() << " tx in the dependency graph." << std::endl;
     std::cout << " tx in the dependency graph are: " << std::endl;
     for (auto& p: pbft.mapPrereqCnt) {
-        std::cout << p.first.ToString() << ", prereq cnt = " << p.second.remaining_prereq_tx_cnt << ", collab status = " << p.second.collab_status << std::endl;
+        std::cout << p.first.ToString() << ", prereq cnt = " << p.second.remaining_prereq_tx_cnt << ", collab status = " << (int) p.second.collab_status << std::endl;
     }
 
     Interrupt();

@@ -365,14 +365,13 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
              * (The VerifyTx call includes executing tx.) 
              */
             gettimeofday(&start_time, NULL);
-            std::vector<char> validTxs(block.vReq.size() >> 3);
+            std::vector<char> validTxs((block.vReq.size() + 7) >> 3); // +7 for ceiling
             std::vector<uint32_t> invalidTxs;
             std::cout << "verifying block " << curHeight << " of size " << block.vReq.size() << std::endl;
             uint32_t validTxCnt = block.Verify(curHeight, *pcoinsTip, validTxs, invalidTxs);
             gettimeofday(&end_time, NULL);
             lastBlockVerifiedThisGroup++;
             nCompletedTx += validTxCnt;
-            /*TODO: Anounce the verifying result to peers in the other subgroup.*/
             SendCollabMsg(curHeight, validTxs, invalidTxs);
             std::cout << "Average verify time of block " << curHeight << ": " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / validTxCnt << " us/req" << ". valid tx cnt = " << validTxCnt << ". invalid tx cnt = " << invalidTxs.size() << std::endl;
             logServerSideThruput(start_process_first_block, end_time, curHeight);
