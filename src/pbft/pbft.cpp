@@ -297,6 +297,48 @@ CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char e
     return toSent;
 }
 
+/* check if a tx of the other subgroup have create-spend dependency with tx not 
+ * yet verified. 
+ * There is no need to check spend-spend dependency, because the collab result 
+ * will cover this type of dependency. In other words, if the tx is collab-valid,
+ * it either has no spend-spend dependency with previous tx or the previous tx
+ * involved is invalid. If the tx is collab-invalid, it either spends a coin never
+ * exist or a previous tx has spent the coin. 
+ * As a result, if the tx is collab-valid, there is no need to wait for spend-spend-conflict
+ * prereq-tx to execute this tx. If the tx is collab-invalid, there is no need to
+ * wait for spend-spend-conflict prereq-tx to abort the tx.
+ */
+static bool havePrereqTxCollab(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs) {
+    CPbft& pbft = *g_pbft;
+    CTransactionRef tx = pbft.log[height].ppMsg.pPbftBlock->vReq[txSeq];
+    for (const CTxIn& inputUtxo: tx->vin) {
+        /* check create-spend dependency. */
+        if (pbft.mapTxDependency.find(inputUtxo.prevout.hash) != pbft.mapTxDependency.end()) {
+            preReqTxs.emplace(inputUtxo.prevout.hash);
+        }
+    }
+    return preReqTxs.size() != 0;
+}
+
+void CPbft::addTx2GraphAsDependent(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs) {
+    /* Add this tx as a dependent tx to the dependency graph. */
+    for (const uint256& prereqTx: preReqTxs) {
+        mapTxDependency[prereqTx].emplace_back(height, txSeq);
+    }
+    /* Because we only call this function when the tx is collab-valid, the  collab_status
+     * field in the PendingTxStatus must be one. */
+    mapPrereqCnt.emplace(TxIndexOnChain(height, txSeq), PendingTxStatus(preReqTxs.size(), 1));
+}
+
+void CPbft::addTx2GraphAsPrerequiste(CTransactionRef pTx) {
+    /* add this tx as a potential prereqTx to the dependency graph. */
+    mapTxDependency.emplace(pTx->GetHash(), std::list<TxIndexOnChain>()); 
+    for (const CTxIn& inputUtxo: pTx->vin) {
+        if (mapUtxoConflict.find(inputUtxo.prevout) == mapUtxoConflict.end()) {
+            mapUtxoConflict.emplace(inputUtxo.prevout, std::list<uint256>(1, pTx->GetHash())); // create an entry for this UTXO and put this tx in the list
+        }
+    }
+}
 
 void CPbft::executeLog(struct timeval& start_process_first_block) {
     /* 1. Verify and execute prereq-clear tx in sequece and in the granularty 
@@ -340,26 +382,43 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
              * valid tx, and add not yet verified tx to the dependency graph.
              */
             if (futureCollabVrfedBlocks.find(curHeight) != futureCollabVrfedBlocks.end()) {
-                    for (uint i = 0; i < futureCollabVrfedBlocks[curHeight].size(); i++) {
-                        CTransactionRef pTx = log[curHeight].ppMsg.pPbftBlock->vReq[i];
-                        if (futureCollabVrfedBlocks[curHeight][i] == 1) {
-                            /* valid tx, execute it. */
-                            executePrereqTx(TxIndexOnChain(curHeight, i), validTxsMulBlk, invalidTxsMulBlk);
-                        } else if (futureCollabVrfedBlocks[curHeight][i] == 0) {
-                            /* not-yet-verified tx, add it to dependency graph. */
-                            mapTxDependency.emplace(pTx->GetHash(), std::list<TxIndexOnChain>()); 
-                        } /* for invalid tx, there is nothing to do. */
-                    }
+                for (uint i = 0; i < futureCollabVrfedBlocks[curHeight].size(); i++) {
+                    CTransactionRef pTx = log[curHeight].ppMsg.pPbftBlock->vReq[i];
+                    if (futureCollabVrfedBlocks[curHeight][i] == 1) {
+                        /* valid tx */
+                        std::unordered_set<uint256, uint256Hasher> preReqTxs;
+                        if (!havePrereqTxCollab(curHeight, i, preReqTxs)) {
+                            /* this tx is prereq-clear.execute it. 
+                             * Because this tx has never been added to the dependency 
+                             * graph, we can execute it without checking its dependent
+                             * tx.
+                             */
+                            ExecuteTx(*pTx, curHeight, *pcoinsTip);
+                        } else {
+                            /* This tx has some prereq tx and cannot be executed now.
+                             * Its execution will be triggerred by the last prereq tx.
+                             */
+                            addTx2GraphAsDependent(curHeight, i, preReqTxs);
+                            addTx2GraphAsPrerequiste(pTx);
+                        }
+                    } else if (futureCollabVrfedBlocks[curHeight][i] == 0) {
+                        /* not-yet-verified tx
+                         * add this tx as a potential prereqTx to the dependency graph. 
+                         */
+                        addTx2GraphAsPrerequiste(pTx);
+                    } /* for invalid tx, there is nothing to do because the tx is not
+                       * yet added to the dependency graph. */
+                }
+                futureCollabVrfedBlocks.erase(curHeight);
             } else {
                 /* we haven't received collab_vrf results for any tx in the block, add
-                 * all tx in the block to the dependency graph.
+                 * all tx in the block to the dependency graph as potential prereqTx.
                  */
-                std::cout << "add " << block.vReq.size() << " tx in block " << curHeight << " to dependency graph." << std::endl;
+                std::cout << "add all " << block.vReq.size() << " tx in block " << curHeight << " to dependency graph as potential prereqTx." << std::endl;
                 /* tx belongs to the other group are not added to mapPreqCnt b/c we are not interest in its prereq tx until later we have to verify such tx by ourselves. */
-                for (CTransactionRef tx: block.vReq) {
-                    mapTxDependency.emplace(tx->GetHash(), std::list<TxIndexOnChain>()); 
+                for (CTransactionRef pTx: block.vReq) {
+                    addTx2GraphAsPrerequiste(pTx);
                 }
-
             }
 
             /*Although we did not verified tx in this block, we advance the 
@@ -386,9 +445,16 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
             } else {
                 /* backlog collab res, execute tx.*/
                 CTransactionRef pTx = log[txIdx.block_height].ppMsg.pPbftBlock->vReq[txIdx.offset_in_block];
-                /* Execute COLLAB_VERIFIED tx. for each COLLAB message, 
-                 * check if the tx are in the dependency graph.*/
-                executePrereqTx(txIdx, validTxsMulBlk, invalidTxsMulBlk);
+                std::unordered_set<uint256, uint256Hasher> preReqTxs;
+                if (!havePrereqTxCollab(txIdx.block_height, txIdx.offset_in_block, preReqTxs)) {
+                    /* this tx is prereq-clear. execute it. */
+                    executePrereqTx(txIdx, validTxsMulBlk, invalidTxsMulBlk);
+                } else {
+                    /* This tx has some prereq tx and cannot be executed now.
+                     * Its execution will be triggerred by the last prereq tx.
+                     * Add this tx as a dependent tx to the dependency graph. */
+                    addTx2GraphAsDependent(txIdx.block_height, txIdx.offset_in_block, preReqTxs);
+                }
             }
         }
         qValidTx[validTxQIdx].clear();
@@ -422,46 +488,61 @@ void CPbft::executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnCh
     /* add dependent tx to the queue. */
     for (const TxIndexOnChain& depTx: mapTxDependency[pTx->GetHash()]) {
         if (mapPrereqCnt.find(depTx) == mapPrereqCnt.end()){
-            /* this dependent tx has been executed due to collab vrf.*/
+            std::cerr << "dependent tx (" << depTx.ToString() << ") is not in mapPrereqCnt" << std::endl;
             continue;
         }
-        if(--mapPrereqCnt[depTx] == 0 && isInVerifySubGroup(pbftID, log[depTx.block_height].ppMsg.pPbftBlock->hash)) {
-            /* prereqTx clear and in our group. Add it to the queue for verification. */
+        if(--mapPrereqCnt[depTx].remaining_prereq_tx_cnt == 0) {
+            /* prereqTx clear tx. This tx is either in our subgroup or is collab-valid.
+             * Add it to the queue for verification or execution. */
             q.push(depTx);
         }
     }
     /* remove this prereq tx from dependency graph. */
     mapTxDependency.erase(pTx->GetHash());
+    /* TODO: remove this tx from mapUtxoConflict. This invalidates all tx spending 
+     * at least one common coin with this tx. Must check dependent tx for all these tx.*/
 
     /* verify the dependent tx belonging to our group. */
     while (!q.empty()) {
         const TxIndexOnChain& curTxIdx = q.front();
         q.pop();
         pTx = log[curTxIdx.block_height].ppMsg.pPbftBlock->vReq[curTxIdx.offset_in_block];
-        bool isValid = VerifyTx(*pTx, curTxIdx.block_height, *pcoinsTip);
-        if (isValid) {
-            validTxs.push_back(curTxIdx);
-            nCompletedTx++;
-        } else {
-            invalidTxs.push_back(curTxIdx);
+        switch (mapPrereqCnt[curTxIdx].collab_status) {
+            case 2:
+            {
+                /* this is a tx in our subgroup, verify it. */
+                bool isValid = VerifyTx(*pTx, curTxIdx.block_height, *pcoinsTip);
+                if (isValid) {
+                    validTxs.push_back(curTxIdx);
+                    nCompletedTx++;
+                } else {
+                    invalidTxs.push_back(curTxIdx);
+                }
+                break;
+            }
+            case 1:
+                /* this is a collab-valid tx, execute it. */
+                ExecuteTx(*pTx, curTxIdx.block_height, *pcoinsTip);
+                break;
+            default:
+                std::cerr << "invalid collab_status = " << mapPrereqCnt[curTxIdx].collab_status << std::endl;
         }
 
         /* add dependent tx to the queue. */
         for (const TxIndexOnChain& depTx: mapTxDependency[pTx->GetHash()]) {
             if (mapPrereqCnt.find(depTx) == mapPrereqCnt.end()){
-                /* this dependent tx has been executed due to collab vrf.*/
+                std::cerr << "dependent tx (" << depTx.ToString() << ") is not in mapPrereqCnt" << std::endl;
                 continue;
             }
-            if(--mapPrereqCnt[depTx] == 0 && isInVerifySubGroup(pbftID, log[depTx.block_height].ppMsg.pPbftBlock->hash)) {
-                /* prereqTx clear. */
+            if(--mapPrereqCnt[depTx].remaining_prereq_tx_cnt == 0) {
+                /* prereqTx clear tx. This tx is either in our subgroup or is collab-valid.
+                 * Add it to the queue for verification or execution. */
                 q.push(depTx);
             }
         }
         /* remove the tx from dependency graph */
         mapTxDependency.erase(pTx->GetHash());
-        std::map<TxIndexOnChain, uint32_t>::iterator it = mapPrereqCnt.find(curTxIdx);
-        assert(it != mapPrereqCnt.end());
-        mapPrereqCnt.erase(it);
+        mapPrereqCnt.erase(curTxIdx);
     }
 }
 
@@ -813,5 +894,8 @@ void CPbft::setReqWaitTimer(){
 	    notEnoughReqStartTime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
 	}
 }
+
+PendingTxStatus::PendingTxStatus(): remaining_prereq_tx_cnt(0), collab_status(0) { }
+PendingTxStatus::PendingTxStatus(uint32_t remaining_prereq_tx_cnt_in, char collab_status_in): remaining_prereq_tx_cnt(remaining_prereq_tx_cnt_in), collab_status(collab_status_in) { }
 
 std::unique_ptr<CPbft> g_pbft;

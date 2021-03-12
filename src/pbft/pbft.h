@@ -94,6 +94,20 @@ public:
     }
 };
 
+class PendingTxStatus 
+{
+public:
+    uint32_t remaining_prereq_tx_cnt;
+    /* 1---collab valid, 0---not yet collab verified.
+     * 2---this is a tx of our subgroup, so collab status does not apply.
+     * Because collab-invalid tx can be aborted without waiting for it to be
+     * prereq-clear, there is no need to store the collab-invalid status in 
+     * this field. */
+    char collab_status;  
+    PendingTxStatus();
+    PendingTxStatus(uint32_t remaining_prereq_tx_cnt_in, char collab_status_in);
+};
+
 class CPbft{
 public:
     // TODO: may need to recycle log slots for throughput test. Consider deque.
@@ -156,7 +170,7 @@ public:
      * not-yet-verified prerequite tx. 
      * Used to decide if a tx can be removed from the dependency graph and executed.
      */
-    std::map<TxIndexOnChain, uint32_t> mapPrereqCnt;
+    std::map<TxIndexOnChain, PendingTxStatus> mapPrereqCnt;
     /* UTXO conflict list.
      * Key is an UTXO, value is a list of unverified tx spending this UTXO.
      * Used to detect if a tx should be added to the dependency graph due to 
@@ -205,7 +219,8 @@ public:
     CPbftMessage assembleMsg(const uint32_t seq); 
     CReply assembleReply(const uint32_t seq, const uint32_t idx, const char exe_res) const;
     bool checkMsg(CPbftMessage* msg);
-    /*return the last executed seq */
+    void addTx2GraphAsDependent(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs);
+    void addTx2GraphAsPrerequiste(CTransactionRef pTx);
     void executeLog(struct timeval& start_process_first_block);
     void executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnChain>& validTxs, std::vector<TxIndexOnChain>& invalidTxs);
     /* when received collab msg from the other subgroup, update our block valid bit.

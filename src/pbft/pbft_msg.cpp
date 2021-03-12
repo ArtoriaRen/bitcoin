@@ -143,7 +143,7 @@ static bool havePrereqTx(uint32_t height, uint32_t txSeq) {
         for (const uint256& prereqTx: preReqTxs) {
             pbft.mapTxDependency[prereqTx].emplace_back(height, txSeq);
         }
-        pbft.mapPrereqCnt[TxIndexOnChain(height, txSeq)] = preReqTxs.size();
+        pbft.mapPrereqCnt.emplace(TxIndexOnChain(height, txSeq), PendingTxStatus(preReqTxs.size(), 2));
         /* add this tx as a potential prereqTx to the dependency graph. */
         pbft.mapTxDependency.emplace(tx->GetHash(), std::list<TxIndexOnChain>()); 
         for (const CTxIn& inputUtxo: tx->vin) {
