@@ -431,7 +431,7 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
      * lastBlockVerifiedThisGroup, execute the tx immediately. Otherwise, store the
      * collab_vrf result in the futureCollabVrfedBlocks map.
      */
-    if (!qValidEmpty.load(std::memory_order_relaxed)) {
+    if (!qValidTx[validTxQIdx].empty()) {
         for (const TxIndexOnChain& txIdx: qValidTx[validTxQIdx]) {
             if (txIdx.block_height > lastBlockVerifiedThisGroup) {
                 if (futureCollabVrfedBlocks.find(txIdx.block_height) == futureCollabVrfedBlocks.end()) {
@@ -458,13 +458,24 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
             }
         }
         qValidTx[validTxQIdx].clear();
-        qValidEmpty.store(true, std::memory_order_relaxed);
+        /* TODO : handle invalid tx queue. */
     }
 
     if (!validTxsMulBlk.empty() || !invalidTxsMulBlk.empty()) {
         SendCollabMultiBlkMsg(validTxsMulBlk, invalidTxsMulBlk);
     }
 
+    /* check if the pointers of queue pairs should be switched. */
+    if (mutex4Q.try_lock()) {
+        /* switch the queues if the queue used by net_processing thread has some tx. */
+        if (!qValidTx[1 - validTxQIdx].empty()) {
+            validTxQIdx = 1 - validTxQIdx; 
+        }
+        if (!qInvalidTx[1 - invalidTxQIdx].empty()) {
+            invalidTxQIdx = 1 - invalidTxQIdx; 
+        }
+        mutex4Q.unlock();
+    }
 
     /* TODO: for tx in qInValidTx:
      * 1) remove them without executing.
@@ -639,6 +650,8 @@ void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
         return;
     }
     
+    std::deque<TxIndexOnChain> localValidTxQ;
+    std::deque<TxIndexOnChain> localInvalidTxQ;
     if (mapBlockCollabRes.find(msg.height) == mapBlockCollabRes.end()) {
         mapBlockCollabRes.emplace(msg.height, BlockCollabRes(log[msg.height].ppMsg.pPbftBlock->vReq.size()));
     }
@@ -663,7 +676,7 @@ void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
             if (block_collab_res.tx_collab_valid_cnt[i] == nFaulty + 1) {
                 block_collab_res.collab_msg_full_tx_cnt++;
                 /* add the tx to validTxQ */
-                qValidTx[1 - validTxQIdx].emplace_back(msg.height, i);
+                localValidTxQ.emplace_back(msg.height, i);
             }
 
         }
@@ -674,7 +687,7 @@ void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
         if (block_collab_res.map_collab_invalid_cnt[txSeq] == nFaulty + 1) {
             block_collab_res.collab_msg_full_tx_cnt++;
             /* add the tx to inValidTxQ */
-            qInvalidTx[1 - invalidTxQIdx].emplace_back(msg.height, txSeq);
+            localInvalidTxQ.emplace_back(msg.height, txSeq);
         }
     }
 
@@ -689,15 +702,12 @@ void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
         }
     }
     
-    /* check if the pointers of queue pairs should be switched. */
-    if (qValidEmpty.load(std::memory_order_relaxed) && !qValidTx[1 - validTxQIdx].empty()) {
-        validTxQIdx = 1 - validTxQIdx; 
-        qValidEmpty.store(false, std::memory_order_relaxed);
-    }
-    if (qInValidEmpty.load(std::memory_order_relaxed) && !qInvalidTx[1 - invalidTxQIdx].empty()) {
-        invalidTxQIdx = 1 - invalidTxQIdx; 
-        qInValidEmpty.store(false, std::memory_order_relaxed);
-    }
+    /* add tx in local queues to the global queues*/
+    mutex4Q.lock();
+    qValidTx[1 - validTxQIdx].insert(qValidTx[1 - validTxQIdx].end(), localValidTxQ.begin(),  localValidTxQ.end());
+    qInvalidTx[1 - invalidTxQIdx].insert(qInvalidTx[1 - invalidTxQIdx].end(), localInvalidTxQ.begin(), localInvalidTxQ.end());
+    mutex4Q.unlock();
+
 }
 
 void CPbft::UpdateTxValidity(const CCollabMultiBlockMsg& msg) {
@@ -705,6 +715,8 @@ void CPbft::UpdateTxValidity(const CCollabMultiBlockMsg& msg) {
     if (!checkCollabMulBlkMsg(msg)) 
         return;
 
+    std::deque<TxIndexOnChain> localValidTxQ;
+    std::deque<TxIndexOnChain> localInvalidTxQ;
     /* add valid tx to the BlockCollabRes map*/
     for (TxIndexOnChain txIdx: msg.validTxs) {
         /* because CollabMulBlkMsg contains only info for previous blockly verified tx,
@@ -726,7 +738,7 @@ void CPbft::UpdateTxValidity(const CCollabMultiBlockMsg& msg) {
         if (block_collab_res.tx_collab_valid_cnt[txIdx.offset_in_block] == nFaulty + 1) {
             block_collab_res.collab_msg_full_tx_cnt++;
             /* add the tx to validTxQ */
-            qValidTx[1 - validTxQIdx].push_back(std::move(txIdx));
+            localValidTxQ.push_back(std::move(txIdx));
         }
         /* prune entries in mapBlockCollabRes */
         if (block_collab_res.collab_msg_full_tx_cnt == block_collab_res.tx_collab_valid_cnt.size()) {
@@ -745,7 +757,7 @@ void CPbft::UpdateTxValidity(const CCollabMultiBlockMsg& msg) {
         if (block_collab_res.map_collab_invalid_cnt[txIdx.offset_in_block] == nFaulty + 1) {
             block_collab_res.collab_msg_full_tx_cnt++;
             /* add the tx to inValidTxQ */
-            qInvalidTx[1 - invalidTxQIdx].push_back(std::move(txIdx));
+            localInvalidTxQ.push_back(std::move(txIdx));
         }
         /* prune entries in mapBlockCollabRes */
         if (block_collab_res.collab_msg_full_tx_cnt == block_collab_res.tx_collab_valid_cnt.size()) {
@@ -758,15 +770,12 @@ void CPbft::UpdateTxValidity(const CCollabMultiBlockMsg& msg) {
     }
 
     
-    /* check if the pointers of queue pairs should be switched. */
-    if (qValidEmpty.load(std::memory_order_relaxed) && !qValidTx[1 - validTxQIdx].empty()) {
-        validTxQIdx = 1 - validTxQIdx; 
-        qValidEmpty.store(false, std::memory_order_relaxed);
-    }
-    if (qInValidEmpty.load(std::memory_order_relaxed) && !qInvalidTx[1 - invalidTxQIdx].empty()) {
-        invalidTxQIdx = 1 - invalidTxQIdx; 
-        qInValidEmpty.store(false, std::memory_order_relaxed);
-    }
+    /* add tx in local queues to the global queues*/
+    mutex4Q.lock();
+    qValidTx[1 - validTxQIdx].insert(qValidTx[1 - validTxQIdx].end(), localValidTxQ.begin(),  localValidTxQ.end());
+    qInvalidTx[1 - invalidTxQIdx].insert(qInvalidTx[1 - invalidTxQIdx].end(), localInvalidTxQ.begin(), localInvalidTxQ.end());
+    mutex4Q.unlock();
+
 }
 
 

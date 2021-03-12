@@ -197,7 +197,7 @@ public:
     uint32_t validTxQIdx;
     uint32_t invalidTxQIdx; 
     /* guard the queues and the indice. */
-    std::atomic_bool qValidEmpty, qInValidEmpty;
+    std::mutex mutex4Q;
     /* key is peerID, value is the  CCollabMultiBlockMsg to be sent. */
     std::deque<CCollabMultiBlockMsg> otherSubgroupSendQ;
     /* key is block height, value is the ids of peers in the other subgroup of this block. */
