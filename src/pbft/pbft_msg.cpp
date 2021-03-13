@@ -158,7 +158,6 @@ static bool havePrereqTx(uint32_t height, uint32_t txSeq) {
         return true;
     }
     return false;
-
 }
 
 

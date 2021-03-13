@@ -310,6 +310,9 @@ CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char e
  */
 bool CPbft::havePrereqTxCollab(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs, bool alreadyInGraph) {
     CTransactionRef tx = log[height].ppMsg.pPbftBlock->vReq[txSeq];
+    if (tx->IsCoinBase()) {
+        return false;
+    }
     for (const CTxIn& inputUtxo: tx->vin) {
         /* check create-spend dependency. */
         if (mapTxDependency.find(inputUtxo.prevout.hash) != mapTxDependency.end()) {
@@ -355,6 +358,9 @@ void CPbft::addTx2GraphAsDependent(uint32_t height, uint32_t txSeq, std::unorder
 void CPbft::addTx2GraphAsPrerequiste(CTransactionRef pTx) {
     /* add this tx as a potential prereqTx to the dependency graph. */
     mapTxDependency.emplace(pTx->GetHash(), std::deque<TxIndexOnChain>()); 
+    if (pTx->IsCoinBase()) {
+        return;
+    }
     for (const CTxIn& inputUtxo: pTx->vin) {
         if (mapUtxoConflict.find(inputUtxo.prevout) == mapUtxoConflict.end()) {
             mapUtxoConflict.emplace(inputUtxo.prevout, std::deque<uint256>(1, pTx->GetHash())); // create an entry for this UTXO and put this tx in the list
@@ -560,18 +566,23 @@ void CPbft::executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnCh
      * is only for spend-spend conflict detection instead of tracking (which is done
      * by the mapTxDependency), there is no need to change the mapPrereqCnt when 
      * cleaning mapUtxoConflict. */
-    for (const CTxIn& inputUtxo: pTx->vin) {
-        std::unordered_map<COutPoint, std::deque<uint256>, OutpointHasher>::iterator iter = mapUtxoConflict.find(inputUtxo.prevout);
-        assert(iter != mapUtxoConflict.end()); 
-        /* remove the whole entry b/c future tx spending this UTXO can be verified
-         * without waitinf for any tx spending this UTXO (as this UTXO has already
-         * been spent, the future tx must be invalid). 
-         * On the other hand, when cleaning mapUtxoConflict after a tx is dealt with
-         * as invalid, we can only remove the tx in the entry b/c the validity of a
-         * future tx spending the UTXO stills depends on the validity of other tx
-         * in the entry.
-         */
-        mapUtxoConflict.erase(iter); // remove the entry for this UTXO 
+    if (!pTx->IsCoinBase()) {
+        for (const CTxIn& inputUtxo: pTx->vin) {
+            std::unordered_map<COutPoint, std::deque<uint256>, OutpointHasher>::iterator iter = mapUtxoConflict.find(inputUtxo.prevout);
+            //if (iter == mapUtxoConflict.end()) {
+            //    std::cout << "input UTXO " << inputUtxo.ToString() << " of tx " << pTx->GetHash().ToString() << " does not exist in utxo conflict map. txIdx =  " << txIdx.ToString() << std::endl;
+            //}
+            assert(iter != mapUtxoConflict.end()); 
+            /* remove the whole entry b/c future tx spending this UTXO can be verified
+             * without waitinf for any tx spending this UTXO (as this UTXO has already
+             * been spent, the future tx must be invalid). 
+             * On the other hand, when cleaning mapUtxoConflict after a tx is dealt with
+             * as invalid, we can only remove the tx in the entry b/c the validity of a
+             * future tx spending the UTXO stills depends on the validity of other tx
+             * in the entry.
+             */
+            mapUtxoConflict.erase(iter); // remove the entry for this UTXO 
+        }
     }
 
     /* verify the dependent tx belonging to our group. */
