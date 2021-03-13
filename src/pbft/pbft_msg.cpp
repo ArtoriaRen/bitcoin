@@ -121,6 +121,9 @@ void CPbftBlock::ComputeHash(){
 static bool havePrereqTx(uint32_t height, uint32_t txSeq) {
     CPbft& pbft= *g_pbft;
     CTransactionRef tx = pbft.log[height].ppMsg.pPbftBlock->vReq[txSeq];
+    if (tx->IsCoinBase()) {
+        return false;
+    }
     std::unordered_set<uint256, uint256Hasher> preReqTxs;
     for (const CTxIn& inputUtxo: tx->vin) {
         /* check create-spend dependency. */
@@ -130,7 +133,8 @@ static bool havePrereqTx(uint32_t height, uint32_t txSeq) {
         /* check spend-spend dependency. */
         if (pbft.mapUtxoConflict.find(inputUtxo.prevout) != pbft.mapUtxoConflict.end()) {
             for (uint256& conflictTx: pbft.mapUtxoConflict[inputUtxo.prevout]) {
-                 preReqTxs.emplace(conflictTx);
+                preReqTxs.emplace(conflictTx);
+                std::cout << "UTXO-conflict tx of (" << height << ", " << txSeq << "): " << conflictTx.ToString() << std::endl;
             }
             /* add this tx to de UTXO spending list so that future tx spending this UTXO
              * know this tx is a prerequisite tx for it. */

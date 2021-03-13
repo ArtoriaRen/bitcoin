@@ -390,6 +390,8 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
             if (futureCollabVrfedBlocks.find(curHeight) != futureCollabVrfedBlocks.end()) {
                 /* a queue of tx that are not executed b/c dependency. */
                 std::deque<uint32_t> qDependentTx; 
+                uint32_t localExecutedTxCnt = 0;
+                //std::cout << " future map has block "  << curHeight << std::endl;
                 for (uint i = 0; i < futureCollabVrfedBlocks[curHeight].size(); i++) {
                     CTransactionRef pTx = log[curHeight].ppMsg.pPbftBlock->vReq[i];
                     if (futureCollabVrfedBlocks[curHeight][i] == 1) {
@@ -402,6 +404,7 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
                              * tx.
                              */
                             ExecuteTx(*pTx, curHeight, *pcoinsTip);
+                            localExecutedTxCnt++;
                         } else {
                             /* This tx has some prereq tx and cannot be executed now.
                              * Its execution will be triggerred by the last prereq tx.
@@ -423,7 +426,9 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
                 }
                 futureCollabVrfedBlocks.erase(curHeight);
                 informReplySendingThread(curHeight, qDependentTx);
+                nCompletedTx += localExecutedTxCnt;
             } else {
+                std::cout << " future map DOES'T have block "  << curHeight << std::endl;
                 /* we haven't received collab_vrf results for any tx in the block, add
                  * all tx in the block to the dependency graph as potential prereqTx.
                  */
@@ -557,7 +562,7 @@ void CPbft::executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnCh
         /* add dependent tx to the queue. */
         for (const TxIndexOnChain& depTx: mapTxDependency[pTx->GetHash()]) {
             if (mapPrereqCnt.find(depTx) == mapPrereqCnt.end()){
-                std::cerr << "dependent tx (" << depTx.ToString() << ") is not in mapPrereqCnt" << std::endl;
+                std::cerr << "dependent tx " << depTx.ToString() << " is not in mapPrereqCnt" << std::endl;
                 continue;
             }
             if(--mapPrereqCnt[depTx].remaining_prereq_tx_cnt == 0) {
@@ -649,6 +654,7 @@ bool CPbft::SendCollabMultiBlkMsg(const std::vector<TxIndexOnChain>& validTxs, c
             continue;
 
         CCollabMultiBlockMsg& toSent = otherSubgroupSendQ[i];
+        std::cout << "sending multiBlkCollabMsg to peer " << i << ". valid tx cnt = " << toSent.validTxs.size() << ", invalid tx cnt = " << toSent.invalidTxs.size() << std::endl;
         uint256 hash;
         toSent.getHash(hash);
         privateKey.Sign(hash, toSent.vchSig);
@@ -721,6 +727,7 @@ void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
     std::deque<TxIndexOnChain> localInvalidTxQ;
     if (mapBlockCollabRes.find(msg.height) == mapBlockCollabRes.end()) {
         mapBlockCollabRes.emplace(msg.height, BlockCollabRes(log[msg.height].ppMsg.pPbftBlock->vReq.size()));
+        //std::cout << "create collab msg counters for block "<< msg.height << ", tx count = " << log[msg.height].ppMsg.pPbftBlock->vReq.size() << std::endl;
     }
     
     BlockCollabRes& block_collab_res = mapBlockCollabRes[msg.height];
@@ -763,6 +770,7 @@ void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
     /* prune entries in mapBlockCollabRes */
     if (block_collab_res.collab_msg_full_tx_cnt == block_collab_res.tx_collab_valid_cnt.size()) {
         for(; lastCollabFullBlock <= lastConsecutiveSeqInReplyPhase 
+                && mapBlockCollabRes.find(lastCollabFullBlock + 1) != mapBlockCollabRes.end()
                 && mapBlockCollabRes[lastCollabFullBlock + 1].collab_msg_full_tx_cnt == mapBlockCollabRes[lastCollabFullBlock + 1].tx_collab_valid_cnt.size(); 
                 lastCollabFullBlock++) {
             mapBlockCollabRes.erase(lastCollabFullBlock);
@@ -778,7 +786,7 @@ void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
 }
 
 void CPbft::UpdateTxValidity(const CCollabMultiBlockMsg& msg) {
-    std::cout << "processing collabMulBlk msg for block from peer " << msg.peerID << std::endl;
+    std::cout << "received collabMulBlk msg from peer " << msg.peerID << std::endl;
     if (!checkCollabMulBlkMsg(msg)) 
         return;
 
@@ -810,6 +818,7 @@ void CPbft::UpdateTxValidity(const CCollabMultiBlockMsg& msg) {
         /* prune entries in mapBlockCollabRes */
         if (block_collab_res.collab_msg_full_tx_cnt == block_collab_res.tx_collab_valid_cnt.size()) {
             for(; lastCollabFullBlock <= lastConsecutiveSeqInReplyPhase 
+                    && mapBlockCollabRes.find(lastCollabFullBlock + 1) != mapBlockCollabRes.end()
                     && mapBlockCollabRes[lastCollabFullBlock + 1].collab_msg_full_tx_cnt == mapBlockCollabRes[lastCollabFullBlock + 1].tx_collab_valid_cnt.size(); 
                     lastCollabFullBlock++) {
                 mapBlockCollabRes.erase(lastCollabFullBlock);
@@ -829,6 +838,7 @@ void CPbft::UpdateTxValidity(const CCollabMultiBlockMsg& msg) {
         /* prune entries in mapBlockCollabRes */
         if (block_collab_res.collab_msg_full_tx_cnt == block_collab_res.tx_collab_valid_cnt.size()) {
             for(; lastCollabFullBlock <= lastConsecutiveSeqInReplyPhase 
+                    && mapBlockCollabRes.find(lastCollabFullBlock + 1) != mapBlockCollabRes.end()
                     && mapBlockCollabRes[lastCollabFullBlock + 1].collab_msg_full_tx_cnt == mapBlockCollabRes[lastCollabFullBlock + 1].tx_collab_valid_cnt.size(); 
                     lastCollabFullBlock++) {
                 mapBlockCollabRes.erase(lastCollabFullBlock);
@@ -836,7 +846,8 @@ void CPbft::UpdateTxValidity(const CCollabMultiBlockMsg& msg) {
         }
     }
 
-    
+    std::cout << "processed collabMulBlk msg from peer " << msg.peerID << ", has " << msg.validTxs.size() << " valid tx, " <<  msg.invalidTxs.size() << " invalid tx" << std::endl;
+
     /* add tx in local queues to the global queues*/
     mutex4Q.lock();
     qValidTx[1 - validTxQIdx].insert(qValidTx[1 - validTxQIdx].end(), localValidTxQ.begin(),  localValidTxQ.end());

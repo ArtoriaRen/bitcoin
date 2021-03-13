@@ -46,25 +46,33 @@ extern std::unique_ptr<CConnman> g_connman;
 
 void WaitForShutdown()
 {
-    const struct timespec sleep_length = {0, 10000}; // sleep 10 us
     bool fShutdown = ShutdownRequested();
     CPbft& pbft = *g_pbft;
     bool sentSomething = false;
     // Tell the main threads to shutdown.
     while (!fShutdown)
     {
-	sentSomething |= g_pbft->sendReplies(g_connman.get());
-	if (!sentSomething) {
-	    MilliSleep(10);
-	    //nanosleep(&sleep_length, NULL);
-	}
+        sentSomething = g_pbft->sendReplies(g_connman.get());
+        if (!sentSomething) {
+            MilliSleep(10);
+        }
         fShutdown = ShutdownRequested();
     }
     std::cout << "total executed tx cnt = " << pbft.nCompletedTx << ", still have " << pbft.mapTxDependency.size() << " tx in the dependency graph." << std::endl;
+
     std::cout << " tx in the dependency graph are: " << std::endl;
+    for (auto& p: pbft.mapTxDependency) {
+        std::cout << p.first.ToString() << " has dependent tx:  ";
+        for (TxIndexOnChain& txIdx: p.second) {
+            std::cout <<  txIdx.ToString() << ", ";
+        }
+        std::cout << std::endl;
+    }
     for (auto& p: pbft.mapPrereqCnt) {
         std::cout << p.first.ToString() << ", prereq cnt = " << p.second.remaining_prereq_tx_cnt << ", collab status = " << (int) p.second.collab_status << std::endl;
     }
+
+    std::cout << "mapUtxoConflict.size() = " << pbft.mapUtxoConflict.size() << std::endl;
 
     Interrupt();
 }
