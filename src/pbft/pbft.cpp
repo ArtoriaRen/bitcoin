@@ -308,13 +308,22 @@ CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char e
  * prereq-tx to execute this tx. If the tx is collab-invalid, there is no need to
  * wait for spend-spend-conflict prereq-tx to abort the tx.
  */
-static bool havePrereqTxCollab(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs) {
-    CPbft& pbft = *g_pbft;
-    CTransactionRef tx = pbft.log[height].ppMsg.pPbftBlock->vReq[txSeq];
+bool CPbft::havePrereqTxCollab(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs) {
+    CTransactionRef tx = log[height].ppMsg.pPbftBlock->vReq[txSeq];
     for (const CTxIn& inputUtxo: tx->vin) {
         /* check create-spend dependency. */
-        if (pbft.mapTxDependency.find(inputUtxo.prevout.hash) != pbft.mapTxDependency.end()) {
+        if (mapTxDependency.find(inputUtxo.prevout.hash) != mapTxDependency.end()) {
             preReqTxs.emplace(inputUtxo.prevout.hash);
+        }
+        /* check spend-spend dependency. */
+        if (mapUtxoConflict.find(inputUtxo.prevout) != mapUtxoConflict.end()) {
+            for (uint256& conflictTx: mapUtxoConflict[inputUtxo.prevout]) {
+                preReqTxs.emplace(conflictTx);
+                std::cout << "UTXO-conflict tx of (" << height << ", " << txSeq << "): " << conflictTx.ToString() << std::endl;
+            }
+            /* add this tx to the UTXO spending list so that future tx spending this UTXO
+             * know this tx is a prerequisite tx for it. */
+            mapUtxoConflict[inputUtxo.prevout].emplace_back(tx->GetHash());
         }
     }
     return preReqTxs.size() != 0;
@@ -332,10 +341,10 @@ void CPbft::addTx2GraphAsDependent(uint32_t height, uint32_t txSeq, std::unorder
 
 void CPbft::addTx2GraphAsPrerequiste(CTransactionRef pTx) {
     /* add this tx as a potential prereqTx to the dependency graph. */
-    mapTxDependency.emplace(pTx->GetHash(), std::list<TxIndexOnChain>()); 
+    mapTxDependency.emplace(pTx->GetHash(), std::deque<TxIndexOnChain>()); 
     for (const CTxIn& inputUtxo: pTx->vin) {
         if (mapUtxoConflict.find(inputUtxo.prevout) == mapUtxoConflict.end()) {
-            mapUtxoConflict.emplace(inputUtxo.prevout, std::list<uint256>(1, pTx->GetHash())); // create an entry for this UTXO and put this tx in the list
+            mapUtxoConflict.emplace(inputUtxo.prevout, std::deque<uint256>(1, pTx->GetHash())); // create an entry for this UTXO and put this tx in the list
         }
     }
 }
@@ -527,10 +536,26 @@ void CPbft::executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnCh
             q.push(depTx);
         }
     }
+
     /* remove this prereq tx from dependency graph. */
     mapTxDependency.erase(pTx->GetHash());
-    /* TODO: remove this tx from mapUtxoConflict. This invalidates all tx spending 
-     * at least one common coin with this tx. Must check dependent tx for all these tx.*/
+    /* remove all input UTXO of this tx from mapUtxoConflict. Because mapPrereqCnt 
+     * is only for spend-spend conflict detection instead of tracking (which is done
+     * by the mapTxDependency), there is no need to change the mapPrereqCnt when 
+     * cleaning mapUtxoConflict. */
+    for (const CTxIn& inputUtxo: pTx->vin) {
+        std::unordered_map<COutPoint, std::deque<uint256>, OutpointHasher>::iterator iter = mapUtxoConflict.find(inputUtxo.prevout);
+        assert(iter != mapUtxoConflict.end()); 
+        /* remove the whole entry b/c future tx spending this UTXO can be verified
+         * without waitinf for any tx spending this UTXO (as this UTXO has already
+         * been spent, the future tx must be invalid). 
+         * On the other hand, when cleaning mapUtxoConflict after a tx is dealt with
+         * as invalid, we can only remove the tx in the entry b/c the validity of a
+         * future tx spending the UTXO stills depends on the validity of other tx
+         * in the entry.
+         */
+        mapUtxoConflict.erase(iter); // remove the entry for this UTXO 
+    }
 
     /* verify the dependent tx belonging to our group. */
     while (!q.empty()) {
@@ -545,14 +570,41 @@ void CPbft::executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnCh
                 if (isValid) {
                     validTxs.push_back(curTxIdx);
                     localQExecutedTx.push_back(curTxIdx);
+                    /* remove input UTXOs from mapUtxoConflict */
+                    for (const CTxIn& inputUtxo: pTx->vin) {
+                        std::unordered_map<COutPoint, std::deque<uint256>, OutpointHasher>::iterator iter = mapUtxoConflict.find(inputUtxo.prevout); 
+                        assert(iter != mapUtxoConflict.end()); 
+                        mapUtxoConflict.erase(iter); // remove the entry for this UTXO 
+                    }
                 } else {
                     invalidTxs.push_back(curTxIdx);
+                    /* remove the tx from mapUtxoConflict */
+                    for (const CTxIn& inputUtxo: pTx->vin) {
+                        std::unordered_map<COutPoint, std::deque<uint256>, OutpointHasher>::iterator iter = mapUtxoConflict.find(inputUtxo.prevout);
+                        assert(iter != mapUtxoConflict.end()); 
+                        if (iter->second.size() == 1) {
+                            /* this tx is the only tx spending this UTXO, remove 
+                             * the whole entry. */
+                            mapUtxoConflict.erase(iter); // remove the entry for this UTXO 
+                        } else {
+                            /* there are other tx spending the UTXO, remove only
+                             * the tx in this entry.*/
+                            std::deque<uint256>::iterator deqIter = std::find(iter->second.begin(), iter->second.end(), pTx->GetHash());
+                            iter->second.erase(deqIter);  
+                        }
+                    }
                 }
                 break;
             }
             case 1:
                 /* this is a collab-valid tx, execute it. */
                 ExecuteTx(*pTx, curTxIdx.block_height, *pcoinsTip);
+                /* remove input UTXOs from mapUtxoConflict */
+                for (const CTxIn& inputUtxo: pTx->vin) {
+                    std::unordered_map<COutPoint, std::deque<uint256>, OutpointHasher>::iterator iter = mapUtxoConflict.find(inputUtxo.prevout); 
+                    assert(iter != mapUtxoConflict.end()); 
+                    mapUtxoConflict.erase(iter); // remove the entry for this UTXO 
+                }
                 localQExecutedTx.push_back(curTxIdx);
                 break;
             default:
@@ -768,13 +820,11 @@ void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
     std::cout << "processed collab msg for block " << msg.height << " from peer " << msg.peerID << ". valid tx cnt = " << validTxCntInMsg << ", invalid tx cnt = " << msg.invalidTxs.size() << std::endl;
 
     /* prune entries in mapBlockCollabRes */
-    if (block_collab_res.collab_msg_full_tx_cnt == block_collab_res.tx_collab_valid_cnt.size()) {
-        for(; lastCollabFullBlock <= lastConsecutiveSeqInReplyPhase 
-                && mapBlockCollabRes.find(lastCollabFullBlock + 1) != mapBlockCollabRes.end()
-                && mapBlockCollabRes[lastCollabFullBlock + 1].collab_msg_full_tx_cnt == mapBlockCollabRes[lastCollabFullBlock + 1].tx_collab_valid_cnt.size(); 
-                lastCollabFullBlock++) {
-            mapBlockCollabRes.erase(lastCollabFullBlock);
-        }
+    for(; lastCollabFullBlock <= lastConsecutiveSeqInReplyPhase 
+            && mapBlockCollabRes.find(lastCollabFullBlock + 1) != mapBlockCollabRes.end()
+            && mapBlockCollabRes[lastCollabFullBlock + 1].collab_msg_full_tx_cnt == mapBlockCollabRes[lastCollabFullBlock + 1].tx_collab_valid_cnt.size(); 
+            lastCollabFullBlock++) {
+        mapBlockCollabRes.erase(lastCollabFullBlock);
     }
     
     /* add tx in local queues to the global queues*/
@@ -815,15 +865,6 @@ void CPbft::UpdateTxValidity(const CCollabMultiBlockMsg& msg) {
             /* add the tx to validTxQ */
             localValidTxQ.push_back(std::move(txIdx));
         }
-        /* prune entries in mapBlockCollabRes */
-        if (block_collab_res.collab_msg_full_tx_cnt == block_collab_res.tx_collab_valid_cnt.size()) {
-            for(; lastCollabFullBlock <= lastConsecutiveSeqInReplyPhase 
-                    && mapBlockCollabRes.find(lastCollabFullBlock + 1) != mapBlockCollabRes.end()
-                    && mapBlockCollabRes[lastCollabFullBlock + 1].collab_msg_full_tx_cnt == mapBlockCollabRes[lastCollabFullBlock + 1].tx_collab_valid_cnt.size(); 
-                    lastCollabFullBlock++) {
-                mapBlockCollabRes.erase(lastCollabFullBlock);
-            }
-        }
     }
 
     /* add invalid tx to the BlockCollabRes map*/
@@ -835,15 +876,14 @@ void CPbft::UpdateTxValidity(const CCollabMultiBlockMsg& msg) {
             /* add the tx to inValidTxQ */
             localInvalidTxQ.push_back(std::move(txIdx));
         }
-        /* prune entries in mapBlockCollabRes */
-        if (block_collab_res.collab_msg_full_tx_cnt == block_collab_res.tx_collab_valid_cnt.size()) {
-            for(; lastCollabFullBlock <= lastConsecutiveSeqInReplyPhase 
-                    && mapBlockCollabRes.find(lastCollabFullBlock + 1) != mapBlockCollabRes.end()
-                    && mapBlockCollabRes[lastCollabFullBlock + 1].collab_msg_full_tx_cnt == mapBlockCollabRes[lastCollabFullBlock + 1].tx_collab_valid_cnt.size(); 
-                    lastCollabFullBlock++) {
-                mapBlockCollabRes.erase(lastCollabFullBlock);
-            }
-        }
+    }
+
+    /* prune entries in mapBlockCollabRes */
+    for(; lastCollabFullBlock <= lastConsecutiveSeqInReplyPhase 
+            && mapBlockCollabRes.find(lastCollabFullBlock + 1) != mapBlockCollabRes.end()
+            && mapBlockCollabRes[lastCollabFullBlock + 1].collab_msg_full_tx_cnt == mapBlockCollabRes[lastCollabFullBlock + 1].tx_collab_valid_cnt.size(); 
+            lastCollabFullBlock++) {
+        mapBlockCollabRes.erase(lastCollabFullBlock);
     }
 
     std::cout << "processed collabMulBlk msg from peer " << msg.peerID << ", has " << msg.validTxs.size() << " valid tx, " <<  msg.invalidTxs.size() << " invalid tx" << std::endl;

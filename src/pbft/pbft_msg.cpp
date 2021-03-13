@@ -136,7 +136,7 @@ static bool havePrereqTx(uint32_t height, uint32_t txSeq) {
                 preReqTxs.emplace(conflictTx);
                 std::cout << "UTXO-conflict tx of (" << height << ", " << txSeq << "): " << conflictTx.ToString() << std::endl;
             }
-            /* add this tx to de UTXO spending list so that future tx spending this UTXO
+            /* add this tx to the UTXO spending list so that future tx spending this UTXO
              * know this tx is a prerequisite tx for it. */
             pbft.mapUtxoConflict[inputUtxo.prevout].emplace_back(tx->GetHash());
         }
@@ -149,10 +149,10 @@ static bool havePrereqTx(uint32_t height, uint32_t txSeq) {
         }
         pbft.mapPrereqCnt.emplace(TxIndexOnChain(height, txSeq), PendingTxStatus(preReqTxs.size(), 2));
         /* add this tx as a potential prereqTx to the dependency graph. */
-        pbft.mapTxDependency.emplace(tx->GetHash(), std::list<TxIndexOnChain>()); 
+        pbft.mapTxDependency.emplace(tx->GetHash(), std::deque<TxIndexOnChain>()); 
         for (const CTxIn& inputUtxo: tx->vin) {
             if (pbft.mapUtxoConflict.find(inputUtxo.prevout) == pbft.mapUtxoConflict.end()) {
-                pbft.mapUtxoConflict.emplace(inputUtxo.prevout, std::list<uint256>(1, tx->GetHash())); // create an entry for this UTXO and put this tx in the list
+                pbft.mapUtxoConflict.emplace(inputUtxo.prevout, std::deque<uint256>(1, tx->GetHash())); // create an entry for this UTXO and put this tx in the list
             }
         }
         return true;

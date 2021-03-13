@@ -172,7 +172,7 @@ public:
      * Also used to decide if a tx should be added to the dependency graph
      * due to create-spend dependency.
      */
-    std::unordered_map<uint256, std::list<TxIndexOnChain>, uint256Hasher> mapTxDependency;
+    std::unordered_map<uint256, std::deque<TxIndexOnChain>, uint256Hasher> mapTxDependency;
     /* prerequite tx count map.
      * Key is an unverified tx; Value is the count of the remaining 
      * not-yet-verified prerequite tx. 
@@ -184,7 +184,7 @@ public:
      * Used to detect if a tx should be added to the dependency graph due to 
      * spend-spend dependency. 
      */
-    std::unordered_map<COutPoint, std::list<uint256>, OutpointHasher> mapUtxoConflict;
+    std::unordered_map<COutPoint, std::deque<uint256>, OutpointHasher> mapUtxoConflict;
     
     /* key is block height, value is the collab_valid status of this block. 
      * Used for avoiding process more than necessary Collab Message for a tx.
@@ -245,6 +245,7 @@ public:
     CPbftMessage assembleMsg(const uint32_t seq); 
     CReply assembleReply(const uint32_t seq, const uint32_t idx, const char exe_res) const;
     bool checkMsg(CPbftMessage* msg);
+    bool havePrereqTxCollab(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs);
     void addTx2GraphAsDependent(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs);
     void addTx2GraphAsPrerequiste(CTransactionRef pTx);
     void executeLog(struct timeval& start_process_first_block);
