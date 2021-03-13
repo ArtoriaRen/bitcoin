@@ -28,7 +28,7 @@ int32_t nWarmUpBlocks;
 bool testStarted = false;
 int32_t reqWaitTimeout = 1000;
 
-CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastConsecutiveSeqInReplyPhase(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalVerifyTime(0), totalVerifyCnt(0), totalExeTime(0), lastBlockVerifiedThisGroup(-1), lastBlockValidSentSeq(-1), lastReplySentSeq(-1), lastCollabFullBlock(-1), qValidTx(2), qInvalidTx(2), validTxQIdx(0), invalidTxQIdx(0), otherSubgroupSendQ(groupSize), notEnoughReqStartTime(std::chrono::milliseconds::zero()), privateKey(CKey()) {
+CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastConsecutiveSeqInReplyPhase(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalVerifyTime(0), totalVerifyCnt(0), totalExeTime(0), lastBlockVerifiedThisGroup(-1), lastBlockValidSentSeq(-1), lastReplySentSeq(-1), lastCollabFullBlock(-1), qValidTx(2), qInvalidTx(2), validTxQIdx(0), invalidTxQIdx(0), otherSubgroupSendQ(groupSize), notEnoughReqStartTime(std::chrono::milliseconds::zero()), qNotInitialExecutedTx(2), qExecutedTx(2), notExecutedQIdx(0), executedQIdx(0), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
@@ -340,6 +340,13 @@ void CPbft::addTx2GraphAsPrerequiste(CTransactionRef pTx) {
     }
 }
 
+void CPbft::informReplySendingThread(uint32_t height, std::deque<uint32_t>& qDependentTx) {
+    /* inform the reply sending thread of what tx is not executed. */
+    mutex4ExecutedTx.lock();
+    qNotInitialExecutedTx[notExecutedQIdx].emplace_back(height, std::move(qDependentTx));
+    mutex4ExecutedTx.unlock();
+}
+
 void CPbft::executeLog(struct timeval& start_process_first_block) {
     /* 1. Verify and execute prereq-clear tx in sequece and in the granularty 
      * of blocks for blocks belonging to our subgroup.
@@ -381,6 +388,8 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
              * valid tx, and add not yet verified tx to the dependency graph.
              */
             if (futureCollabVrfedBlocks.find(curHeight) != futureCollabVrfedBlocks.end()) {
+                /* a queue of tx that are not executed b/c dependency. */
+                std::deque<uint32_t> qDependentTx; 
                 for (uint i = 0; i < futureCollabVrfedBlocks[curHeight].size(); i++) {
                     CTransactionRef pTx = log[curHeight].ppMsg.pPbftBlock->vReq[i];
                     if (futureCollabVrfedBlocks[curHeight][i] == 1) {
@@ -399,16 +408,21 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
                              */
                             addTx2GraphAsDependent(curHeight, i, preReqTxs);
                             addTx2GraphAsPrerequiste(pTx);
+                            /* We cannot execute the tx b/c of dependency in the our group*/
+                            qDependentTx.push_back(i);
                         }
                     } else if (futureCollabVrfedBlocks[curHeight][i] == 0) {
                         /* not-yet-verified tx
                          * add this tx as a potential prereqTx to the dependency graph. 
                          */
                         addTx2GraphAsPrerequiste(pTx);
+                        /* We cannot execute the tx b/c of dependency in the other group*/
+                        qDependentTx.push_back(i);
                     } /* for invalid tx, there is nothing to do because the tx is not
                        * yet added to the dependency graph. */
                 }
                 futureCollabVrfedBlocks.erase(curHeight);
+                informReplySendingThread(curHeight, qDependentTx);
             } else {
                 /* we haven't received collab_vrf results for any tx in the block, add
                  * all tx in the block to the dependency graph as potential prereqTx.
@@ -491,14 +505,15 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
 
 void CPbft::executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnChain>& validTxs, std::vector<TxIndexOnChain>& invalidTxs) {
     std::queue<TxIndexOnChain> q;
+    std::deque<TxIndexOnChain> localQExecutedTx;
     /* execute this prereq tx */
     CTransactionRef pTx = log[txIdx.block_height].ppMsg.pPbftBlock->vReq[txIdx.offset_in_block];
     ExecuteTx(*pTx, txIdx.block_height, *pcoinsTip);
-    nCompletedTx++;
+    localQExecutedTx.push_back(std::move(txIdx));
     /* add dependent tx to the queue. */
     for (const TxIndexOnChain& depTx: mapTxDependency[pTx->GetHash()]) {
         if (mapPrereqCnt.find(depTx) == mapPrereqCnt.end()){
-            std::cerr << "dependent tx (" << depTx.ToString() << ") is not in mapPrereqCnt" << std::endl;
+            std::cerr << "dependent tx " << depTx.ToString() << " is not in mapPrereqCnt" << std::endl;
             continue;
         }
         if(--mapPrereqCnt[depTx].remaining_prereq_tx_cnt == 0) {
@@ -524,8 +539,7 @@ void CPbft::executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnCh
                 bool isValid = VerifyTx(*pTx, curTxIdx.block_height, *pcoinsTip);
                 if (isValid) {
                     validTxs.push_back(curTxIdx);
-                    nCompletedTx++;
-                    sendReplies(curTxIdx.block_height, curTxIdx.offset_in_block, 'y');
+                    localQExecutedTx.push_back(curTxIdx);
                 } else {
                     invalidTxs.push_back(curTxIdx);
                 }
@@ -534,6 +548,7 @@ void CPbft::executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnCh
             case 1:
                 /* this is a collab-valid tx, execute it. */
                 ExecuteTx(*pTx, curTxIdx.block_height, *pcoinsTip);
+                localQExecutedTx.push_back(curTxIdx);
                 break;
             default:
                 std::cerr << "invalid collab_status = " << mapPrereqCnt[curTxIdx].collab_status << std::endl;
@@ -555,6 +570,12 @@ void CPbft::executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnCh
         mapTxDependency.erase(pTx->GetHash());
         mapPrereqCnt.erase(curTxIdx);
     }
+
+    nCompletedTx += localQExecutedTx.size();
+    /* inform the reply sending thread of what tx has been executed. */
+    mutex4ExecutedTx.lock();
+    qExecutedTx[executedQIdx].insert(qExecutedTx[executedQIdx].end(), localQExecutedTx.begin(), localQExecutedTx.end());
+    mutex4ExecutedTx.unlock();
 }
 
 bool CPbft::checkCollabMsg(const CCollabMessage& msg) {
@@ -635,6 +656,52 @@ bool CPbft::SendCollabMultiBlkMsg(const std::vector<TxIndexOnChain>& validTxs, c
         g_connman->PushMessage(peers[i], msgMaker.Make(NetMsgType::COLLAB_MULTI_BLK, toSent));
         toSent.clear();
     }
+
+    return true;
+}
+
+bool CPbft::sendReplies(CConnman* connman) {
+    if (qNotInitialExecutedTx[1 - notExecutedQIdx].empty() && qExecutedTx[1 - executedQIdx].empty()) {
+        /* swap queue with the log-exe thread if possible. */
+        bool bothQEmpty = true;
+        if (mutex4ExecutedTx.try_lock()) {
+            /* switch the queues if the queue used by log-exe thread has some tx. */
+            if (!qNotInitialExecutedTx[notExecutedQIdx].empty()) {
+                notExecutedQIdx = 1 - notExecutedQIdx; 
+                bothQEmpty = false;
+            }
+            if (!qExecutedTx[executedQIdx].empty()) {
+                executedQIdx = 1 - executedQIdx; 
+                bothQEmpty = false;
+            }
+            mutex4ExecutedTx.unlock();
+            if (bothQEmpty)
+                return false;
+        } else {
+            return false;
+        }
+    }
+
+    const CPbft& pbft = *g_pbft;
+    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+    for (InitialBlockExecutionStatus& p: qNotInitialExecutedTx[1 - notExecutedQIdx]) {
+        /* send reply for all tx in the block except for tx in the InitialExecutedTx list. */
+        for (uint i = 0; i < log[p.height].ppMsg.pPbftBlock->vReq.size(); i++) {
+            if (i == p.dependentTxs.front()) {
+                p.dependentTxs.pop_front();
+            } else {
+                CReply reply = pbft.assembleReply(p.height, i, 'y');
+                connman->PushMessage(pbft.client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
+            }
+        }
+    } 
+    qNotInitialExecutedTx[1 - notExecutedQIdx].clear();
+
+    for (const TxIndexOnChain& txIdx: qExecutedTx[1 - executedQIdx]) {
+        CReply reply = pbft.assembleReply(txIdx.block_height, txIdx.offset_in_block, 'y');
+        connman->PushMessage(pbft.client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
+    }
+    qExecutedTx[1 - executedQIdx].clear();
 
     return true;
 }
@@ -906,5 +973,8 @@ void CPbft::setReqWaitTimer(){
 
 PendingTxStatus::PendingTxStatus(): remaining_prereq_tx_cnt(0), collab_status(0) { }
 PendingTxStatus::PendingTxStatus(uint32_t remaining_prereq_tx_cnt_in, char collab_status_in): remaining_prereq_tx_cnt(remaining_prereq_tx_cnt_in), collab_status(collab_status_in) { }
+
+InitialBlockExecutionStatus::InitialBlockExecutionStatus(){ };
+InitialBlockExecutionStatus::InitialBlockExecutionStatus(uint32_t heightIn, std::deque<uint32_t>&& dependentTxsIn): height(heightIn), dependentTxs(dependentTxsIn){ };
 
 std::unique_ptr<CPbft> g_pbft;

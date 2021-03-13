@@ -108,6 +108,14 @@ public:
     PendingTxStatus(uint32_t remaining_prereq_tx_cnt_in, char collab_status_in);
 };
 
+class InitialBlockExecutionStatus {
+public:
+    uint32_t height;
+    std::deque<uint32_t> dependentTxs;
+    InitialBlockExecutionStatus();
+    InitialBlockExecutionStatus(uint32_t heightIn, std::deque<uint32_t>&& dependentTxs);
+};
+
 class CPbft{
 public:
     // TODO: may need to recycle log slots for throughput test. Consider deque.
@@ -190,7 +198,7 @@ public:
     std::deque<std::deque<TxIndexOnChain>> qValidTx; 
     std::deque<std::deque<TxIndexOnChain>> qInvalidTx; 
     /* which queue is currently used by the log-exe thread. The other one is used
-     * by the net_handling thread. The net_handling thread flips the number 
+     * by the net_handling thread. The log-exe thread flips the indice 
      * when the  queue used by the log-exe thread is empty and the one used 
      * by the net_handling thread is not empty. 
      */
@@ -204,6 +212,24 @@ public:
     std::map<uint32_t, std::deque<int32_t>> mapBlockOtherSubgroup;
 
     std::chrono::milliseconds notEnoughReqStartTime;
+
+    /* a pair of map for swapping between log-exe and bitcoind threads. 
+     * in a map, key is the block height, value is a queue of not executed
+     * tx in the intial execution of the block (batched execution.) 
+     */
+    std::deque<std::deque<InitialBlockExecutionStatus>> qNotInitialExecutedTx; 
+    /* a pair of deque for swapping between log-exe and bitcoind threads.
+     * every tx in the deque is executed from the dependency graph. */
+    std::deque<std::deque<TxIndexOnChain>> qExecutedTx; 
+    /* which queue is currently used by the log-exe thread. The other one is used
+     * by the bitcoind thread. The bitcoind thread flips the indice 
+     * when the  queue used by the log-exe thread is empty and the one used 
+     * by the net_handling thread is not empty. 
+     */
+    uint32_t notExecutedQIdx;
+    uint32_t executedQIdx; 
+    /* guard the queues and the indice. */
+    std::mutex mutex4ExecutedTx;
 
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
@@ -223,6 +249,7 @@ public:
     void addTx2GraphAsPrerequiste(CTransactionRef pTx);
     void executeLog(struct timeval& start_process_first_block);
     void executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnChain>& validTxs, std::vector<TxIndexOnChain>& invalidTxs);
+    void informReplySendingThread(uint32_t height, std::deque<uint32_t>& qDependentTx);
     /* when received collab msg from the other subgroup, update our block valid bit.
      * Called by the net_processing theread. */
     void UpdateTxValidity(const CCollabMessage& msg);
@@ -231,16 +258,17 @@ public:
     bool checkCollabMulBlkMsg(const CCollabMultiBlockMsg& msg);
     bool SendCollabMsg(uint32_t height, std::vector<char>& validTxs, std::vector<uint32_t>& invalidTxs);
     bool SendCollabMultiBlkMsg(const std::vector<TxIndexOnChain>& validTxs, const std::vector<TxIndexOnChain>& invalidTxs); 
+    bool sendReplies(CConnman* connman);
 
     bool timeoutWaitReq();
     void setReqWaitTimer();
     inline void printQueueSize(){
-	    /* log queue size if we have reached the period. */
-	    std::chrono::milliseconds current = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
-	    if (current - lastQSizePrintTime > std::chrono::milliseconds(QSizePrintPeriod)) {
-		std::cout << "queue size log, " << current.count() << "," << reqQueue.size() << std::endl; // time stamp is in milliseconds. TODO: change is to seconds for a long throughput test.
-		lastQSizePrintTime = current;
-	    }
+        /* log queue size if we have reached the period. */
+        std::chrono::milliseconds current = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
+        if (current - lastQSizePrintTime > std::chrono::milliseconds(QSizePrintPeriod)) {
+            std::cout << "queue size log, " << current.count() << "," << reqQueue.size() << std::endl; // time stamp is in milliseconds. TODO: change is to seconds for a long throughput test.
+            lastQSizePrintTime = current;
+        }
     }
 
     inline bool isLeader(){
