@@ -245,7 +245,7 @@ public:
     CPbftMessage assembleMsg(const uint32_t seq); 
     CReply assembleReply(const uint32_t seq, const uint32_t idx, const char exe_res) const;
     bool checkMsg(CPbftMessage* msg);
-    bool havePrereqTxCollab(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs);
+    bool havePrereqTxCollab(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs, bool alreadyInGraph);
     void addTx2GraphAsDependent(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs);
     void addTx2GraphAsPrerequiste(CTransactionRef pTx);
     void executeLog(struct timeval& start_process_first_block);

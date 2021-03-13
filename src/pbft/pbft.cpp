@@ -308,7 +308,7 @@ CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char e
  * prereq-tx to execute this tx. If the tx is collab-invalid, there is no need to
  * wait for spend-spend-conflict prereq-tx to abort the tx.
  */
-bool CPbft::havePrereqTxCollab(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs) {
+bool CPbft::havePrereqTxCollab(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs, bool alreadyInGraph) {
     CTransactionRef tx = log[height].ppMsg.pPbftBlock->vReq[txSeq];
     for (const CTxIn& inputUtxo: tx->vin) {
         /* check create-spend dependency. */
@@ -316,14 +316,27 @@ bool CPbft::havePrereqTxCollab(uint32_t height, uint32_t txSeq, std::unordered_s
             preReqTxs.emplace(inputUtxo.prevout.hash);
         }
         /* check spend-spend dependency. */
-        if (mapUtxoConflict.find(inputUtxo.prevout) != mapUtxoConflict.end()) {
-            for (uint256& conflictTx: mapUtxoConflict[inputUtxo.prevout]) {
-                preReqTxs.emplace(conflictTx);
-                std::cout << "UTXO-conflict tx of (" << height << ", " << txSeq << "): " << conflictTx.ToString() << std::endl;
+        if (!alreadyInGraph) {
+            /* The tx is not in the graph yet, so it is not added to the mapUtxoConflict.*/
+            if (mapUtxoConflict.find(inputUtxo.prevout) != mapUtxoConflict.end()) {
+                preReqTxs.insert(mapUtxoConflict[inputUtxo.prevout].begin(), mapUtxoConflict[inputUtxo.prevout].end());
+                std::cout << "(" << height << ", " << txSeq << ") has " << mapUtxoConflict[inputUtxo.prevout].size() << " UTXO-conflict tx" << std::endl;
             }
-            /* add this tx to the UTXO spending list so that future tx spending this UTXO
-             * know this tx is a prerequisite tx for it. */
-            mapUtxoConflict[inputUtxo.prevout].emplace_back(tx->GetHash());
+        } else {
+            /* The tx is already in the graph yet, be careful not to add itself as a prereq
+             * tx when going through the mapUtxoConflict. */
+            if (mapUtxoConflict.find(inputUtxo.prevout) == mapUtxoConflict.end() || mapUtxoConflict[inputUtxo.prevout].size() == 1) {
+                /* The UTXO has been spent by other tx, 
+                 * or this tx is the only tx spending this UTXO. */
+                continue;
+            } else {
+                for (uint256& conflictTx: mapUtxoConflict[inputUtxo.prevout]) {
+                    if (conflictTx != tx->GetHash()) {
+                        preReqTxs.emplace(conflictTx);
+                        std::cout << "UTXO-conflict tx of (" << height << ", " << txSeq << "): " << conflictTx.ToString() << std::endl;
+                    }
+                }
+            }
         }
     }
     return preReqTxs.size() != 0;
@@ -345,6 +358,10 @@ void CPbft::addTx2GraphAsPrerequiste(CTransactionRef pTx) {
     for (const CTxIn& inputUtxo: pTx->vin) {
         if (mapUtxoConflict.find(inputUtxo.prevout) == mapUtxoConflict.end()) {
             mapUtxoConflict.emplace(inputUtxo.prevout, std::deque<uint256>(1, pTx->GetHash())); // create an entry for this UTXO and put this tx in the list
+        } else {
+            /* add this tx to the UTXO spending list so that future tx spending this UTXO
+             * know this tx is a prerequisite tx for it. */
+            mapUtxoConflict[inputUtxo.prevout].emplace_back(pTx->GetHash());
         }
     }
 }
@@ -406,7 +423,7 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
                     if (futureCollabVrfedBlocks[curHeight][i] == 1) {
                         /* valid tx */
                         std::unordered_set<uint256, uint256Hasher> preReqTxs;
-                        if (!havePrereqTxCollab(curHeight, i, preReqTxs)) {
+                        if (!havePrereqTxCollab(curHeight, i, preReqTxs, false)) {
                             /* this tx is prereq-clear.execute it. 
                              * Because this tx has never been added to the dependency 
                              * graph, we can execute it without checking its dependent
@@ -473,7 +490,7 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
                 /* backlog collab res, execute tx.*/
                 CTransactionRef pTx = log[txIdx.block_height].ppMsg.pPbftBlock->vReq[txIdx.offset_in_block];
                 std::unordered_set<uint256, uint256Hasher> preReqTxs;
-                if (!havePrereqTxCollab(txIdx.block_height, txIdx.offset_in_block, preReqTxs)) {
+                if (!havePrereqTxCollab(txIdx.block_height, txIdx.offset_in_block, preReqTxs, true)) {
                     /* this tx is prereq-clear. execute it. */
                     executePrereqTx(txIdx, validTxsMulBlk, invalidTxsMulBlk);
                 } else {
