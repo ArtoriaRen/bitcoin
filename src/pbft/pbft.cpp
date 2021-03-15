@@ -403,22 +403,32 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
              * Verify and Execute prerequiste-clear tx in this block.
              * (The VerifyTx call includes executing tx.) 
              */
+            struct timeval totalVrfTime = {0, 0};
+            struct timeval collabMsgSendingTime = {0, 0};
             gettimeofday(&start_time, NULL);
             std::vector<char> validTxs((block.vReq.size() + 7) >> 3); // +7 for ceiling
             std::vector<uint32_t> invalidTxs;
             std::cout << "verifying block " << curHeight << " of size " << block.vReq.size() << std::endl;
             uint32_t validTxCnt = block.Verify(curHeight, *pcoinsTip, validTxs, invalidTxs);
             gettimeofday(&end_time, NULL);
+            totalVrfTime += end_time - start_time;
             lastBlockVerifiedThisGroup++;
             nCompletedTx += validTxCnt;
+            gettimeofday(&start_time, NULL);
             SendCollabMsg(curHeight, validTxs, invalidTxs);
-            std::cout << "Average verify time of block " << curHeight << ": " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / validTxCnt << " us/req" << ". valid tx cnt = " << validTxCnt << ". invalid tx cnt = " << invalidTxs.size() << std::endl;
+            gettimeofday(&end_time, NULL);
+            collabMsgSendingTime += end_time - start_time;
+            std::cout << "Average verify time of block " << curHeight << ": " << (totalVrfTime.tv_sec * 1000000 + totalVrfTime.tv_usec) / validTxCnt << " us/req" << ". valid tx cnt = " << validTxCnt << ". invalid tx cnt = " << invalidTxs.size() << std::endl;
             logServerSideThruput(start_process_first_block, end_time, curHeight);
         } else {
             /* This is a block of the other subgroup.
              * Check if we have collab_vrf results for this block. If so, execute
              * valid tx, and add not yet verified tx to the dependency graph.
              */
+
+            struct timeval totalExeTime = {0, 0};
+            struct timeval totalDependencyCheckTime = {0, 0};
+            struct timeval totalAdd2GraphTime = {0, 0};
             if (futureCollabVrfedBlocks.find(curHeight) != futureCollabVrfedBlocks.end()) {
                 /* a queue of tx that are not executed b/c dependency. */
                 std::deque<uint32_t> qDependentTx; 
@@ -429,20 +439,30 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
                     if (futureCollabVrfedBlocks[curHeight][i] == 1) {
                         /* valid tx */
                         std::unordered_set<uint256, uint256Hasher> preReqTxs;
-                        if (!havePrereqTxCollab(curHeight, i, preReqTxs, false)) {
+                        gettimeofday(&start_time, NULL);
+                        bool hasPrereqTx = havePrereqTxCollab(curHeight, i, preReqTxs, false);
+                        gettimeofday(&end_time, NULL);
+                        totalDependencyCheckTime += end_time - start_time;
+                        if (!hasPrereqTx ) {
                             /* this tx is prereq-clear.execute it. 
                              * Because this tx has never been added to the dependency 
                              * graph, we can execute it without checking its dependent
                              * tx.
                              */
+                            gettimeofday(&start_time, NULL);
                             ExecuteTx(*pTx, curHeight, *pcoinsTip);
+                            gettimeofday(&end_time, NULL);
+                            totalExeTime += end_time - start_time;
                             localExecutedTxCnt++;
                         } else {
                             /* This tx has some prereq tx and cannot be executed now.
                              * Its execution will be triggerred by the last prereq tx.
                              */
+                            gettimeofday(&start_time, NULL);
                             addTx2GraphAsDependent(curHeight, i, preReqTxs);
                             addTx2GraphAsPrerequiste(pTx);
+                            gettimeofday(&end_time, NULL);
+                            totalAdd2GraphTime += end_time - start_time;
                             /* We cannot execute the tx b/c of dependency in the our group*/
                             qDependentTx.push_back(i);
                         }
@@ -450,12 +470,16 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
                         /* not-yet-verified tx
                          * add this tx as a potential prereqTx to the dependency graph. 
                          */
+                        gettimeofday(&start_time, NULL);
                         addTx2GraphAsPrerequiste(pTx);
+                        gettimeofday(&end_time, NULL);
+                        totalAdd2GraphTime += end_time - start_time;
                         /* We cannot execute the tx b/c of dependency in the other group*/
                         qDependentTx.push_back(i);
                     } /* for invalid tx, there is nothing to do because the tx is not
                        * yet added to the dependency graph. */
                 }
+                std::cout << "Collab processing block " << curHeight << ": average execution time = " << (totalExeTime.tv_sec * 1000000 + totalExeTime.tv_usec) / localExecutedTxCnt << " us/req, average dependency checking time = " << (totalDependencyCheckTime.tv_sec + totalDependencyCheckTime.tv_usec) /futureCollabVrfedBlocks[curHeight].size() << " us/req, average add to graph time = " << (totalAdd2GraphTime.tv_sec + totalAdd2GraphTime.tv_usec) / qDependentTx.size() << std::endl;
                 futureCollabVrfedBlocks.erase(curHeight);
                 informReplySendingThread(curHeight, qDependentTx);
                 nCompletedTx += localExecutedTxCnt;

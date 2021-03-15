@@ -165,13 +165,24 @@ uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view, std::vector<ch
     uint32_t validTxCnt = 0;
     /* a queue of tx that are not executed b/c dependency. */
     std::deque<uint32_t> qDependentTx; 
+    struct timeval start_time, end_time;
+    struct timeval totalVrfTime = {0, 0};
+    struct timeval totalDependencyCheckTime = {0, 0};
     for (uint i = 0; i < vReq.size(); i++) {
         /* the block is not yet collab verified. We have to verify tx.*/
-        if (havePrereqTx(seq, i)) {
+        gettimeofday(&start_time, NULL);
+        bool hasPrereqTx = havePrereqTx(seq, i);
+        gettimeofday(&end_time, NULL);
+        totalDependencyCheckTime += end_time - start_time;
+        if (hasPrereqTx) {
             qDependentTx.push_back(i);
             continue;
         }
-        if (VerifyTx(*vReq[i], seq, view)) {
+        gettimeofday(&start_time, NULL);
+        bool isValid = VerifyTx(*vReq[i], seq, view);
+        gettimeofday(&end_time, NULL);
+        totalVrfTime += end_time - start_time;
+        if (isValid) {
             char bit = 1 << (i % 8); 
             validTxs[i >> 3] |= bit; 
             validTxCnt++;
@@ -179,6 +190,7 @@ uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view, std::vector<ch
             invalidTxs.push_back(i);
         }
     }
+    std::cout << "Average verify time of block " << seq << ": " << (totalVrfTime.tv_sec * 1000000 + totalVrfTime.tv_usec) / (vReq.size() - qDependentTx.size()) << " us/req" << ". valid tx cnt = " << validTxCnt << ". invalid tx cnt = " << invalidTxs.size() << ", average dependency checking time = " << (totalDependencyCheckTime.tv_sec * 1000000 + totalDependencyCheckTime.tv_usec)/vReq.size() << std::endl;
     /* inform the reply sending thread of what tx is not executed. 
      * We cannot include invalid tx because all reply are hard-coded to 
      * positive execution results.

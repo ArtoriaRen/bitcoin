@@ -298,6 +298,37 @@ private:
     CKey privateKey;
 };
 
+inline struct timeval operator+(const struct timeval& t0, const struct timeval& t1) {
+    struct timeval t = {t0.tv_sec + t1.tv_sec, t0.tv_usec + t1.tv_usec};
+    if (t.tv_usec >= 1000000) { // carry needed
+        t.tv_sec++;
+        t.tv_usec -= 1000000;
+    }
+    return t;
+}
+
+inline struct timeval operator-(const struct timeval& t0, const struct timeval& t1) {
+    struct timeval t = {t0.tv_sec - t1.tv_sec, t0.tv_usec - t1.tv_usec};
+    if (t.tv_usec < 0) { // borrow needed
+        t.tv_sec--;
+        t.tv_usec += 1000000;
+    }
+    return t;
+}
+
+inline struct timeval operator+=(struct timeval& t0, const struct timeval& t1) {
+    t0 = t0 + t1;
+    return t0;
+}
+
+//void operator+=(struct timeval& t0, const struct timeval& t1) {
+//    t0 = t0 + t1;
+//}
+//
+//void operator+=(struct timeval& t0, const struct timeval&& t1) {
+//    t0 = t0 + t1;
+//}
+
 void ThreadConsensusLogExe();
 
 extern std::unique_ptr<CPbft> g_pbft;
