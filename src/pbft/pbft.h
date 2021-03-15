@@ -161,7 +161,7 @@ public:
      * This is used by the log-exe thread to decide what tx of an other-subgroup 
      * block should be added to the dependency graph.
      */
-    std::map<uint32_t, std::deque<char>> initialCollabVrfedBlocks;
+    std::map<uint32_t, std::deque<char>> futureCollabVrfedBlocks;
     int lastBlockVerifiedOtherSubgroup;
     int lastBlockValidSentSeq; // the highest block has been verified by our subgroup and announced to the other group.
     int lastReplySentSeq; // the highest block we have sent reply to the client. Used only by the msg_hand thread. 
@@ -245,11 +245,11 @@ public:
     CPbftMessage assembleMsg(const uint32_t seq); 
     CReply assembleReply(const uint32_t seq, const uint32_t idx, const char exe_res) const;
     bool checkMsg(CPbftMessage* msg);
-    bool havePrereqTxCollab(CTransactionRef tx, std::unordered_set<uint256, uint256Hasher>& preReqTxs, bool alreadyInGraph);
+    bool havePrereqTxCollab(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs, bool alreadyInGraph);
     void addTx2GraphAsDependent(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs);
     void addTx2GraphAsPrerequiste(CTransactionRef pTx);
     void executeLog(struct timeval& start_process_first_block);
-    void executePrereqTx(const CTransactionRef pPrereqTx, const TxIndexOnChain& txIdx, std::vector<TxIndexOnChain>& validTxs, std::vector<TxIndexOnChain>& invalidTxs);
+    void executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnChain>& validTxs, std::vector<TxIndexOnChain>& invalidTxs);
     void informReplySendingThread(uint32_t height, std::deque<uint32_t>& qDependentTx);
     /* when received collab msg from the other subgroup, update our block valid bit.
      * Called by the net_processing theread. */
