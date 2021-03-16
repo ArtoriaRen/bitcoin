@@ -418,7 +418,7 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
             SendCollabMsg(curHeight, validTxs, invalidTxs);
             gettimeofday(&end_time, NULL);
             collabMsgSendingTime += end_time - start_time;
-            std::cout << "Average verify time of block " << curHeight << ": " << (totalVrfTime.tv_sec * 1000000 + totalVrfTime.tv_usec) / validTxCnt << " us/req" << ". valid tx cnt = " << validTxCnt << ". invalid tx cnt = " << invalidTxs.size() << std::endl;
+            std::cout << "Send Collab msg for block " << curHeight << "takes " << (collabMsgSendingTime.tv_sec * 1000000 + collabMsgSendingTime.tv_usec) << " us. valid tx cnt = " << validTxCnt << ". invalid tx cnt = " << invalidTxs.size() << std::endl;
             logServerSideThruput(start_process_first_block, end_time, curHeight);
         } else {
             /* This is a block of the other subgroup.
@@ -536,7 +536,10 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
     }
 
     if (!validTxsMulBlk.empty() || !invalidTxsMulBlk.empty()) {
+        gettimeofday(&start_time, NULL);
         SendCollabMultiBlkMsg(validTxsMulBlk, invalidTxsMulBlk);
+        gettimeofday(&end_time, NULL);
+        std::cout << "Send CollabMulBlk msg takes " << (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec) << " us. valid tx cnt = " << validTxsMulBlk.size() << std::endl;
     }
 
     /* check if the pointers of queue pairs should be switched. */
