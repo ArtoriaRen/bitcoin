@@ -321,14 +321,6 @@ inline struct timeval operator+=(struct timeval& t0, const struct timeval& t1) {
     return t0;
 }
 
-//void operator+=(struct timeval& t0, const struct timeval& t1) {
-//    t0 = t0 + t1;
-//}
-//
-//void operator+=(struct timeval& t0, const struct timeval&& t1) {
-//    t0 = t0 + t1;
-//}
-
 void ThreadConsensusLogExe();
 
 extern std::unique_ptr<CPbft> g_pbft;

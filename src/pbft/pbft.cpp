@@ -988,13 +988,13 @@ void CPbft::WarmUpMemoryCache() {
     /*TODO: may not need warm up anymore if using SSD, but still, they are slower
      * than memory. The goal of warm up is to load UTXOs to be spent into memory,
      * and this match the practical use case. */
-//    CCoinsViewCache view_tenta(pcoinsTip.get());
-//    readBlocksFromFile(nWarmUpBlocks);
-//    for (int i = 0; i < nWarmUpBlocks; i++) {
-//        log[i].ppMsg.pPbftBlock->Verify(i, view_tenta);
-//        /* Discard the block to prepare for performance test. */
-//        log[i].ppMsg.pPbftBlock.reset();
-//    }
+    CCoinsViewCache view_tenta(pcoinsTip.get());
+    readBlocksFromFile(nWarmUpBlocks);
+    for (int i = 0; i < nWarmUpBlocks; i++) {
+        log[i].ppMsg.pPbftBlock->Execute(i, view_tenta);
+        /* Discard the block to prepare for performance test. */
+        log[i].ppMsg.pPbftBlock.reset();
+    }
 }
 
 void ThreadConsensusLogExe() {
