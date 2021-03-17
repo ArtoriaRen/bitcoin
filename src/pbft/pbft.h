@@ -65,7 +65,7 @@ public:
     // pbft log. The index is sequence number.
     std::vector<CPbftLogEntry> log;
     uint32_t nextSeq; // next available seq that has not been attached to any client request.
-    int lastExecutedSeq; 
+    volatile int lastExecutedSeq; 
     CPubKey myPubKey;
 
     CNode* client; // pbft client

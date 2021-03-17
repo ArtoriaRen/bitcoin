@@ -305,7 +305,7 @@ int CPbft::executeLog(struct timeval& start_process_first_block) {
 	gettimeofday(&end_time, NULL);
 	lastExecutedSeq = i;
 	nCompletedTx += log[i].txCnt;
-	std::cout << "Average combined verify and execution time of block " << i << ": " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / log[i].txCnt << " us/req" << std::endl;
+	std::cout << "Average combined verify and execution time of block " << i << ": " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / log[i].txCnt << " us/req. Total executed tx cnt = " << nCompletedTx << std::endl;
 	if (i==0) {
 	    start_process_first_block = end_time;
 	}
