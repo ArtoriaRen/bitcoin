@@ -659,9 +659,8 @@ UniValue getblockhash(const JSONRPCRequest& request)
 
 UniValue savepbftblocks(const JSONRPCRequest& request)
 {
-    int num_blocks = request.params[0].get_int();
-    assert(num_blocks > 0);
-    g_pbft->saveBlocks2File(num_blocks);
+    std::cout << "saving pbft blocks ..." << std::endl;
+    g_pbft->saveBlocks2File();
     return NullUniValue;
 }
 
@@ -1634,7 +1633,7 @@ static const CRPCCommand commands[] =
     { "blockchain",         "getblockcount",          &getblockcount,          {} },
     { "blockchain",         "getblock",               &getblock,               {"blockhash","verbosity|verbose"} },
     { "blockchain",         "getblockhash",           &getblockhash,           {"height"} },
-    { "blockchain",         "savepbftblocks",         &savepbftblocks,         {"num_blocks"} },
+    { "blockchain",         "savepbftblocks",         &savepbftblocks,         {} },
     { "blockchain",         "getblockheader",         &getblockheader,         {"blockhash","verbose"} },
     { "blockchain",         "getchaintips",           &getchaintips,           {} },
     { "blockchain",         "getdifficulty",          &getdifficulty,          {} },

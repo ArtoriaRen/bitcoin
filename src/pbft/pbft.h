@@ -162,9 +162,6 @@ public:
      * block should be added to the dependency graph.
      */
     std::map<uint32_t, std::deque<char>> futureCollabVrfedBlocks;
-    int lastBlockVerifiedOtherSubgroup;
-    int lastBlockValidSentSeq; // the highest block has been verified by our subgroup and announced to the other group.
-    int lastReplySentSeq; // the highest block we have sent reply to the client. Used only by the msg_hand thread. 
 
     /* adjancy matrix for dependency graph for unverified tx.
      * Key is an unverified tx; Value is all tx depend on the Key tx
@@ -280,8 +277,8 @@ public:
 	return ((peer_id & 1) ^ (block_hash.GetCheapHash() & 1)) == 0;
     }
 
-    void saveBlocks2File(const int numBlock) const;
-    void readBlocksFromFile(const int numBlock);
+    void saveBlocks2File() const;
+    int readBlocksFromFile();
     void WarmUpMemoryCache();
 
     inline void logServerSideThruput(struct timeval& start_process_first_block, struct timeval& end_time, int seq) {

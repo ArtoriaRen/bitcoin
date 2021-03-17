@@ -28,7 +28,7 @@ int32_t nWarmUpBlocks;
 bool testStarted = false;
 int32_t reqWaitTimeout = 1000;
 
-CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastConsecutiveSeqInReplyPhase(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalVerifyTime(0), totalVerifyCnt(0), totalExeTime(0), lastBlockVerifiedThisGroup(-1), lastBlockValidSentSeq(-1), lastReplySentSeq(-1), lastCollabFullBlock(-1), qValidTx(2), qInvalidTx(2), validTxQIdx(0), invalidTxQIdx(0), otherSubgroupSendQ(groupSize), notEnoughReqStartTime(std::chrono::milliseconds::zero()), qNotInitialExecutedTx(2), qExecutedTx(2), notExecutedQIdx(0), executedQIdx(0), privateKey(CKey()) {
+CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastConsecutiveSeqInReplyPhase(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalVerifyTime(0), totalVerifyCnt(0), totalExeTime(0), lastBlockVerifiedThisGroup(-1), lastCollabFullBlock(-1), qValidTx(2), qInvalidTx(2), validTxQIdx(0), invalidTxQIdx(0), otherSubgroupSendQ(groupSize), notEnoughReqStartTime(std::chrono::milliseconds::zero()), qNotInitialExecutedTx(2), qExecutedTx(2), notExecutedQIdx(0), executedQIdx(0), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
@@ -479,7 +479,11 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
                     } /* for invalid tx, there is nothing to do because the tx is not
                        * yet added to the dependency graph. */
                 }
-                std::cout << "Collab processing block " << curHeight << ": average execution time = " << (totalExeTime.tv_sec * 1000000 + totalExeTime.tv_usec) / localExecutedTxCnt << " us/req, average dependency checking time = " << (totalDependencyCheckTime.tv_sec + totalDependencyCheckTime.tv_usec) /futureCollabVrfedBlocks[curHeight].size() << " us/req, average add to graph time = " << (totalAdd2GraphTime.tv_sec + totalAdd2GraphTime.tv_usec) / qDependentTx.size() << std::endl;
+                std::cout << "Collab processing block " << curHeight << ": average execution time = " << (totalExeTime.tv_sec * 1000000 + totalExeTime.tv_usec) / localExecutedTxCnt << " us/req, average dependency checking time = " << (totalDependencyCheckTime.tv_sec + totalDependencyCheckTime.tv_usec) /futureCollabVrfedBlocks[curHeight].size();
+                if (!qDependentTx.empty()) {
+                    std::cout << " us/req, average add to graph time = " << (totalAdd2GraphTime.tv_sec + totalAdd2GraphTime.tv_usec) / qDependentTx.size();
+                }
+                std::cout << std::endl;
                 futureCollabVrfedBlocks.erase(curHeight);
                 informReplySendingThread(curHeight, qDependentTx);
                 nCompletedTx += localExecutedTxCnt;
@@ -952,28 +956,32 @@ void CPbft::UpdateTxValidity(const CCollabMultiBlockMsg& msg) {
 }
 
 
-void CPbft::saveBlocks2File(const int numBlock) const {
-    FILE* file = fsbridge::fopen("pbft_blocks.out", "wb+");
+void CPbft::saveBlocks2File() const {
+    FILE* file = fsbridge::fopen("pbft_blocks_collab.out", "wb+");
     if (!file) {
         std::cerr << "Unable to open PBFT block file to write." << std::endl;
         return;
     }
     CAutoFile fileout(file, SER_DISK, CLIENT_VERSION);
 
-    for (int i = 0; i < numBlock; i++) {
+    fileout.write((char*)&lastConsecutiveSeqInReplyPhase, sizeof(lastConsecutiveSeqInReplyPhase));
+    for (int i = 0; i <= lastConsecutiveSeqInReplyPhase; i++) {
         log[i].ppMsg.pPbftBlock->Serialize(fileout);
     }
 }
 
-void CPbft::readBlocksFromFile(const int numBlock) {
-    FILE* file = fsbridge::fopen("pbft_blocks.out", "rb");
+int CPbft::readBlocksFromFile() {
+    FILE* file = fsbridge::fopen("pbft_blocks_collab.out", "rb");
     if (!file) {
         std::cerr << "Unable to open PBFT block file to read." << std::endl;
-        return;
+        return 0;
     }
     CAutoFile filein(file, SER_DISK, CLIENT_VERSION);
 
-    for (int i = 0; i < numBlock; i++) {
+    int lastExecutedSeqWarmUp = 0;
+    filein.read((char*)&lastExecutedSeqWarmUp, sizeof(lastExecutedSeqWarmUp));
+    std::cout << __func__ << ": lastExecutedSeqWarmUp = " << lastExecutedSeqWarmUp << std::endl;
+    for (int i = 0; i <= lastExecutedSeqWarmUp; i++) {
         try {
 	    log[i].ppMsg.pPbftBlock = std::make_shared<CPbftBlock>();
             log[i].ppMsg.pPbftBlock->Unserialize(filein);
@@ -982,19 +990,23 @@ void CPbft::readBlocksFromFile(const int numBlock) {
             std::cerr << "Deserialize or I/O error when reading PBFT block " << i << ": " << e.what() << std::endl;
         }
     }
+    return lastExecutedSeqWarmUp;
 }
 
 void CPbft::WarmUpMemoryCache() {
-    /*TODO: may not need warm up anymore if using SSD, but still, they are slower
+    /*may not need warm up anymore if using SSD, but still, they are slower
      * than memory. The goal of warm up is to load UTXOs to be spent into memory,
      * and this match the practical use case. */
-    CCoinsViewCache view_tenta(pcoinsTip.get());
-    readBlocksFromFile(nWarmUpBlocks);
-    for (int i = 0; i < nWarmUpBlocks; i++) {
-        log[i].ppMsg.pPbftBlock->Execute(i, view_tenta);
+    CCoinsViewCache view_warmup(pcoinsTip.get());
+    int lastExecutedSeqWarmUp = readBlocksFromFile();
+    uint32_t nWarmUpTx = 0;
+    for (int i = 0; i <= lastExecutedSeqWarmUp; i++) {
+        log[i].ppMsg.pPbftBlock->Execute(i, view_warmup);
+        nWarmUpTx += log[i].ppMsg.pPbftBlock->vReq.size();
         /* Discard the block to prepare for performance test. */
         log[i].ppMsg.pPbftBlock.reset();
     }
+    std::cout << "warm up -- total executed tx: " << nWarmUpTx << std::endl;
 }
 
 void ThreadConsensusLogExe() {
