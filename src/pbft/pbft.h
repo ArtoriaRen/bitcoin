@@ -26,11 +26,11 @@
 #include <chrono>
 
 extern int32_t pbftID;
-extern int32_t nMaxReqInFly; 
 extern int32_t QSizePrintPeriod;
 extern int32_t maxBlockSize; 
 extern int32_t nWarmUpBlocks;
 extern bool testStarted;
+extern int32_t reqWaitTimeout;
 
 class ThreadSafeQueue {
 public:
@@ -90,6 +90,8 @@ public:
     unsigned long totalExeTime; // in us
 
     int lastReplySentSeq; // the highest block we have sent reply to the client. Used only by the msg_hand thread. 
+
+    std::chrono::milliseconds notEnoughReqStartTime;
     
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
@@ -109,6 +111,9 @@ public:
     int executeLog(struct timeval& start_process_first_block);
     bool sendReplies(CConnman* connman);
 
+    bool timeoutWaitReq();
+    void setReqWaitTimer();
+
     inline void printQueueSize(){
 	    /* log queue size if we have reached the period. */
 	    std::chrono::milliseconds current = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
@@ -122,8 +127,8 @@ public:
 	return pbftID % groupSize == 0;
     }
 
-    void saveBlocks2File(const int numBlock) const;
-    void readBlocksFromFile(const int numBlock);
+    void saveBlocks2File() const;
+    int readBlocksFromFile();
     void WarmUpMemoryCache();
 private:
     // private ECDSA key used to sign messages

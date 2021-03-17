@@ -21,17 +21,14 @@
 
 extern std::unique_ptr<CConnman> g_connman;
 
-bool fIsClient; // if this node is a pbft client.
-std::string leaderAddrString;
-std::string clientAddrString;
 int32_t pbftID; 
-int32_t nMaxReqInFly; 
 int32_t QSizePrintPeriod;
 int32_t maxBlockSize = 2000;
 int32_t nWarmUpBlocks;
 bool testStarted = false;
+int32_t reqWaitTimeout = 1000;
 
-CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalExeTime(0), lastReplySentSeq(-1), privateKey(CKey()) {
+CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalExeTime(0), lastReplySentSeq(-1), notEnoughReqStartTime(std::chrono::milliseconds::zero()), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
@@ -339,28 +336,32 @@ bool CPbft::sendReplies(CConnman* connman) {
     }
 }
 
-void CPbft::saveBlocks2File(const int numBlock) const {
-    FILE* file = fsbridge::fopen("pbft_blocks.out", "wb+");
+void CPbft::saveBlocks2File() const {
+    FILE* file = fsbridge::fopen("pbft_blocks_collab.out", "wb+");
     if (!file) {
         std::cerr << "Unable to open PBFT block file to write." << std::endl;
         return;
     }
     CAutoFile fileout(file, SER_DISK, CLIENT_VERSION);
 
-    for (int i = 0; i < numBlock; i++) {
+    fileout.write((char*)&lastExecutedSeq, sizeof(lastExecutedSeq));
+    for (int i = 0; i <= lastExecutedSeq; i++) {
         log[i].ppMsg.pPbftBlock->Serialize(fileout);
     }
 }
 
-void CPbft::readBlocksFromFile(const int numBlock) {
-    FILE* file = fsbridge::fopen("pbft_blocks.out", "rb");
+int CPbft::readBlocksFromFile() {
+    FILE* file = fsbridge::fopen("pbft_blocks_collab.out", "rb");
     if (!file) {
         std::cerr << "Unable to open PBFT block file to read." << std::endl;
-        return;
+        return 0;
     }
     CAutoFile filein(file, SER_DISK, CLIENT_VERSION);
 
-    for (int i = 0; i < numBlock; i++) {
+    int lastExecutedSeqWarmUp = 0;
+    filein.read((char*)&lastExecutedSeqWarmUp, sizeof(lastExecutedSeqWarmUp));
+    std::cout << __func__ << ": lastExecutedSeqWarmUp = " << lastExecutedSeqWarmUp << std::endl;
+    for (int i = 0; i <= lastExecutedSeqWarmUp; i++) {
         try {
 	    log[i].ppMsg.pPbftBlock = std::make_shared<CPbftBlock>();
             log[i].ppMsg.pPbftBlock->Unserialize(filein);
@@ -369,16 +370,38 @@ void CPbft::readBlocksFromFile(const int numBlock) {
             std::cerr << "Deserialize or I/O error when reading PBFT block " << i << ": " << e.what() << std::endl;
         }
     }
+    return lastExecutedSeqWarmUp;
 }
 
 void CPbft::WarmUpMemoryCache() {
-    CCoinsViewCache view_tenta(pcoinsTip.get());
-    readBlocksFromFile(nWarmUpBlocks);
-    for (int i = 0; i < nWarmUpBlocks; i++) {
-        log[i].ppMsg.pPbftBlock->Execute(i, view_tenta);
+    CCoinsViewCache view_warmup(pcoinsTip.get());
+    int lastExecutedSeqWarmUp = readBlocksFromFile();
+    uint32_t nWarmUpTx = 0;
+    for (int i = 0; i <= lastExecutedSeqWarmUp; i++) {
+        log[i].ppMsg.pPbftBlock->Execute(i, view_warmup);
+        nWarmUpTx += log[i].ppMsg.pPbftBlock->vReq.size();
         /* Discard the block to prepare for performance test. */
         log[i].ppMsg.pPbftBlock.reset();
     }
+    std::cout << "warm up -- total executed tx: " << nWarmUpTx << std::endl;
+}
+
+bool CPbft::timeoutWaitReq(){
+	/* log queue size if we have reached the period. */
+	std::chrono::milliseconds current = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
+	//std::cout << "notEnoughReqStartTime  =  " << notEnoughReqStartTime.count() << ", current = " << current.count() << ", reqWaitTimeout = " << reqWaitTimeout << std::endl;
+	if (notEnoughReqStartTime != std::chrono::milliseconds::zero() && current - notEnoughReqStartTime > std::chrono::milliseconds(reqWaitTimeout)) {
+	    notEnoughReqStartTime = std::chrono::milliseconds::zero();
+	    return true;
+	} else {
+	    return false;
+	}
+}
+
+void CPbft::setReqWaitTimer(){
+	if (notEnoughReqStartTime == std::chrono::milliseconds::zero()) {
+	    notEnoughReqStartTime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
+	}
 }
 
 void ThreadConsensusLogExe() {
