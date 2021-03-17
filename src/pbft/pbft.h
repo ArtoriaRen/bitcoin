@@ -125,7 +125,7 @@ public:
      * the tx has been committed or aborted by servers.
      * This map includes both single-shard and cross-shard tx.
      */
-    ThreadSafeMap<uint256, uint32_t, BlockHasher> replyMap; 
+    ThreadSafeMap<uint256, std::atomic<uint32_t>, BlockHasher> replyMap; 
 
     /* <txid, <shardId, vector_of_reply_from_the_shard>
      * When we receive a lock reply, we add it to this map so that we know when

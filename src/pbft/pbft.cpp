@@ -66,8 +66,8 @@ CPbft::CPbft() : leaders(std::vector<CNode*>(num_committees)), nLastCompletedTx(
     nextLogTime = {0, 0};
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
-    latencyFile.open ("bft/latency.out");
-    thruputFile.open ("bft/thruput.out");
+    latencyFile.open ("collab_vrf/latency.out");
+    thruputFile.open ("collab_vrf/thruput.out");
 }
 
 CPbft::~CPbft() {

@@ -1853,18 +1853,15 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	//    std::cout << strCommand << " from " << reply.peerID << " sig verification fail"  << std::endl;
 	//}
 	//std::cout << __func__ << ": received PBFT_REPLY for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
-	g_pbft->replyMap[reply.digest]++;
-	if (g_pbft->replyMap[reply.digest] == CPbft::nFaulty + 1) {
+	uint32_t replyCnt = ++g_pbft->replyMap[reply.digest];
+	if (replyCnt == CPbft::nFaulty + 1) {
 	    struct timeval endTime;
 	    gettimeofday(&endTime, NULL);
 	    /* ---- calculate latency ---- */
-	    if (!g_pbft->txUnlockReqMap.exist(reply.digest)) {
-		/* single-shard tx */
 		//std::cout << "txid = " << reply.digest.GetHex().substr(0, 10) << ", single-shard, mapTxStartTime.size = " << g_pbft->mapTxStartTime.size() << std::endl;
 		assert(g_pbft->mapTxStartTime.exist(reply.digest));
 		TxStat& stat = g_pbft->mapTxStartTime[reply.digest]; 
 		    
-		assert (stat.type == TxType::SINGLE_SHARD); 
 		//std::cout << "tx " << reply.digest.GetHex().substr(0,10);
 		if (reply.reply == 'y') {
 			//std::cout << ", SUCCEED, " << std::endl;
@@ -1877,7 +1874,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		} 
 		//std::cout << "single-shard, result received at " << endTime.tv_sec << "." << endTime.tv_usec << " s , latency = " << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << " ms" << std::endl;
 		g_pbft->latencyFile << (endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000 << "\n";
-	    } 
 	}
     }
 
