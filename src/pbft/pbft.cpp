@@ -28,7 +28,7 @@ int32_t nWarmUpBlocks;
 bool testStarted = false;
 int32_t reqWaitTimeout = 1000;
 
-CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastConsecutiveSeqInReplyPhase(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalVerifyTime(0), totalVerifyCnt(0), totalExeTime(0), lastBlockVerifiedThisGroup(-1), lastCollabFullBlock(-1), qValidTx(2), qInvalidTx(2), validTxQIdx(0), invalidTxQIdx(0), otherSubgroupSendQ(groupSize), notEnoughReqStartTime(std::chrono::milliseconds::zero()), qNotInitialExecutedTx(2), qExecutedTx(2), notExecutedQIdx(0), executedQIdx(0), privateKey(CKey()) {
+CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastConsecutiveSeqInReplyPhase(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalVerifyTime(0), totalVerifyCnt(0), totalExeTime(0), lastBlockVerifiedThisGroup(-1), lastCollabFullBlock(-1), qValidTx(2), qInvalidTx(2), validTxQIdx(0), invalidTxQIdx(0), otherSubgroupSendQ(groupSize), notEnoughReqStartTime(std::chrono::milliseconds::zero()), qNotInitialExecutedTx(2), qExecutedTx(2), notExecutedQIdx(0), executedQIdx(0), qCollabMsg(2), qCollabMulBlkMsg(2), collabMsgQIdx(0), collabMulBlkMsgQIdx(0), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
@@ -415,10 +415,12 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
             lastBlockVerifiedThisGroup++;
             nCompletedTx += validTxCnt;
             gettimeofday(&start_time, NULL);
-            SendCollabMsg(curHeight, validTxs, invalidTxs);
+            mutexCollabMsgQ.lock();
+            qCollabMsg[collabMsgQIdx].emplace_back(curHeight, std::move(validTxs), std::move(invalidTxs));
+            mutexCollabMsgQ.unlock();
             gettimeofday(&end_time, NULL);
             collabMsgSendingTime += end_time - start_time;
-            std::cout << "Send Collab msg for block " << curHeight << "takes " << (collabMsgSendingTime.tv_sec * 1000000 + collabMsgSendingTime.tv_usec) << " us. valid tx cnt = " << validTxCnt << ". invalid tx cnt = " << invalidTxs.size() << std::endl;
+            std::cout << "Enqueue Collab msg for block " << curHeight << "takes " << (collabMsgSendingTime.tv_sec * 1000000 + collabMsgSendingTime.tv_usec) << " us. valid tx cnt = " << validTxCnt << ". invalid tx cnt = " << invalidTxs.size() << std::endl;
             logServerSideThruput(start_process_first_block, end_time, curHeight);
         } else {
             /* This is a block of the other subgroup.
@@ -541,9 +543,14 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
 
     if (!validTxsMulBlk.empty() || !invalidTxsMulBlk.empty()) {
         gettimeofday(&start_time, NULL);
-        SendCollabMultiBlkMsg(validTxsMulBlk, invalidTxsMulBlk);
+        mutexCollabMsgQ.lock();
+        std::deque<TxIndexOnChain>& validTxSwappingQ = qCollabMulBlkMsg[collabMulBlkMsgQIdx].validTxs; 
+        std::deque<TxIndexOnChain>& invalidTxSwappingQ = qCollabMulBlkMsg[collabMulBlkMsgQIdx].invalidTxs; 
+        validTxSwappingQ.insert(validTxSwappingQ.end(), validTxsMulBlk.begin(), validTxsMulBlk.end());
+        invalidTxSwappingQ.insert(invalidTxSwappingQ.end(), invalidTxsMulBlk.begin(), invalidTxsMulBlk.end());
+        mutexCollabMsgQ.unlock();
         gettimeofday(&end_time, NULL);
-        std::cout << "Send CollabMulBlk msg takes " << (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec) << " us. valid tx cnt = " << validTxsMulBlk.size() << std::endl;
+        std::cout << "Enqueue CollabMulBlk msg takes " << (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec) << " us. valid tx cnt = " << validTxsMulBlk.size() << std::endl;
     }
 
     /* check if the pointers of queue pairs should be switched. */
@@ -726,37 +733,75 @@ bool CPbft::checkCollabMulBlkMsg(const CCollabMultiBlockMsg& msg) {
     return true;
 }
 
-bool CPbft::SendCollabMsg(uint32_t height, std::vector<char>& validTxs, std::vector<uint32_t>& invalidTxs) {
-    CCollabMessage toSent(height, std::move(validTxs), std::move(invalidTxs)); 
-    uint256 hash;
-    toSent.getHash(hash);
-    privateKey.Sign(hash, toSent.vchSig);
-    toSent.sigSize = toSent.vchSig.size();
-
-    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-    const uint256& block_hash = log[height].ppMsg.pPbftBlock->hash;
-    for (uint32_t i = 0; i < groupSize; i++) {
-        if (!isInVerifySubGroup(i, block_hash)) {
-            /* this is a peer in the other subgroup for this block. */
-            std::cout << "sending collab msg for block " << height << " to peer " << i << std::endl;
-            mapBlockOtherSubgroup[height].push_back(i);
-            g_connman->PushMessage(peers[i], msgMaker.Make(NetMsgType::COLLAB_VRF, toSent));
+bool CPbft::SendCollabMsg() {
+    if (qCollabMsg[1 - collabMsgQIdx].empty()) {
+        /* swap queue with the log-exe thread if possible. */
+        bool qEmpty = true;
+        if (mutexCollabMsgQ.try_lock()) {
+            /* switch the queues if the queue used by log-exe thread has some collabMsg. */
+            if (!qCollabMsg[collabMsgQIdx].empty()) {
+                collabMsgQIdx = 1 - collabMsgQIdx; 
+                qEmpty = false;
+            }
+            mutexCollabMsgQ.unlock();
+            if (qEmpty)
+                return false;
+        } else {
+            return false;
         }
-    } 
+    }
+    for (CCollabMessage& toSent: qCollabMsg[1 - collabMsgQIdx]) {
+        uint256 hash;
+        toSent.getHash(hash);
+        privateKey.Sign(hash, toSent.vchSig);
+        toSent.sigSize = toSent.vchSig.size();
+
+        const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+        const uint256& block_hash = log[toSent.height].ppMsg.pPbftBlock->hash;
+        for (uint32_t i = 0; i < groupSize; i++) {
+            if (!isInVerifySubGroup(i, block_hash)) {
+                /* this is a peer in the other subgroup for this block. */
+                std::cout << "sending collab msg for block " << toSent.height << " to peer " << i << std::endl;
+                mapBlockOtherSubgroup[toSent.height].push_back(i);
+                g_connman->PushMessage(peers[i], msgMaker.Make(NetMsgType::COLLAB_VRF, toSent));
+            }
+        } 
+    }
+    qCollabMsg[1 - collabMsgQIdx].clear();
     return true;
 }
 
-bool CPbft::SendCollabMultiBlkMsg(const std::vector<TxIndexOnChain>& validTxs, const std::vector<TxIndexOnChain>& invalidTxs) {
-    for (const TxIndexOnChain& tx: validTxs) {
+bool CPbft::SendCollabMultiBlkMsg() {
+    if (qCollabMulBlkMsg[1 - collabMulBlkMsgQIdx].validTxs.empty()
+            && qCollabMulBlkMsg[1 - collabMulBlkMsgQIdx].invalidTxs.empty()) {
+        /* swap queue with the log-exe thread if possible. */
+        bool qEmpty = true;
+        if (mutexCollabMsgQ.try_lock()) {
+            /* switch the queues if the queue used by log-exe thread has some collabMsg. */
+            if (!qCollabMulBlkMsg[collabMulBlkMsgQIdx].validTxs.empty() || !qCollabMulBlkMsg[collabMulBlkMsgQIdx].invalidTxs.empty()) {
+                collabMulBlkMsgQIdx = 1 - collabMulBlkMsgQIdx; 
+                qEmpty = false;
+            }
+            mutexCollabMsgQ.unlock();
+            if (qEmpty)
+                return false;
+        } else {
+            return false;
+        }
+    }
+
+    for (const TxIndexOnChain& tx: qCollabMulBlkMsg[1 - collabMulBlkMsgQIdx].validTxs) {
         for (auto peerId: mapBlockOtherSubgroup[tx.block_height]) {
             otherSubgroupSendQ[peerId].validTxs.push_back(tx);
         }
     }
-    for (const TxIndexOnChain& tx: invalidTxs) {
+    qCollabMulBlkMsg[1 - collabMulBlkMsgQIdx].validTxs.clear();
+    for (const TxIndexOnChain& tx: qCollabMulBlkMsg[1 - collabMulBlkMsgQIdx].invalidTxs) {
         for (auto peerId: mapBlockOtherSubgroup[tx.block_height]) {
             otherSubgroupSendQ[peerId].invalidTxs.push_back(tx);
         }
     }
+    qCollabMulBlkMsg[1 - collabMulBlkMsgQIdx].invalidTxs.clear();
 
     /* send multiBlkCollabMsg. clear the sending queue. */
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
@@ -799,7 +844,6 @@ bool CPbft::sendReplies(CConnman* connman) {
         }
     }
 
-    const CPbft& pbft = *g_pbft;
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
     for (InitialBlockExecutionStatus& p: qNotInitialExecutedTx[1 - notExecutedQIdx]) {
         /* send reply for all tx in the block except for tx in the InitialExecutedTx list. */
@@ -807,16 +851,16 @@ bool CPbft::sendReplies(CConnman* connman) {
             if (i == p.dependentTxs.front()) {
                 p.dependentTxs.pop_front();
             } else {
-                CReply reply = pbft.assembleReply(p.height, i, 'y');
-                connman->PushMessage(pbft.client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
+                CReply reply = assembleReply(p.height, i, 'y');
+                connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
             }
         }
     } 
     qNotInitialExecutedTx[1 - notExecutedQIdx].clear();
 
     for (const TxIndexOnChain& txIdx: qExecutedTx[1 - executedQIdx]) {
-        CReply reply = pbft.assembleReply(txIdx.block_height, txIdx.offset_in_block, 'y');
-        connman->PushMessage(pbft.client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
+        CReply reply = assembleReply(txIdx.block_height, txIdx.offset_in_block, 'y');
+        connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
     }
     qExecutedTx[1 - executedQIdx].clear();
 

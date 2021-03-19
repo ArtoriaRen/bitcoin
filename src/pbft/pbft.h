@@ -116,6 +116,12 @@ public:
     InitialBlockExecutionStatus(uint32_t heightIn, std::deque<uint32_t>&& dependentTxs);
 };
 
+class QCollabMulBlkRes {
+public:
+    std::deque<TxIndexOnChain> validTxs;
+    std::deque<TxIndexOnChain> invalidTxs;
+};
+
 class CPbft{
 public:
     // TODO: may need to recycle log slots for throughput test. Consider deque.
@@ -228,6 +234,17 @@ public:
     /* guard the queues and the indice. */
     std::mutex mutex4ExecutedTx;
 
+    /*-----swapping queue between log-exe thread and bitcoind thread for 
+     * collab result sending. The bitcoind thread is responsible for swapping
+     * the queues. -----*/
+    std::deque<std::deque<CCollabMessage>> qCollabMsg;
+    std::deque<QCollabMulBlkRes> qCollabMulBlkMsg;
+    /* which queue is being used by the log-exe thread. */
+    uint32_t collabMsgQIdx;
+    uint32_t collabMulBlkMsgQIdx; 
+    /* guard the queues and the indice. */
+    std::mutex mutexCollabMsgQ;
+
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
     bool ProcessPP(CConnman* connman, CPre_prepare& ppMsg);
@@ -254,8 +271,8 @@ public:
     void UpdateTxValidity(const CCollabMultiBlockMsg& msg);
     bool checkCollabMsg(const CCollabMessage& msg);
     bool checkCollabMulBlkMsg(const CCollabMultiBlockMsg& msg);
-    bool SendCollabMsg(uint32_t height, std::vector<char>& validTxs, std::vector<uint32_t>& invalidTxs);
-    bool SendCollabMultiBlkMsg(const std::vector<TxIndexOnChain>& validTxs, const std::vector<TxIndexOnChain>& invalidTxs); 
+    bool SendCollabMsg();
+    bool SendCollabMultiBlkMsg(); 
     bool sendReplies(CConnman* connman);
 
     bool timeoutWaitReq();

@@ -53,6 +53,8 @@ void WaitForShutdown()
     while (!fShutdown)
     {
         sentSomething = g_pbft->sendReplies(g_connman.get());
+        sentSomething |= g_pbft->SendCollabMsg();
+        sentSomething = g_pbft-> SendCollabMultiBlkMsg();
         if (!sentSomething) {
             MilliSleep(10);
         }
