@@ -105,7 +105,7 @@ public:
 
     CPre_prepare assemblePPMsg(std::shared_ptr<CPbftBlock> pPbftBlockIn);
     CPbftMessage assembleMsg(const uint32_t seq); 
-    CReply assembleReply(const uint32_t seq, const uint32_t idx, const char exe_res) const;
+    CReply assembleReply(std::deque<uint256>& vTx, const char exe_res) const;
     bool checkMsg(CPbftMessage* msg);
     /*return the last executed seq */
     int executeLog(struct timeval& start_process_first_block);

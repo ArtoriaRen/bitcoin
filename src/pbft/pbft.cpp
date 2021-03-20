@@ -278,11 +278,11 @@ CPbftMessage CPbft::assembleMsg(uint32_t seq) {
     return toSent;
 }
 
-CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char exe_res) const {
+CReply CPbft::assembleReply(std::deque<uint256>& vTx, const char exe_res) const {
     /* 'y' --- execute sucessfully
      * 'n' --- execute fail
      */
-    CReply toSent(exe_res, log[seq].ppMsg.pPbftBlock->vReq[idx]->GetHash());
+    CReply toSent(exe_res, std::move(vTx));
     //uint256 hash;
     //toSent.getHash(hash);
     //privateKey.Sign(hash, toSent.vchSig);
@@ -320,19 +320,21 @@ int CPbft::executeLog(struct timeval& start_process_first_block) {
 
 bool CPbft::sendReplies(CConnman* connman) {
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+    std::deque<uint256> completedTx;
     if (lastExecutedSeq > lastReplySentSeq) {
         /* sent reply msg for only one block per loop .*/
         int seq = ++lastReplySentSeq;
-        const uint num_tx = log[seq].ppMsg.pPbftBlock->vReq.size();
-	std::cout << "sending reply for block " << seq <<",  lastReplySentSeq = "<<  lastReplySentSeq << std::endl;
-        for (uint i = 0; i < num_tx; i++) {
+        std::cout << "sending reply for block " << seq <<",  lastReplySentSeq = "<<  lastReplySentSeq << std::endl;
+        std::vector<CTransactionRef>& txList = log[seq].ppMsg.pPbftBlock->vReq;
+        for (uint i = 0; i < txList.size(); i++) {
             /* hard code execution result as 'y' since we are replaying tx on Bitcoin's chain. */
-            CReply reply = assembleReply(seq, i,'y');
-            connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
+            completedTx.push_back(txList[i]->GetHash());
         }
-	return true;
+        CReply reply = assembleReply(completedTx, 'y');
+        connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
+        return true;
     } else {
-	return false;
+        return false;
     }
 }
 
