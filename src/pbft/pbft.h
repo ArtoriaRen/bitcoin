@@ -262,7 +262,7 @@ public:
     bool havePrereqTxCollab(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs, bool alreadyInGraph);
     void addTx2GraphAsDependent(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs);
     void addTx2GraphAsPrerequiste(CTransactionRef pTx);
-    void executeLog(struct timeval& start_process_first_block);
+    bool executeLog(struct timeval& start_process_first_block);
     void executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnChain>& validTxs, std::vector<TxIndexOnChain>& invalidTxs);
     void informReplySendingThread(uint32_t height, std::deque<uint32_t>& qDependentTx);
     /* when received collab msg from the other subgroup, update our block valid bit.

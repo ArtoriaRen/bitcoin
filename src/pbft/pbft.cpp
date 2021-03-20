@@ -380,7 +380,7 @@ void CPbft::informReplySendingThread(uint32_t height, std::deque<uint32_t>& qDep
     mutex4ExecutedTx.unlock();
 }
 
-void CPbft::executeLog(struct timeval& start_process_first_block) {
+bool CPbft::executeLog(struct timeval& start_process_first_block) {
     /* 1. Verify and execute prereq-clear tx in sequece and in the granularty 
      * of blocks for blocks belonging to our subgroup.
      * 2. Execute COLLAB_VERIFIED tx. If some tx belonging to our subgroup 
@@ -389,6 +389,7 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
      * not yet verified block belonging to the other subgroup (in the granularity
      * of tx). And remove them from the dependency graph.  
      */
+    bool doneSomething = false;
     struct timeval start_time, end_time;
     /* valid and invalid tx array for assembling possible collabMulBlk msg.*/
     std::vector<TxIndexOnChain> validTxsMulBlk;
@@ -397,6 +398,7 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
      * if it belongs to our group. Otherwise, use collab_vrf result to execute
      * tx in the block. */
     if (lastBlockVerifiedThisGroup < lastConsecutiveSeqInReplyPhase){
+        doneSomething = true;
         uint32_t curHeight = lastBlockVerifiedThisGroup + 1;
         CPbftBlock& block = *log[curHeight].ppMsg.pPbftBlock;
         if(isInVerifySubGroup(pbftID, block.hash)) {
@@ -405,7 +407,7 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
              * (The VerifyTx call includes executing tx.) 
              */
             struct timeval totalVrfTime = {0, 0};
-            struct timeval collabMsgSendingTime = {0, 0};
+            //struct timeval collabMsgSendingTime = {0, 0};
             gettimeofday(&start_time, NULL);
             std::vector<char> validTxs((block.vReq.size() + 7) >> 3); // +7 for ceiling
             std::vector<uint32_t> invalidTxs;
@@ -415,13 +417,13 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
             totalVrfTime += end_time - start_time;
             lastBlockVerifiedThisGroup++;
             nCompletedTx += validTxCnt;
-            gettimeofday(&start_time, NULL);
+            //gettimeofday(&start_time, NULL);
             mutexCollabMsgQ.lock();
             qCollabMsg[collabMsgQIdx].emplace_back(curHeight, std::move(validTxs), std::move(invalidTxs));
             mutexCollabMsgQ.unlock();
-            gettimeofday(&end_time, NULL);
-            collabMsgSendingTime += end_time - start_time;
-            std::cout << "Enqueue Collab msg for block " << curHeight << "takes " << (collabMsgSendingTime.tv_sec * 1000000 + collabMsgSendingTime.tv_usec) << " us. valid tx cnt = " << validTxCnt << ". invalid tx cnt = " << invalidTxs.size() << std::endl;
+            //gettimeofday(&end_time, NULL);
+            //collabMsgSendingTime += end_time - start_time;
+            //std::cout << "Enqueue Collab msg for block " << curHeight << "takes " << (collabMsgSendingTime.tv_sec * 1000000 + collabMsgSendingTime.tv_usec) << " us. valid tx cnt = " << validTxCnt << ". invalid tx cnt = " << invalidTxs.size() << std::endl;
             logServerSideThruput(start_process_first_block, end_time, curHeight);
         } else {
             /* This is a block of the other subgroup.
@@ -513,6 +515,7 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
      * collab_vrf result in the futureCollabVrfedBlocks map.
      */
     if (!qValidTx[validTxQIdx].empty()) {
+        doneSomething = true;
         for (const TxIndexOnChain& txIdx: qValidTx[validTxQIdx]) {
             if (txIdx.block_height > lastBlockVerifiedThisGroup) {
                 if (futureCollabVrfedBlocks.find(txIdx.block_height) == futureCollabVrfedBlocks.end()) {
@@ -543,15 +546,12 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
     }
 
     if (!validTxsMulBlk.empty() || !invalidTxsMulBlk.empty()) {
-        gettimeofday(&start_time, NULL);
         mutexCollabMsgQ.lock();
         std::deque<TxIndexOnChain>& validTxSwappingQ = qCollabMulBlkMsg[collabMulBlkMsgQIdx].validTxs; 
         std::deque<TxIndexOnChain>& invalidTxSwappingQ = qCollabMulBlkMsg[collabMulBlkMsgQIdx].invalidTxs; 
         validTxSwappingQ.insert(validTxSwappingQ.end(), validTxsMulBlk.begin(), validTxsMulBlk.end());
         invalidTxSwappingQ.insert(invalidTxSwappingQ.end(), invalidTxsMulBlk.begin(), invalidTxsMulBlk.end());
         mutexCollabMsgQ.unlock();
-        gettimeofday(&end_time, NULL);
-        std::cout << "Enqueue CollabMulBlk msg takes " << (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec) << " us. valid tx cnt = " << validTxsMulBlk.size() << std::endl;
     }
 
     /* check if the pointers of queue pairs should be switched. */
@@ -577,6 +577,9 @@ void CPbft::executeLog(struct timeval& start_process_first_block) {
 
     /* TODO: Step 3 (Optional): If there is nothing to be verified in Steps 1 or 2,
      *  verify the first not yet verified block belonging to the other subgroup . */
+
+     /* return true if we have done something useful. */
+     return doneSomething || !qValidTx[validTxQIdx].empty() || !qInvalidTx[invalidTxQIdx].empty();
 }
 
 void CPbft::executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnChain>& validTxs, std::vector<TxIndexOnChain>& invalidTxs) {
@@ -1061,8 +1064,10 @@ void ThreadConsensusLogExe() {
     RenameThread("bitcoin-logexe");
     struct timeval start_process_first_block = {0, 0};
     while (!ShutdownRequested()) {
-        g_pbft->executeLog(start_process_first_block);
-        MilliSleep(50);
+        bool busy = g_pbft->executeLog(start_process_first_block);
+        if (!busy) {
+            MilliSleep(10);
+        }
     }
 }
 
