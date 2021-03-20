@@ -108,7 +108,7 @@ public:
     CReply assembleReply(std::deque<uint256>& vTx, const char exe_res) const;
     bool checkMsg(CPbftMessage* msg);
     /*return the last executed seq */
-    int executeLog(struct timeval& start_process_first_block);
+    bool executeLog(struct timeval& start_process_first_block);
     bool sendReplies(CConnman* connman);
 
     bool timeoutWaitReq();

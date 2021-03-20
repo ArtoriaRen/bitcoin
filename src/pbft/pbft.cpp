@@ -290,7 +290,7 @@ CReply CPbft::assembleReply(std::deque<uint256>& vTx, const char exe_res) const 
     return toSent;
 }
 
-int CPbft::executeLog(struct timeval& start_process_first_block) {
+bool CPbft::executeLog(struct timeval& start_process_first_block) {
     struct timeval start_time, end_time;
     /* execute all lower-seq tx until this one if possible. */
     int lastExecutedSeqStart = lastExecutedSeq;
@@ -315,7 +315,8 @@ int CPbft::executeLog(struct timeval& start_process_first_block) {
 	    std::cout << "Process " << completedTxForMeasure << " tx in " << time_us << " us. Throughput = " << 1000000 * completedTxForMeasure / time_us  << " tx/sec."  << std::endl;
 	}
     }
-    return lastExecutedSeq;
+    /* We have done something useful if the lastExecutedSeq is moved forward. */
+    return lastExecutedSeq != lastExecutedSeqStart;
 }
 
 bool CPbft::sendReplies(CConnman* connman) {
@@ -410,8 +411,10 @@ void ThreadConsensusLogExe() {
     RenameThread("bitcoin-logexe");
     struct timeval start_process_first_block;
     while (!ShutdownRequested()) {
-        g_pbft->executeLog(start_process_first_block);
-        MilliSleep(50);
+        bool busy = g_pbft->executeLog(start_process_first_block);
+        if (!busy) {
+            MilliSleep(10);
+        }
     }
 }
 
