@@ -285,11 +285,12 @@ CPbftMessage CPbft::assembleMsg(uint32_t seq) {
     return toSent;
 }
 
-CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char exe_res) const {
+CReply CPbft::assembleReply(std::deque<uint256>& vTx, const char exe_res) const {
     /* 'y' --- execute sucessfully
      * 'n' --- execute fail
      */
-    CReply toSent(exe_res, log[seq].ppMsg.pPbftBlock->vReq[idx]->GetHash());
+    
+    CReply toSent(exe_res, std::move(vTx));
     //uint256 hash;
     //toSent.getHash(hash);
     //privateKey.Sign(hash, toSent.vchSig);
@@ -845,24 +846,27 @@ bool CPbft::sendReplies(CConnman* connman) {
     }
 
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+    std::deque<uint256> completedTx;
     for (InitialBlockExecutionStatus& p: qNotInitialExecutedTx[1 - notExecutedQIdx]) {
         /* send reply for all tx in the block except for tx in the InitialExecutedTx list. */
-        for (uint i = 0; i < log[p.height].ppMsg.pPbftBlock->vReq.size(); i++) {
+        std::vector<CTransactionRef>& txList = log[p.height].ppMsg.pPbftBlock->vReq;
+        for (uint i = 0; i < txList.size(); i++) {
             if (i == p.dependentTxs.front()) {
                 p.dependentTxs.pop_front();
             } else {
-                CReply reply = assembleReply(p.height, i, 'y');
-                connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
+                completedTx.push_back(txList[i]->GetHash());
             }
         }
     } 
     qNotInitialExecutedTx[1 - notExecutedQIdx].clear();
 
     for (const TxIndexOnChain& txIdx: qExecutedTx[1 - executedQIdx]) {
-        CReply reply = assembleReply(txIdx.block_height, txIdx.offset_in_block, 'y');
-        connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
+        completedTx.push_back(log[txIdx.block_height].ppMsg.pPbftBlock->vReq[txIdx.offset_in_block]->GetHash());
     }
     qExecutedTx[1 - executedQIdx].clear();
+
+    CReply reply = assembleReply(completedTx, 'y');
+    connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
 
     return true;
 }

@@ -85,17 +85,17 @@ bool ExecuteTx(const CTransaction& tx, const int seq, CCoinsViewCache& view) {
     return true;
 }
 
-CReply::CReply(): reply(), digest(), peerID(pbftID), sigSize(0), vchSig(){ 
+CReply::CReply(): reply(), peerID(pbftID), sigSize(0), vchSig(){ 
     vchSig.reserve(72); // the expected sig size is 72 bytes.
 }
 
-CReply::CReply(char replyIn, const uint256& digestIn): reply(replyIn), digest(digestIn), peerID(pbftID), sigSize(0), vchSig(){ 
+CReply::CReply(char replyIn, std::deque<uint256>&& vTxIn): reply(replyIn), vTx(vTxIn.begin(), vTxIn.end()), peerID(pbftID), sigSize(0), vchSig(){ 
     vchSig.reserve(72); // the expected sig size is 72 bytes.
 }
 
 void CReply::getHash(uint256& result) const {
     CHash256().Write((const unsigned char*)&reply, sizeof(reply))
-	    .Write(digest.begin(), sizeof(digest))
+	    .Write((const unsigned char*)vTx.data(), vTx.size() * vTx[0].size())
 	    .Finalize((unsigned char*)&result);
 }
 
