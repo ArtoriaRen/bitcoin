@@ -1163,7 +1163,7 @@ void  ThruputLogger::logServerSideThruput(struct timeval& curTime, uint32_t comp
     if (completedTxCnt != 0) {
         struct timeval timeElapsed = curTime - lastLogTime;
         double thruput = (completedTxCnt - lastCompletedTxCnt) / (timeElapsed.tv_sec + timeElapsed.tv_usec * 0.000001);
-        thruputSS << endTime.tv_sec << "." << endTime.tv_usec << "," <<  completedTxCnt << "," << thruput << "\n";
+        thruputSS << curTime.tv_sec << "." << curTime.tv_usec << "," <<  completedTxCnt << "," << thruput << "\n";
     } else {
         /* test just starts. */
         thruputSS << curTime.tv_sec << "." << curTime.tv_usec << ",0,0\n";
