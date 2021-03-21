@@ -122,6 +122,16 @@ public:
     std::deque<TxIndexOnChain> invalidTxs;
 };
 
+class ThruputLogger{
+private:
+    struct timeval lastLogTime;
+    uint32_t lastCompletedTxCnt;
+
+public:
+    std::stringstream thruputSS;
+    void logServerSideThruput(struct timeval& curTime, uint32_t completedTxCnt);
+};
+
 class CPbft{
 public:
     // TODO: may need to recycle log slots for throughput test. Consider deque.
@@ -245,6 +255,9 @@ public:
     /* guard the queues and the indice. */
     std::mutex mutexCollabMsgQ;
 
+    /* server-side thruput logger. */
+    ThruputLogger thruputLogger;
+
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
     bool ProcessPP(CConnman* connman, CPre_prepare& ppMsg);
@@ -297,15 +310,6 @@ public:
     void saveBlocks2File() const;
     int readBlocksFromFile();
     void WarmUpMemoryCache();
-
-    inline void logServerSideThruput(struct timeval& start_process_first_block, struct timeval& end_time, int seq) {
-	if (seq == 0) {
-	    start_process_first_block = end_time;
-	} else if (seq == nWarmUpBlocks - 2) {
-	    unsigned long time_us = (end_time.tv_sec - start_process_first_block.tv_sec) * 1000000 + (end_time.tv_usec -  start_process_first_block.tv_usec);
-	    std::cout << "Process " << nCompletedTx << " tx in " << time_us << " us. Throughput = " << 1000000 * nCompletedTx / time_us  << " tx/sec."  << std::endl;
-	}
-    }
 
 private:
     // private ECDSA key used to sign messages

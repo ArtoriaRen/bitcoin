@@ -76,6 +76,8 @@ void WaitForShutdown()
 
     std::cout << "mapUtxoConflict.size() = " << pbft.mapUtxoConflict.size() << std::endl;
 
+    std::cout << pbft.thruputLogger.thruputSS.str();
+
     Interrupt();
 }
 

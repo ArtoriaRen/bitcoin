@@ -226,6 +226,14 @@ bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
         while (log[lastConsecutiveSeqInReplyPhase + 1].phase == PbftPhase::reply) {
             lastConsecutiveSeqInReplyPhase++;
         }
+
+        if (cMsg.seq == 0) {
+            /* log that test has started. */
+            struct timeval curTime;
+            gettimeofday(&curTime, NULL);
+            thruputLogger.logServerSideThruput(curTime, 0);
+        }
+
         /* the log-exe thread will execute blocks in reply phase sequentially. */
     }
     return true;
@@ -417,6 +425,7 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
             totalVrfTime += end_time - start_time;
             lastBlockVerifiedThisGroup++;
             nCompletedTx += validTxCnt;
+            thruputLogger.logServerSideThruput(end_time, nCompletedTx);
             //gettimeofday(&start_time, NULL);
             mutexCollabMsgQ.lock();
             qCollabMsg[collabMsgQIdx].emplace_back(curHeight, std::move(validTxs), std::move(invalidTxs));
@@ -424,7 +433,6 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
             //gettimeofday(&end_time, NULL);
             //collabMsgSendingTime += end_time - start_time;
             //std::cout << "Enqueue Collab msg for block " << curHeight << "takes " << (collabMsgSendingTime.tv_sec * 1000000 + collabMsgSendingTime.tv_usec) << " us. valid tx cnt = " << validTxCnt << ". invalid tx cnt = " << invalidTxs.size() << std::endl;
-            logServerSideThruput(start_process_first_block, end_time, curHeight);
         } else {
             /* This is a block of the other subgroup.
              * Check if we have collab_vrf results for this block. If so, execute
@@ -492,6 +500,7 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
                 futureCollabVrfedBlocks.erase(curHeight);
                 informReplySendingThread(curHeight, qDependentTx);
                 nCompletedTx += localExecutedTxCnt;
+                thruputLogger.logServerSideThruput(end_time, nCompletedTx);
             } else {
                 std::cout << " future map DOES'T have block "  << curHeight << std::endl;
                 /* we haven't received collab_vrf results for any tx in the block, add
@@ -541,6 +550,8 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
                 }
             }
         }
+        gettimeofday(&end_time, NULL);
+        thruputLogger.logServerSideThruput(end_time, nCompletedTx);
         qValidTx[validTxQIdx].clear();
         /* TODO : handle invalid tx queue. */
     }
@@ -1147,5 +1158,18 @@ PendingTxStatus::PendingTxStatus(uint32_t remaining_prereq_tx_cnt_in, char colla
 
 InitialBlockExecutionStatus::InitialBlockExecutionStatus(){ };
 InitialBlockExecutionStatus::InitialBlockExecutionStatus(uint32_t heightIn, std::deque<uint32_t>&& dependentTxsIn): height(heightIn), dependentTxs(dependentTxsIn){ };
+
+void  ThruputLogger::logServerSideThruput(struct timeval& curTime, uint32_t completedTxCnt) {
+    if (completedTxCnt != 0) {
+        struct timeval timeElapsed = curTime - lastLogTime;
+        double thruput = (completedTxCnt - lastCompletedTxCnt) / (timeElapsed.tv_sec + timeElapsed.tv_usec * 0.000001);
+        thruputSS << endTime.tv_sec << "." << endTime.tv_usec << "," <<  completedTxCnt << "," << thruput << "\n";
+    } else {
+        /* test just starts. */
+        thruputSS << curTime.tv_sec << "." << curTime.tv_usec << ",0,0\n";
+    }
+    lastLogTime = curTime;
+    lastCompletedTxCnt = completedTxCnt;
+}
 
 std::unique_ptr<CPbft> g_pbft;
