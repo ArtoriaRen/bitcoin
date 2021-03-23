@@ -492,21 +492,22 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
                     } /* for invalid tx, there is nothing to do because the tx is not
                        * yet added to the dependency graph. */
                 }
-                std::cout << "Collab processing block " << curHeight << ": average execution time = " << (totalExeTime.tv_sec * 1000000 + totalExeTime.tv_usec) / localExecutedTxCnt << " us/req, average dependency checking time = " << (totalDependencyCheckTime.tv_sec + totalDependencyCheckTime.tv_usec) /futureCollabVrfedBlocks[curHeight].size();
+                //std::cout << "Collab processing block " << curHeight << ": average execution time = " << (totalExeTime.tv_sec * 1000000 + totalExeTime.tv_usec) / localExecutedTxCnt << " us/req, average dependency checking time = " << (totalDependencyCheckTime.tv_sec + totalDependencyCheckTime.tv_usec) /futureCollabVrfedBlocks[curHeight].size();
                 if (!qDependentTx.empty()) {
-                    std::cout << " us/req, average add to graph time = " << (totalAdd2GraphTime.tv_sec + totalAdd2GraphTime.tv_usec) / qDependentTx.size();
+                    //std::cout << " us/req, average add to graph time = " << (totalAdd2GraphTime.tv_sec + totalAdd2GraphTime.tv_usec) / qDependentTx.size();
                 }
-                std::cout << std::endl;
+                //std::cout << std::endl;
                 futureCollabVrfedBlocks.erase(curHeight);
                 informReplySendingThread(curHeight, qDependentTx);
                 nCompletedTx += localExecutedTxCnt;
+                gettimeofday(&end_time, NULL);
                 thruputLogger.logServerSideThruput(end_time, nCompletedTx);
             } else {
                 std::cout << " future map DOES'T have block "  << curHeight << std::endl;
                 /* we haven't received collab_vrf results for any tx in the block, add
                  * all tx in the block to the dependency graph as potential prereqTx.
                  */
-                std::cout << "add all " << block.vReq.size() << " tx in block " << curHeight << " to dependency graph as potential prereqTx." << std::endl;
+                //std::cout << "add all " << block.vReq.size() << " tx in block " << curHeight << " to dependency graph as potential prereqTx." << std::endl;
                 /* tx belongs to the other group are not added to mapPreqCnt b/c we are not interest in its prereq tx until later we have to verify such tx by ourselves. */
                 for (CTransactionRef pTx: block.vReq) {
                     addTx2GraphAsPrerequiste(pTx);
@@ -776,7 +777,7 @@ bool CPbft::SendCollabMsg() {
         for (uint32_t i = 0; i < groupSize; i++) {
             if (!isInVerifySubGroup(i, block_hash)) {
                 /* this is a peer in the other subgroup for this block. */
-                std::cout << "sending collab msg for block " << toSent.height << " to peer " << i << std::endl;
+                //std::cout << "sending collab msg for block " << toSent.height << " to peer " << i << std::endl;
                 mapBlockOtherSubgroup[toSent.height].push_back(i);
                 g_connman->PushMessage(peers[i], msgMaker.Make(NetMsgType::COLLAB_VRF, toSent));
             }
@@ -825,7 +826,7 @@ bool CPbft::SendCollabMultiBlkMsg() {
             continue;
 
         CCollabMultiBlockMsg& toSent = otherSubgroupSendQ[i];
-        std::cout << "sending multiBlkCollabMsg to peer " << i << ". valid tx cnt = " << toSent.validTxs.size() << ", invalid tx cnt = " << toSent.invalidTxs.size() << std::endl;
+        //std::cout << "sending multiBlkCollabMsg to peer " << i << ". valid tx cnt = " << toSent.validTxs.size() << ", invalid tx cnt = " << toSent.invalidTxs.size() << std::endl;
         uint256 hash;
         toSent.getHash(hash);
         privateKey.Sign(hash, toSent.vchSig);
@@ -890,7 +891,7 @@ BlockCollabRes::BlockCollabRes(): collab_msg_full_tx_cnt(0) { }
 BlockCollabRes::BlockCollabRes(uint32_t txCnt): tx_collab_valid_cnt(txCnt), collab_msg_full_tx_cnt(0) { }
 
 void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
-    std::cout << "received collab msg for block " << msg.height << " from peer " << msg.peerID << std::endl;
+    //std::cout << "received collab msg for block " << msg.height << " from peer " << msg.peerID << std::endl;
     if (!checkCollabMsg(msg)) {
         std::cerr << "collab msg invalid" << std::endl;
         return;
@@ -938,7 +939,7 @@ void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
         }
     }
 
-    std::cout << "processed collab msg for block " << msg.height << " from peer " << msg.peerID << ". valid tx cnt = " << validTxCntInMsg << ", invalid tx cnt = " << msg.invalidTxs.size() << std::endl;
+    //std::cout << "processed collab msg for block " << msg.height << " from peer " << msg.peerID << ". valid tx cnt = " << validTxCntInMsg << ", invalid tx cnt = " << msg.invalidTxs.size() << std::endl;
 
     /* prune entries in mapBlockCollabRes */
     for(; lastCollabFullBlock <= lastConsecutiveSeqInReplyPhase 
@@ -957,7 +958,7 @@ void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
 }
 
 void CPbft::UpdateTxValidity(const CCollabMultiBlockMsg& msg) {
-    std::cout << "received collabMulBlk msg from peer " << msg.peerID << std::endl;
+    //std::cout << "received collabMulBlk msg from peer " << msg.peerID << std::endl;
     if (!checkCollabMulBlkMsg(msg)) 
         return;
 
@@ -1007,7 +1008,7 @@ void CPbft::UpdateTxValidity(const CCollabMultiBlockMsg& msg) {
         mapBlockCollabRes.erase(lastCollabFullBlock);
     }
 
-    std::cout << "processed collabMulBlk msg from peer " << msg.peerID << ", has " << msg.validTxs.size() << " valid tx, " <<  msg.invalidTxs.size() << " invalid tx" << std::endl;
+    //std::cout << "processed collabMulBlk msg from peer " << msg.peerID << ", has " << msg.validTxs.size() << " valid tx, " <<  msg.invalidTxs.size() << " invalid tx" << std::endl;
 
     /* add tx in local queues to the global queues*/
     mutex4Q.lock();
