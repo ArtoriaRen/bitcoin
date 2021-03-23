@@ -447,7 +447,7 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
                 std::deque<uint32_t> qDependentTx; 
                 uint32_t localExecutedTxCnt = 0;
                 //std::cout << " future map has block "  << curHeight << std::endl;
-                for (uint i = 0; i < futureCollabVrfedBlocks[curHeight].size(); i++) {
+                for (uint i = 0; i < log[curHeight].ppMsg.pPbftBlock->vReq.size(); i++) {
                     CTransactionRef pTx = log[curHeight].ppMsg.pPbftBlock->vReq[i];
                     if (futureCollabVrfedBlocks[curHeight][i] == 1) {
                         /* valid tx */
@@ -532,8 +532,7 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
                     /* we haven't met collab result for any tx in this block, create 
                      * a new entry for this block.
                      */
-                    assert(txIdx.block_height <= lastConsecutiveSeqInReplyPhase);
-                    futureCollabVrfedBlocks.emplace(txIdx.block_height, std::deque<char>(log[txIdx.block_height].ppMsg.pPbftBlock->vReq.size()));
+                    futureCollabVrfedBlocks.emplace(txIdx.block_height, std::deque<char>(log[txIdx.block_height].estimatedBlockSize));
                 }
                 futureCollabVrfedBlocks[txIdx.block_height][txIdx.offset_in_block] = 1;
             } else {
@@ -900,7 +899,13 @@ void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
     std::deque<TxIndexOnChain> localValidTxQ;
     std::deque<TxIndexOnChain> localInvalidTxQ;
     if (mapBlockCollabRes.find(msg.height) == mapBlockCollabRes.end()) {
-        mapBlockCollabRes.emplace(msg.height, BlockCollabRes(log[msg.height].ppMsg.pPbftBlock->vReq.size()));
+        if (msg.height > lastConsecutiveSeqInReplyPhase) {
+            log[msg.height].estimatedBlockSize = msg.validTxs.size() * 8;
+        }
+        else {
+            log[msg.height].estimatedBlockSize = log[msg.height].ppMsg.pPbftBlock->vReq.size();
+        }
+        mapBlockCollabRes.emplace(msg.height, BlockCollabRes(log[msg.height].estimatedBlockSize));
         //std::cout << "create collab msg counters for block "<< msg.height << ", tx count = " << log[msg.height].ppMsg.pPbftBlock->vReq.size() << std::endl;
     }
     
