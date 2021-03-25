@@ -130,6 +130,7 @@ bool CPbft::ProcessPP(CConnman* connman, CPre_prepare& ppMsg) {
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
     int32_t start_peerID = pbftID - pbftID % groupSize;
     int32_t end_peerID = start_peerID + groupSize;
+    std::cout << "sending PREPARE msg" << std::endl;
     for (int32_t i = start_peerID; i < end_peerID; i++) {
 	/* do not send a msg to myself. */
 	if (i == pbftID)
@@ -182,6 +183,7 @@ bool CPbft::ProcessP(CConnman* connman, CPbftMessage& pMsg, bool fCheck) {
 	const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
         int32_t start_peerID = pbftID - pbftID % groupSize;
 	int32_t end_peerID = start_peerID + groupSize;
+    std::cout << "sending COMMIT msg" << std::endl;
 	for (int32_t i = start_peerID; i < end_peerID; i++) {
 	    /* do not send a msg to myself. */
 	    if (i == pbftID)
@@ -219,6 +221,14 @@ bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
         // enter reply phase
         std::cout << "block " << cMsg.seq << " enters reply phase" << std::endl;
         log[cMsg.seq].phase = PbftPhase::reply;
+
+        if (cMsg.seq == 0) {
+            /* log that test has started. */
+            struct timeval curTime;
+            gettimeofday(&curTime, NULL);
+            thruputLogger.logServerSideThruput(curTime, 0);
+        }
+
         /* the log-exe thread will execute blocks in reply phase sequentially. */
     }
     return true;
@@ -300,20 +310,13 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
      * the seq passed in, a slot missing a pbftc msg might permanently block
      * log slots after it to be executed. */
     for (; i < logSize && log[i].phase == PbftPhase::reply; i++) {
-	gettimeofday(&start_time, NULL);
-	log[i].txCnt = log[i].ppMsg.pPbftBlock->Execute(i, *pcoinsTip);
-	gettimeofday(&end_time, NULL);
-	lastExecutedSeq = i;
-	nCompletedTx += log[i].txCnt;
-	std::cout << "Average combined verify and execution time of block " << i << ": " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / log[i].txCnt << " us/req. Total executed tx cnt = " << nCompletedTx << std::endl;
-	if (i==0) {
-	    start_process_first_block = end_time;
-	}
-	if (i == nWarmUpBlocks - 2) {
-	    unsigned long time_us = (end_time.tv_sec -  start_process_first_block.tv_sec) * 1000000 + (end_time.tv_usec -  start_process_first_block.tv_usec);
-	    unsigned long completedTxForMeasure = nCompletedTx - log[0].txCnt;
-	    std::cout << "Process " << completedTxForMeasure << " tx in " << time_us << " us. Throughput = " << 1000000 * completedTxForMeasure / time_us  << " tx/sec."  << std::endl;
-	}
+        gettimeofday(&start_time, NULL);
+        log[i].txCnt = log[i].ppMsg.pPbftBlock->Execute(i, *pcoinsTip);
+        gettimeofday(&end_time, NULL);
+        lastExecutedSeq = i;
+        nCompletedTx += log[i].txCnt;
+        thruputLogger.logServerSideThruput(end_time, nCompletedTx);
+        std::cout << "Average combined verify and execution time of block " << i << ": " << ((end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec)) / log[i].txCnt << " us/req. Total executed tx cnt = " << nCompletedTx << std::endl;
     }
     /* We have done something useful if the lastExecutedSeq is moved forward. */
     return lastExecutedSeq != lastExecutedSeqStart;
@@ -416,6 +419,19 @@ void ThreadConsensusLogExe() {
             MilliSleep(10);
         }
     }
+}
+
+void  ThruputLogger::logServerSideThruput(struct timeval& curTime, uint32_t completedTxCnt) {
+    if (completedTxCnt != 0) {
+        struct timeval timeElapsed = curTime - lastLogTime;
+        double thruput = (completedTxCnt - lastCompletedTxCnt) / (timeElapsed.tv_sec + timeElapsed.tv_usec * 0.000001);
+        thruputSS << curTime.tv_sec << "." << curTime.tv_usec << "," <<  completedTxCnt << "," << thruput << "\n";
+    } else {
+        /* test just starts. */
+        thruputSS << curTime.tv_sec << "." << curTime.tv_usec << ",0,0\n";
+    }
+    lastLogTime = curTime;
+    lastCompletedTxCnt = completedTxCnt;
 }
 
 std::unique_ptr<CPbft> g_pbft;

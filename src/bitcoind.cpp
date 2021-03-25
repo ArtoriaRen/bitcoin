@@ -57,6 +57,7 @@ void WaitForShutdown()
 	}
         fShutdown = ShutdownRequested();
     }
+    std::cout << g_pbft->thruputLogger.thruputSS.str();
     Interrupt();
 }
 
