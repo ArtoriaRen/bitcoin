@@ -1274,7 +1274,7 @@ void CConnman::ThreadSocketHandler()
 
                 if (select_send) {
                     FD_SET(pnode->hSocket, &fdsetSend);
-                    continue;
+                    //continue;
                 }
                 if (select_recv) {
                     FD_SET(pnode->hSocket, &fdsetRecv);
