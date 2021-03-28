@@ -3064,8 +3064,10 @@ bool PeerLogicValidation::ProcessMessages(CNode* pfrom, std::atomic<bool>& inter
     if (!pfrom->vRecvGetData.empty()) return true;
 
     // Don't bother if send buffer is too full to respond anyway
-    if (pfrom->fPauseSend)
+    if (pfrom->fPauseSend) {
+        std::cout << __func__ << ": " << __LINE__ << " ---fPauseSend =  " << pfrom->fPauseSend <<std::endl;
         return false;
+    }
 
     std::list<CNetMessage> msgs;
     {
