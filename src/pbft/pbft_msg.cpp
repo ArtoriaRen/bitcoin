@@ -190,7 +190,13 @@ uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view, std::vector<ch
             invalidTxs.push_back(i);
         }
     }
-    std::cout << "Average verify time of block " << seq << ": " << (totalVrfTime.tv_sec * 1000000 + totalVrfTime.tv_usec) / (vReq.size() - qDependentTx.size()) << " us/req" << ". valid tx cnt = " << validTxCnt << ". invalid tx cnt = " << invalidTxs.size() << ", average dependency checking time = " << (totalDependencyCheckTime.tv_sec * 1000000 + totalDependencyCheckTime.tv_usec)/vReq.size() << std::endl;
+
+    if (vReq.size() > qDependentTx.size()) {
+        std::cout << "Average verify time of block " << seq << ": " << (totalVrfTime.tv_sec * 1000000 + totalVrfTime.tv_usec) / (vReq.size() - qDependentTx.size()) << " us/req";
+    } else {
+        std::cout << "Average verify time of block " << seq << ": 0 tx are verified";
+    }
+    std::cout << ". valid tx cnt = " << validTxCnt << ". invalid tx cnt = " << invalidTxs.size() << ", average dependency checking time = " << (totalDependencyCheckTime.tv_sec * 1000000 + totalDependencyCheckTime.tv_usec)/vReq.size() << std::endl;
     /* inform the reply sending thread of what tx is not executed. 
      * We cannot include invalid tx because all reply are hard-coded to 
      * positive execution results.
