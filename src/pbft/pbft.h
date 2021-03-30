@@ -132,6 +132,15 @@ public:
     void logServerSideThruput(struct timeval& curTime, uint32_t completedTxCnt);
 };
 
+class DependencyEntry {
+public:
+    std::deque<TxIndexOnChain> dependentTxs;
+    TxIndexOnChain selfIdx;
+
+    DependencyEntry();
+    DependencyEntry(uint32_t height, uint32_t txSeq);
+};
+
 class CPbft{
 public:
     // TODO: may need to recycle log slots for throughput test. Consider deque.
@@ -185,7 +194,7 @@ public:
      * Also used to decide if a tx should be added to the dependency graph
      * due to create-spend dependency.
      */
-    std::unordered_map<uint256, std::deque<TxIndexOnChain>, uint256Hasher> mapTxDependency;
+    std::unordered_map<uint256, DependencyEntry, uint256Hasher> mapTxDependency;
     /* prerequite tx count map.
      * Key is an unverified tx; Value is the count of the remaining 
      * not-yet-verified prerequite tx. 
@@ -273,8 +282,9 @@ public:
     CReply assembleReply(std::deque<uint256>& vTx, const char exe_res) const;
     bool checkMsg(CPbftMessage* msg);
     bool havePrereqTxCollab(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs, bool alreadyInGraph);
+    bool isPrereqClear(const TxIndexOnChain& txIdx);
     void addTx2GraphAsDependent(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs);
-    void addTx2GraphAsPrerequiste(CTransactionRef pTx);
+    void addTx2GraphAsPrerequiste(uint32_t height, uint32_t txSeq, CTransactionRef pTx);
     bool executeLog(struct timeval& start_process_first_block);
     void executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnChain>& validTxs, std::vector<TxIndexOnChain>& invalidTxs);
     void informReplySendingThread(uint32_t height, std::deque<uint32_t>& qDependentTx);

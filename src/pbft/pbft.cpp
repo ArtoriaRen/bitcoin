@@ -354,19 +354,45 @@ bool CPbft::havePrereqTxCollab(uint32_t height, uint32_t txSeq, std::unordered_s
     return preReqTxs.size() != 0;
 }
 
+bool CPbft::isPrereqClear(const TxIndexOnChain& txIdx) {
+    /* if the tx is in mapPrereq, it must have prereq tx.*/
+    if (mapPrereqCnt.find(txIdx) != mapPrereqCnt.end()) {
+        return false;
+    }
+    CTransactionRef tx = log[txIdx.block_height].ppMsg.pPbftBlock->vReq[txIdx.offset_in_block];
+    if (tx->IsCoinBase()) {
+        return true;
+    }
+    /* return if have any prereq tx. */
+    for (const CTxIn& inputUtxo: tx->vin) {
+        /* check create-spend dependency. */
+        if (mapTxDependency.find(inputUtxo.prevout.hash) != mapTxDependency.end()) {
+            return false;
+        }
+        /* check spend-spend dependency. */
+        /* The tx must have already in the mapUtxoConflict. */
+        if (mapUtxoConflict.find(inputUtxo.prevout) != mapUtxoConflict.end() && mapUtxoConflict[inputUtxo.prevout][0] != tx->GetHash()) {
+            /* The UTXO has not been spent by other tx, and this tx is not the first tx 
+             * trying to spend this UTXO. */
+            return false;
+        } 
+    }
+    return true;
+}
+
 void CPbft::addTx2GraphAsDependent(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs) {
     /* Add this tx as a dependent tx to the dependency graph. */
     for (const uint256& prereqTx: preReqTxs) {
-        mapTxDependency[prereqTx].emplace_back(height, txSeq);
+        mapTxDependency[prereqTx].dependentTxs.emplace_back(height, txSeq);
     }
     /* Because we only call this function when the tx is collab-valid, the  collab_status
      * field in the PendingTxStatus must be one. */
     mapPrereqCnt.emplace(TxIndexOnChain(height, txSeq), PendingTxStatus(preReqTxs.size(), 1));
 }
 
-void CPbft::addTx2GraphAsPrerequiste(CTransactionRef pTx) {
+void CPbft::addTx2GraphAsPrerequiste(uint32_t height, uint32_t txSeq, CTransactionRef pTx) {
     /* add this tx as a potential prereqTx to the dependency graph. */
-    mapTxDependency.emplace(pTx->GetHash(), std::deque<TxIndexOnChain>()); 
+    mapTxDependency.emplace(pTx->GetHash(), DependencyEntry(height, txSeq)); 
     if (pTx->IsCoinBase()) {
         return;
     }
@@ -447,7 +473,7 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
                 std::deque<uint32_t> qDependentTx; 
                 uint32_t localExecutedTxCnt = 0;
                 //std::cout << " future map has block "  << curHeight << std::endl;
-                for (uint i = 0; i < log[curHeight].ppMsg.pPbftBlock->vReq.size(); i++) {
+                for (uint i = 0; i < block.vReq.size(); i++) {
                     CTransactionRef pTx = log[curHeight].ppMsg.pPbftBlock->vReq[i];
                     if (futureCollabVrfedBlocks[curHeight][i] == 1) {
                         /* valid tx */
@@ -473,7 +499,7 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
                              */
                             gettimeofday(&start_time, NULL);
                             addTx2GraphAsDependent(curHeight, i, preReqTxs);
-                            addTx2GraphAsPrerequiste(pTx);
+                            addTx2GraphAsPrerequiste(curHeight, i, pTx);
                             gettimeofday(&end_time, NULL);
                             totalAdd2GraphTime += end_time - start_time;
                             /* We cannot execute the tx b/c of dependency in the our group*/
@@ -484,7 +510,7 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
                          * add this tx as a potential prereqTx to the dependency graph. 
                          */
                         gettimeofday(&start_time, NULL);
-                        addTx2GraphAsPrerequiste(pTx);
+                        addTx2GraphAsPrerequiste(curHeight, i, pTx);
                         gettimeofday(&end_time, NULL);
                         totalAdd2GraphTime += end_time - start_time;
                         /* We cannot execute the tx b/c of dependency in the other group*/
@@ -509,8 +535,9 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
                  */
                 //std::cout << "add all " << block.vReq.size() << " tx in block " << curHeight << " to dependency graph as potential prereqTx." << std::endl;
                 /* tx belongs to the other group are not added to mapPreqCnt b/c we are not interest in its prereq tx until later we have to verify such tx by ourselves. */
-                for (CTransactionRef pTx: block.vReq) {
-                    addTx2GraphAsPrerequiste(pTx);
+                std::vector<CTransactionRef>& vReqCurBlk = block.vReq;
+                for (uint i = 0; i < vReqCurBlk.size(); i++) {
+                    addTx2GraphAsPrerequiste(curHeight, i, vReqCurBlk[i]);
                 }
             }
 
@@ -538,6 +565,10 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
             } else {
                 /* backlog collab res, execute tx.*/
                 CTransactionRef pTx = log[txIdx.block_height].ppMsg.pPbftBlock->vReq[txIdx.offset_in_block];
+                if (mapTxDependency.find(pTx->GetHash()) == mapTxDependency.end()) {
+                    /* This tx has been executed by Step 3. skip it. */
+                    continue;
+                }
                 std::unordered_set<uint256, uint256Hasher> preReqTxs;
                 if (!havePrereqTxCollab(txIdx.block_height, txIdx.offset_in_block, preReqTxs, true)) {
                     /* this tx is prereq-clear. execute it. */
@@ -556,6 +587,35 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
         /* TODO : handle invalid tx queue. */
     }
 
+    /* TODO: for tx in qInValidTx:
+     * 1) remove them without executing.
+     * 2.1) Update futureCollabVrfedBlocks map if the block height is greater than
+     * lastBlockVerifiedThisGroup
+     * 2.2) Otherwise, remove it from the dependency graph, update the prereq cnt
+     * of its dependent tx, verify a dependent tx if it is prereq-clear and 
+     * belongs to our group.
+     */
+
+    /* Step 3: If there is nothing have been verified in Steps 1 or 2,
+     * verify one prereq-clear tx in the dependency graph. This tx must belongs to
+     * the other subgroup b/c otherwise we would have executed it. 
+     */
+    if (!doneSomething) {
+        for (auto& p: mapTxDependency) {
+            if (isPrereqClear(p.second.selfIdx)) {
+                /* this tx is prereq-clear. verify it. */
+                TxIndexOnChain& txIdx = p.second.selfIdx;
+                CTransactionRef pTx = log[txIdx.block_height].ppMsg.pPbftBlock->vReq[txIdx.offset_in_block];
+                if (VerifyButNoExecuteTx(*pTx, p.second.selfIdx.block_height, *pcoinsTip)) {
+                    /* valid tx, execute it. */
+                    executePrereqTx(p.second.selfIdx, validTxsMulBlk, invalidTxsMulBlk);
+                    doneSomething = true;
+                    break;
+                }
+            }
+        }
+    }
+    
     if (!validTxsMulBlk.empty() || !invalidTxsMulBlk.empty()) {
         mutexCollabMsgQ.lock();
         std::deque<TxIndexOnChain>& validTxSwappingQ = qCollabMulBlkMsg[collabMulBlkMsgQIdx].validTxs; 
@@ -577,18 +637,6 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
         mutex4Q.unlock();
     }
 
-    /* TODO: for tx in qInValidTx:
-     * 1) remove them without executing.
-     * 2.1) Update futureCollabVrfedBlocks map if the block height is greater than
-     * lastBlockVerifiedThisGroup
-     * 2.2) Otherwise, remove it from the dependency graph, update the prereq cnt
-     * of its dependent tx, verify a dependent tx if it is prereq-clear and 
-     * belongs to our group.
-     */
-
-    /* TODO: Step 3 (Optional): If there is nothing to be verified in Steps 1 or 2,
-     *  verify the first not yet verified block belonging to the other subgroup . */
-
      /* return true if we have done something useful. */
      return doneSomething || !qValidTx[validTxQIdx].empty() || !qInvalidTx[invalidTxQIdx].empty();
 }
@@ -601,7 +649,7 @@ void CPbft::executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnCh
     ExecuteTx(*pTx, txIdx.block_height, *pcoinsTip);
     localQExecutedTx.push_back(std::move(txIdx));
     /* add dependent tx to the queue. */
-    for (const TxIndexOnChain& depTx: mapTxDependency[pTx->GetHash()]) {
+    for (const TxIndexOnChain& depTx: mapTxDependency[pTx->GetHash()].dependentTxs) {
         if (mapPrereqCnt.find(depTx) == mapPrereqCnt.end()){
             std::cerr << "dependent tx " << depTx.ToString() << " is not in mapPrereqCnt" << std::endl;
             continue;
@@ -678,7 +726,11 @@ void CPbft::executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnCh
                 break;
             }
             case 1:
-                /* this is a collab-valid tx, execute it. */
+                /* this is a collab-valid tx, execute it.
+                 * This is a tx not in our subgroup. If it is not collab-valid (i.e.,
+                 * not collab verified yet or collab-invalid), this tx will not be 
+                 * in the dependency graph b/c we only resolve dependency for 
+                 * collab-valid tx waiting for being executed. */
                 ExecuteTx(*pTx, curTxIdx.block_height, *pcoinsTip);
                 /* remove input UTXOs from mapUtxoConflict */
                 for (const CTxIn& inputUtxo: pTx->vin) {
@@ -693,7 +745,7 @@ void CPbft::executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnCh
         }
 
         /* add dependent tx to the queue. */
-        for (const TxIndexOnChain& depTx: mapTxDependency[pTx->GetHash()]) {
+        for (const TxIndexOnChain& depTx: mapTxDependency[pTx->GetHash()].dependentTxs) {
             if (mapPrereqCnt.find(depTx) == mapPrereqCnt.end()){
                 std::cerr << "dependent tx " << depTx.ToString() << " is not in mapPrereqCnt" << std::endl;
                 continue;
@@ -1177,5 +1229,8 @@ void  ThruputLogger::logServerSideThruput(struct timeval& curTime, uint32_t comp
     lastLogTime = curTime;
     lastCompletedTxCnt = completedTxCnt;
 }
+
+DependencyEntry::DependencyEntry(): selfIdx(0, 0) { }
+DependencyEntry::DependencyEntry(uint32_t height, uint32_t txSeq): selfIdx(height, txSeq) { }
 
 std::unique_ptr<CPbft> g_pbft;

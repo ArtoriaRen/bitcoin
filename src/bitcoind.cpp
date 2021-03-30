@@ -65,7 +65,7 @@ void WaitForShutdown()
     std::cout << " tx in the dependency graph are: " << std::endl;
     for (auto& p: pbft.mapTxDependency) {
         std::cout << p.first.ToString() << " has dependent tx:  ";
-        for (TxIndexOnChain& txIdx: p.second) {
+        for (TxIndexOnChain& txIdx: p.second.dependentTxs) {
             std::cout <<  txIdx.ToString() << ", ";
         }
         std::cout << std::endl;
