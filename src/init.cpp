@@ -824,6 +824,9 @@ void InitParameterInteraction()
     if (gArgs.IsArgSet("-warmuppbftblocks")) {
         nWarmUpBlocks = gArgs.GetArg("-warmuppbftblocks", -1);
     }
+    if (gArgs.IsArgSet("-maxblocksize")) {
+        maxBlockSize = gArgs.GetArg("-maxblocksize", 2000);
+    }
 }
 
 static std::string ResolveErrMsg(const char * const optname, const std::string& strBind)
