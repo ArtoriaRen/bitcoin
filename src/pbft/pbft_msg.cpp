@@ -80,46 +80,6 @@ bool VerifyTx(const CTransaction& tx, const int seq, CCoinsViewCache& view) {
     return true;
 }
 
-bool VerifyButNoExecuteTx(const CTransaction& tx, const int seq, CCoinsViewCache& view) {
-    /* -------------logic from Bitcoin code for tx processing--------- */
-    CValidationState state;
-    if(!tx.IsCoinBase()) {
-        bool fScriptChecks = true;
-    //	    CBlockUndo blockundo;
-        unsigned int flags = SCRIPT_VERIFY_NONE; // only verify pay to public key hash
-        CAmount txfee = 0;
-        /* We use  INT_MAX as block height, so that we never fail coinbase 
-         * maturity check. */
-        if (!Consensus::CheckTxInputs(tx, state, view, INT_MAX, txfee)) {
-            std::cerr << __func__ << ": Consensus::CheckTxInputs: " << tx.GetHash().ToString() << ", " << FormatStateMessage(state) << std::endl;
-            return false;
-        }
-
-        // GetTransactionSigOpCost counts 3 types of sigops:
-        // * legacy (always)
-        // * p2sh (when P2SH enabled in flags and excludes coinbase)
-        // * witness (when witness enabled in flags and excludes coinbase)
-        int64_t nSigOpsCost = 0;
-        nSigOpsCost += GetTransactionSigOpCost(tx, view, flags);
-        if (nSigOpsCost > MAX_BLOCK_SIGOPS_COST) { 
-            std::cerr << __func__ << ": ConnectBlock(): too many sigops" << std::endl;
-            return false;
-        }
-
-        PrecomputedTransactionData txdata(tx);
-        std::vector<CScriptCheck> vChecks;
-        bool fCacheResults = false; /* Don't cache results if we're actually connecting blocks (still consult the cache, though) */
-        if (!CheckInputs(tx, state, view, fScriptChecks, flags, fCacheResults, fCacheResults, txdata, nullptr)) {  // do not use multithreads to check scripts
-            std::cerr << __func__ << ": ConnectBlock(): CheckInputs on " 
-                    << tx.GetHash().ToString() 
-                    << " failed with " << FormatStateMessage(state)
-                    << std::endl;
-            return false;
-        }
-    }
-    return true;
-}
-
 bool ExecuteTx(const CTransaction& tx, const int seq, CCoinsViewCache& view) {
     UpdateCoins(tx, view, seq);
     return true;
@@ -185,11 +145,11 @@ static bool havePrereqTx(uint32_t height, uint32_t txSeq) {
     if (preReqTxs.size() != 0) {
         /* add this tx as a dependent tx to the dependency graph. */
         for (const uint256& prereqTx: preReqTxs) {
-            pbft.mapTxDependency[prereqTx].dependentTxs.emplace_back(height, txSeq);
+            pbft.mapTxDependency[prereqTx].emplace_back(height, txSeq);
         }
         pbft.mapPrereqCnt.emplace(TxIndexOnChain(height, txSeq), PendingTxStatus(preReqTxs.size(), 2));
         /* add this tx as a potential prereqTx to the dependency graph. */
-        pbft.mapTxDependency.emplace(tx->GetHash(), DependencyEntry(height, txSeq)); 
+        pbft.mapTxDependency.emplace(tx->GetHash(), std::deque<TxIndexOnChain>()); 
         for (const CTxIn& inputUtxo: tx->vin) {
             if (pbft.mapUtxoConflict.find(inputUtxo.prevout) == pbft.mapUtxoConflict.end()) {
                 pbft.mapUtxoConflict.emplace(inputUtxo.prevout, std::deque<uint256>(1, tx->GetHash())); // create an entry for this UTXO and put this tx in the list

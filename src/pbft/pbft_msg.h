@@ -319,7 +319,6 @@ public:
 };
 
 bool VerifyTx(const CTransaction& tx, const int seq, CCoinsViewCache& view);
-bool VerifyButNoExecuteTx(const CTransaction& tx, const int seq, CCoinsViewCache& view);
 bool ExecuteTx(const CTransaction& tx, const int seq, CCoinsViewCache& view);
 
 #endif /* PBFT_MSG_H */
