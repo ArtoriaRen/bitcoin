@@ -31,6 +31,7 @@ extern int32_t maxBlockSize;
 extern int32_t nWarmUpBlocks;
 extern bool testStarted;
 extern int32_t reqWaitTimeout;
+extern struct timeval collabResWaitTime; 
 
 
 class ThreadSafeQueue {
@@ -155,7 +156,6 @@ public:
     static const uint32_t nFaulty = 1;
     static const int32_t clientID = 65; // the pbftID of the client.
     /* verify a block of the other subgroup if it grows older than the collabResWaitTime. */
-    static constexpr struct timeval collabResWaitTime = {0, 900000}; 
     uint32_t localView;
     // pbft log. The index is sequence number.
     std::vector<CPbftLogEntry> log;

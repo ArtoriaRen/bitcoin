@@ -827,6 +827,9 @@ void InitParameterInteraction()
     if (gArgs.IsArgSet("-maxblocksize")) {
         maxBlockSize = gArgs.GetArg("-maxblocksize", 2000);
     }
+    if (gArgs.IsArgSet("-slowpathtriggertime")) {
+        collabResWaitTime.tv_sec = gArgs.GetArg("-slowpathtriggertime", 60);
+    }
 }
 
 static std::string ResolveErrMsg(const char * const optname, const std::string& strBind)

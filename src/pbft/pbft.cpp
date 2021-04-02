@@ -27,6 +27,7 @@ int32_t maxBlockSize = 2000;
 int32_t nWarmUpBlocks;
 bool testStarted = false;
 int32_t reqWaitTimeout = 1000;
+struct timeval collabResWaitTime = {60, 0};
 
 CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastConsecutiveSeqInReplyPhase(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalVerifyTime(0), totalVerifyCnt(0), totalExeTime(0), lastBlockVerifiedThisGroup(-1), firstOutstandingBlock(0), qValidTx(2), qInvalidTx(2), validTxQIdx(0), invalidTxQIdx(0), otherSubgroupSendQ(groupSize), notEnoughReqStartTime(std::chrono::milliseconds::zero()), qNotInitialExecutedTx(2), qExecutedTx(2), notExecutedQIdx(0), executedQIdx(0), qCollabMsg(2), qCollabMulBlkMsg(2), collabMsgQIdx(0), collabMulBlkMsgQIdx(0), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
@@ -503,11 +504,13 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
                     mapSkippedBlocks.emplace(curHeight, CSkippedBlockEntry(end_time, std::move(futureCollabVrfedBlocks[curHeight]), outstandingTxCnt));
                     if (mapSkippedBlocks.size() == 1) {
                         firstOutstandingBlock = mapSkippedBlocks.begin()->first;
+                        //std::cout << "Step 1: firstOutstandingBlock = " << firstOutstandingBlock << std::endl;
                     }
                 } else if (mapSkippedBlocks.empty()) {
                     /* there is no skipped blocks. use the next block as the first
                      * outstanding block for mapBlockCollabRes pruning. */
                     firstOutstandingBlock = curHeight + 1;
+                    //std::cout << "Step 1: firstOutstandingBlock = " << firstOutstandingBlock << std::endl;
                 }
                 futureCollabVrfedBlocks.erase(curHeight);
                 informReplySendingThread(curHeight, qDependentTx);
@@ -551,7 +554,7 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
                 }
                 futureCollabVrfedBlocks[txIdx.block_height][txIdx.offset_in_block] = 1;
             } else {
-                if (!mapSkippedBlocks.empty() && txIdx.block_height < mapSkippedBlocks.begin()->first) {
+                if (txIdx.block_height < firstOutstandingBlock) {
                     /* stale collab res, we have verify the tx by ourselves, discard it.*/
                     continue;
                 }
@@ -575,7 +578,12 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
                     mapSkippedBlocks.erase(iter);
                     if (!mapSkippedBlocks.empty()) {
                         firstOutstandingBlock = mapSkippedBlocks.begin()->first;
+                    } else {
+                        /* there is no skipped blocks. use the next block as the first
+                         * outstanding block for mapBlockCollabRes pruning. */
+                        firstOutstandingBlock = txIdx.block_height + 1;
                     }
+                    //std::cout << "Step 2: firstOutstandingBlock = " << firstOutstandingBlock << std::endl;
                 } else {
                     iter->second.collabStatus[txIdx.offset_in_block] = 1;
                 }
@@ -614,11 +622,13 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
      *  verify it. */
     gettimeofday(&end_time, NULL);
     if (!mapSkippedBlocks.empty() && end_time - mapSkippedBlocks.begin()->second.blockMetTime > collabResWaitTime) {
+        std::cout << "Step 3: current time = " << end_time.tv_sec << "s , block met time = " << mapSkippedBlocks.begin()->second.blockMetTime.tv_sec << "s" << std::endl;
         /* the lowest-height block is old enough, verify tx without collab res in it. */
         uint32_t height_to_verify = mapSkippedBlocks.begin()->first; 
         /* remove it from the skipped block map and mapCollabRes. */
         CPbftBlock& blk = *log[height_to_verify].ppMsg.pPbftBlock;
         assert(mapSkippedBlocks.begin()->second.outstandingTxCnt > 0);
+        std::cout << "Step 3: executing " << mapSkippedBlocks.begin()->second.outstandingTxCnt << " outstanding tx in block " << height_to_verify << std::endl;
         const std::deque<char>& collabStatus = mapSkippedBlocks.begin()->second.collabStatus; 
         for (int i = 0; i < blk.vReq.size(); i++) {
             if (collabStatus[i] == 0 && VerifyButNoExecuteTx(*(blk.vReq[i]), height_to_verify, *pcoinsTip)) {
@@ -634,8 +644,12 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
         mapSkippedBlocks.erase(mapSkippedBlocks.begin());
         if (!mapSkippedBlocks.empty()) {
             firstOutstandingBlock = mapSkippedBlocks.begin()->first;
+        } else {
+            /* there is no skipped blocks. use the next block as the first
+             * outstanding block for mapBlockCollabRes pruning. */
+            firstOutstandingBlock = height_to_verify + 1;
         }
-
+        std::cout << "Step 3: firstOutstandingBlock = " << firstOutstandingBlock << std::endl;
         doneSomething = true;
     }
 
