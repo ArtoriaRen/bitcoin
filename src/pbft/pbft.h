@@ -132,6 +132,21 @@ public:
     void logServerSideThruput(struct timeval& curTime, uint32_t completedTxCnt);
 };
 
+class CSkippedBlockEntry {
+public:
+    struct timeval blockMetTime;
+    /*a vector of tx verfication status: 1 ---verified valid
+     * by the other subgroup; -1 --- verified invalid by the other subgroup; 
+     * 0---not verified by the other subgroup. We only need to know which tx
+     * is not collab-verified yet, but this format let us reuse entry of the
+     * futureCollabVrfedBlocks
+     */
+    std::deque<char> collabStatus; 
+    /* number of tx not executed yet. */
+    uint32_t outstandingTxCnt;
+    CSkippedBlockEntry(const struct timeval& blockMetTimeIn, std::deque<char>&& collabStatusIn, uint32_t outstandingTxCntIn);
+};
+
 class CPbft{
 public:
     // TODO: may need to recycle log slots for throughput test. Consider deque.
@@ -181,6 +196,16 @@ public:
      */
     std::map<uint32_t, std::deque<char>> futureCollabVrfedBlocks;
 
+    /* key is block height, value is the status of outstanding tx and the block met time
+     * Blocks of the other subgroup are added to this graph in Step 1, and removed in
+     * Step 2 or Step 3.
+     */
+    std::map<uint32_t, CSkippedBlockEntry> mapSkippedBlocks;
+    /* the first block height in the  mapSkippedBlocks. This is used to inform the 
+     * msg-hand thread what collab msg are stale and can be discard. */
+    volatile uint32_t firstOutstandingBlock;
+
+    
     /* adjancy matrix for dependency graph for unverified tx.
      * Key is an unverified tx; Value is all tx depend on the Key tx
      * (both create-spend and spend-spend dependency).
@@ -205,10 +230,6 @@ public:
      * Used for avoiding process more than necessary Collab Message for a tx.
      */
     std::map<uint32_t, BlockCollabRes> mapBlockCollabRes;
-    /* The last block that all its tx has been collab validated. 
-     * Used to prune the above map.
-     */
-    std::mutex lockCollabResMap; 
     
     std::deque<std::deque<TxIndexOnChain>> qValidTx; 
     std::deque<std::deque<TxIndexOnChain>> qInvalidTx; 
@@ -260,7 +281,6 @@ public:
     /* server-side thruput logger. */
     ThruputLogger thruputLogger;
 
-    std::map<uint32_t, struct timeval> mapSkippedBlocks;
 
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
