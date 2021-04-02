@@ -139,6 +139,8 @@ public:
     static const size_t groupSize = 4;
     static const uint32_t nFaulty = 1;
     static const int32_t clientID = 65; // the pbftID of the client.
+    /* verify a block of the other subgroup if it grows older than the collabResWaitTime. */
+    static constexpr struct timeval collabResWaitTime = {0, 900000}; 
     uint32_t localView;
     // pbft log. The index is sequence number.
     std::vector<CPbftLogEntry> log;
@@ -206,7 +208,7 @@ public:
     /* The last block that all its tx has been collab validated. 
      * Used to prune the above map.
      */
-    int lastCollabFullBlock; 
+    std::mutex lockCollabResMap; 
     
     std::deque<std::deque<TxIndexOnChain>> qValidTx; 
     std::deque<std::deque<TxIndexOnChain>> qInvalidTx; 
@@ -258,6 +260,8 @@ public:
     /* server-side thruput logger. */
     ThruputLogger thruputLogger;
 
+    std::map<uint32_t, struct timeval> mapSkippedBlocks;
+
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
     bool ProcessPP(CConnman* connman, CPre_prepare& ppMsg);
@@ -272,6 +276,7 @@ public:
     CPbftMessage assembleMsg(const uint32_t seq); 
     CReply assembleReply(std::deque<uint256>& vTx, const char exe_res) const;
     bool checkMsg(CPbftMessage* msg);
+    /* resolve dependency. preReqTxs are all prereqTx. */
     bool havePrereqTxCollab(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs, bool alreadyInGraph);
     void addTx2GraphAsDependent(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs);
     void addTx2GraphAsPrerequiste(CTransactionRef pTx);
@@ -337,6 +342,14 @@ inline struct timeval operator-(const struct timeval& t0, const struct timeval& 
 inline struct timeval operator+=(struct timeval& t0, const struct timeval& t1) {
     t0 = t0 + t1;
     return t0;
+}
+
+inline bool operator>(const struct timeval& t0, const struct timeval& t1) {
+    return t0.tv_sec > t1.tv_sec 
+            || (t0.tv_sec == t1.tv_sec && t0.tv_usec > t1.tv_usec);
+
+
+
 }
 
 void ThreadConsensusLogExe();

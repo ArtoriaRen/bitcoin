@@ -28,8 +28,8 @@ public:
     uint32_t prepareCount;
     uint32_t commitCount;
     /* in case we receive collab msg before we receive a block, use this field to store
-     * the block size estimated from the collab msg. */
-    uint32_t estimatedBlockSize;
+     * the block size extracted from the collab msg. */
+    uint32_t blockSizeInCollabMsg;
 
     PbftPhase phase;
 
@@ -37,7 +37,7 @@ public:
     std::set<uint32_t> setCollabPeerID;
 
     //---placeholder. default phase should be pre-prepare.
-    CPbftLogEntry(): prepareCount(0), commitCount(0), estimatedBlockSize(0), phase(PbftPhase::pre_prepare){}
+    CPbftLogEntry(): prepareCount(0), commitCount(0), blockSizeInCollabMsg(0), phase(PbftPhase::pre_prepare){}
 };
 
 

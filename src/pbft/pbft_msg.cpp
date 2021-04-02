@@ -80,6 +80,46 @@ bool VerifyTx(const CTransaction& tx, const int seq, CCoinsViewCache& view) {
     return true;
 }
 
+bool VerifyButNoExecuteTx(const CTransaction& tx, const int seq, CCoinsViewCache& view) {
+    /* -------------logic from Bitcoin code for tx processing--------- */
+    CValidationState state;
+    if(!tx.IsCoinBase()) {
+        bool fScriptChecks = true;
+    //	    CBlockUndo blockundo;
+        unsigned int flags = SCRIPT_VERIFY_NONE; // only verify pay to public key hash
+        CAmount txfee = 0;
+        /* We use  INT_MAX as block height, so that we never fail coinbase 
+         * maturity check. */
+        if (!Consensus::CheckTxInputs(tx, state, view, INT_MAX, txfee)) {
+            std::cerr << __func__ << ": Consensus::CheckTxInputs: " << tx.GetHash().ToString() << ", " << FormatStateMessage(state) << std::endl;
+            return false;
+        }
+
+        // GetTransactionSigOpCost counts 3 types of sigops:
+        // * legacy (always)
+        // * p2sh (when P2SH enabled in flags and excludes coinbase)
+        // * witness (when witness enabled in flags and excludes coinbase)
+        int64_t nSigOpsCost = 0;
+        nSigOpsCost += GetTransactionSigOpCost(tx, view, flags);
+        if (nSigOpsCost > MAX_BLOCK_SIGOPS_COST) { 
+            std::cerr << __func__ << ": ConnectBlock(): too many sigops" << std::endl;
+            return false;
+        }
+
+        PrecomputedTransactionData txdata(tx);
+        std::vector<CScriptCheck> vChecks;
+        bool fCacheResults = false; /* Don't cache results if we're actually connecting blocks (still consult the cache, though) */
+        if (!CheckInputs(tx, state, view, fScriptChecks, flags, fCacheResults, fCacheResults, txdata, nullptr)) {  // do not use multithreads to check scripts
+            std::cerr << __func__ << ": ConnectBlock(): CheckInputs on " 
+                    << tx.GetHash().ToString() 
+                    << " failed with " << FormatStateMessage(state)
+                    << std::endl;
+            return false;
+        }
+    }
+    return true;
+}
+
 bool ExecuteTx(const CTransaction& tx, const int seq, CCoinsViewCache& view) {
     UpdateCoins(tx, view, seq);
     return true;
@@ -222,7 +262,7 @@ CCollabMessage::CCollabMessage(): peerID(pbftID), sigSize(0), vchSig() {
     vchSig.reserve(72); // the expected sig size is 72 bytes.
 }
 
-CCollabMessage::CCollabMessage(uint32_t heightIn, std::vector<char>&& validTxsIn, std::vector<uint32_t>&& invalidTxsIn): height(heightIn), validTxs(validTxsIn),invalidTxs(invalidTxsIn), peerID(pbftID), sigSize(0), vchSig() {
+CCollabMessage::CCollabMessage(uint32_t heightIn, uint32_t txCntIn, std::vector<char>&& validTxsIn, std::vector<uint32_t>&& invalidTxsIn): height(heightIn), txCnt(txCntIn), validTxs(validTxsIn),invalidTxs(invalidTxsIn), peerID(pbftID), sigSize(0), vchSig() {
     vchSig.reserve(72); // the expected sig size is 72 bytes.
 }
 

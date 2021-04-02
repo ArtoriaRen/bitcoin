@@ -219,6 +219,7 @@ public:
 class CCollabMessage {
 public:
     uint32_t height;
+    uint32_t txCnt;
     std::vector<char> validTxs;
     std::vector<uint32_t> invalidTxs;
     int32_t peerID;
@@ -226,11 +227,12 @@ public:
     std::vector<unsigned char> vchSig; //serilized ecdsa signature.
 
     CCollabMessage();
-    CCollabMessage(uint32_t height, std::vector<char>&& validTxs, std::vector<uint32_t>&& invalidTxs);
+    CCollabMessage(uint32_t heightIn, uint32_t txCntIn, std::vector<char>&& validTxsIn, std::vector<uint32_t>&& invalidTxsIn);
     
     template<typename Stream>
     void Serialize(Stream& s) const{
 	s.write((char*)&height, sizeof(height));
+	s.write((char*)&txCnt, sizeof(txCnt));
         uint32_t vector_size = validTxs.size();
 	s.write((char*)&vector_size, sizeof(vector_size));
 	s.write((char*)validTxs.data(), vector_size);
@@ -246,6 +248,7 @@ public:
     template<typename Stream>
     void Unserialize(Stream& s) {
 	s.read((char*)&height, sizeof(height));
+	s.read((char*)&txCnt, sizeof(txCnt));
         uint32_t vector_size = 0;
         s.read((char*)&vector_size, sizeof(vector_size));
 	validTxs.resize(vector_size);
@@ -319,6 +322,7 @@ public:
 };
 
 bool VerifyTx(const CTransaction& tx, const int seq, CCoinsViewCache& view);
+bool VerifyButNoExecuteTx(const CTransaction& tx, const int seq, CCoinsViewCache& view);
 bool ExecuteTx(const CTransaction& tx, const int seq, CCoinsViewCache& view);
 
 #endif /* PBFT_MSG_H */
