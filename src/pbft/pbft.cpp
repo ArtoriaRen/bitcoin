@@ -27,6 +27,8 @@ int32_t maxBlockSize = 2000;
 int32_t nWarmUpBlocks;
 bool testStarted = false;
 int32_t reqWaitTimeout = 1000;
+size_t groupSize = 4;
+uint32_t nFaulty = 1;
 
 CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalExeTime(0), lastReplySentSeq(-1), notEnoughReqStartTime(std::chrono::milliseconds::zero()), privateKey(CKey()) {
     privateKey.MakeNewKey(false);

@@ -827,6 +827,12 @@ void InitParameterInteraction()
     if (gArgs.IsArgSet("-maxblocksize")) {
         maxBlockSize = gArgs.GetArg("-maxblocksize", 2000);
     }
+    if (gArgs.IsArgSet("-groupsize")) {
+        groupSize = gArgs.GetArg("-groupsize", 4);
+    }
+    if (gArgs.IsArgSet("-numfaultynodes")) {
+        nFaulty = gArgs.GetArg("-numfaultynodes", 1);
+    }
 }
 
 static std::string ResolveErrMsg(const char * const optname, const std::string& strBind)

@@ -3000,7 +3000,7 @@ bool PeerLogicValidation::SendPPMessages(){
             //	<< ", block size = " << pbft->log[ppMsg.seq].ppMsg.pbft_block.vReq.size()
             //	<< " reqs." << std::endl;
             uint32_t start_peerID = pbftID + 1; // skip the leader id b/c it is myself
-            uint32_t end_peerID = start_peerID + CPbft::groupSize - 1;
+            uint32_t end_peerID = start_peerID + groupSize - 1;
             for (uint32_t i = start_peerID; i < end_peerID; i++) {
                 connman->PushMessage(pbft->peers[i], msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
             }
