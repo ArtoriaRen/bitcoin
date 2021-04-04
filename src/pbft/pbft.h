@@ -32,6 +32,8 @@ extern int32_t nWarmUpBlocks;
 extern bool testStarted;
 extern int32_t reqWaitTimeout;
 extern struct timeval collabResWaitTime; 
+extern size_t groupSize;
+extern uint32_t nFaulty;
 
 
 class ThreadSafeQueue {
@@ -152,8 +154,6 @@ class CPbft{
 public:
     // TODO: may need to recycle log slots for throughput test. Consider deque.
     static const size_t logSize = 3000;  
-    static const size_t groupSize = 4;
-    static const uint32_t nFaulty = 1;
     static const int32_t clientID = 65; // the pbftID of the client.
     /* verify a block of the other subgroup if it grows older than the collabResWaitTime. */
     uint32_t localView;

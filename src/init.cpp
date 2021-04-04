@@ -830,6 +830,12 @@ void InitParameterInteraction()
     if (gArgs.IsArgSet("-slowpathtriggertime")) {
         collabResWaitTime.tv_sec = gArgs.GetArg("-slowpathtriggertime", 60);
     }
+    if (gArgs.IsArgSet("-groupsize")) {
+        groupSize = gArgs.GetArg("-groupsize", 4);
+    }
+    if (gArgs.IsArgSet("-numfaultynodes")) {
+        nFaulty = gArgs.GetArg("-numfaultynodes", 1);
+    }
 }
 
 static std::string ResolveErrMsg(const char * const optname, const std::string& strBind)
