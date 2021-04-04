@@ -21,31 +21,35 @@
 class CReply {
 public:
     char reply; // execution result
-    uint256 digest; // use the tx header hash as digest.
+    std::vector<uint256> vTx; // a vector of tx hash
     int32_t peerID;
     uint32_t sigSize;
     std::vector<unsigned char> vchSig; //serilized ecdsa signature.
 
     CReply();
-    CReply(char replyIn, const uint256& digestIn);
 
     template<typename Stream>
     void Serialize(Stream& s) const{
-	s.write(&reply, sizeof(reply));
-	s.write((char*)digest.begin(), digest.size());
-	s.write((char*)&peerID, sizeof(peerID));
-	s.write((char*)&sigSize, sizeof(sigSize));
-	s.write((char*)vchSig.data(), sigSize);
+        s.write(&reply, sizeof(reply));
+        uint32_t txCnt = vTx.size();
+        s.write((char*)&txCnt, sizeof(txCnt));
+        s.write((char*)vTx.data(), txCnt * vTx[0].size());
+        s.write((char*)&peerID, sizeof(peerID));
+        s.write((char*)&sigSize, sizeof(sigSize));
+        s.write((char*)vchSig.data(), sigSize);
     }
 
     template<typename Stream>
     void Unserialize(Stream& s) {
-	s.read(&reply, sizeof(reply));
-	s.read((char*)digest.begin(), digest.size());
-	s.read((char*)&peerID, sizeof(peerID));
-	s.read((char*)&sigSize, sizeof(sigSize));
-	vchSig.resize(sigSize);
-	s.read((char*)vchSig.data(), sigSize);
+        s.read(&reply, sizeof(reply));
+        uint32_t txCnt = 0;
+        s.read((char*)&txCnt, sizeof(txCnt));
+        vTx.resize(txCnt);
+        s.read((char*)vTx.data(), txCnt * vTx[0].size());
+        s.read((char*)&peerID, sizeof(peerID));
+        s.read((char*)&sigSize, sizeof(sigSize));
+        vchSig.resize(sigSize);
+        s.read((char*)vchSig.data(), sigSize);
     }
 
     virtual void getHash(uint256& result) const;
@@ -58,7 +62,6 @@ public:
      * value is larger than total output value. */
     CAmount totalValueInOfShard;
     CInputShardReply();
-    CInputShardReply(char replyIn, const uint256& digestIn, const CAmount valueIn);
 
     template<typename Stream>
     void Serialize(Stream& s) const{

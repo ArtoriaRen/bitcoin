@@ -2005,6 +2005,7 @@ void CConnman::ThreadMessageHandler(uint threadIdx)
     gettimeofday(&lastGlobalStateUpdateTime, NULL);
     uint32_t nLocalCompletedTxPerInterval = 0, nLocalTotalFailedTxPerInterval = 0;
     uint32_t globalCntUpdateThreshold = 100;
+    std::stringstream latencySS;
 
     while (!flagInterruptMsgProc)
     {
@@ -2025,7 +2026,7 @@ void CConnman::ThreadMessageHandler(uint threadIdx)
                 continue;
 
             // Receive messages
-            bool fMoreNodeWork = m_msgproc->ProcessMessages(pnode, flagInterruptMsgProc, nLocalCompletedTxPerInterval, nLocalTotalFailedTxPerInterval, threadIdx);
+            bool fMoreNodeWork = m_msgproc->ProcessMessages(pnode, flagInterruptMsgProc, nLocalCompletedTxPerInterval, nLocalTotalFailedTxPerInterval, threadIdx, latencySS);
             fMoreWork |= (fMoreNodeWork && !pnode->fPauseSend);
             if (flagInterruptMsgProc)
                 return;
@@ -2063,6 +2064,9 @@ void CConnman::ThreadMessageHandler(uint threadIdx)
         }
         fMsgProcWake = false;
     }
+    pbft.mutexLatencyFile.lock();
+    pbft.latencyFile << latencySS.str();
+    pbft.mutexLatencyFile.unlock();
 }
 
 

@@ -157,6 +157,7 @@ public:
 
     std::ofstream latencyFile;
     std::ofstream thruputFile;
+    std::mutex mutexLatencyFile;
     /* <txid, tx_start_time>
      * This map includes both single-shard and cross-shard tx.
      */

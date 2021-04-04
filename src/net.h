@@ -471,7 +471,7 @@ struct CombinerAll
 class NetEventsInterface
 {
 public:
-    virtual bool ProcessMessages(CNode* pnode, std::atomic<bool>& interrupt, uint32_t& nLocalCompletedTxPerInterval, uint32_t& nLocalTotalFailedTxPerInterval, const uint threadIdx) = 0;
+    virtual bool ProcessMessages(CNode* pnode, std::atomic<bool>& interrupt, uint32_t& nLocalCompletedTxPerInterval, uint32_t& nLocalTotalFailedTxPerInterval, const uint threadIdx, std::stringstream& latencySS) = 0;
     virtual bool SendMessages(CNode* pnode, std::atomic<bool>& interrupt) = 0;
     virtual void InitializeNode(CNode* pnode) = 0;
     virtual void FinalizeNode(NodeId id, bool& update_connection_time) = 0;
