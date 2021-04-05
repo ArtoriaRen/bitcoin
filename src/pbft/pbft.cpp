@@ -908,6 +908,7 @@ void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
             log[msg.height].estimatedBlockSize = log[msg.height].ppMsg.pPbftBlock->vReq.size();
         }
         mapBlockCollabRes.emplace(msg.height, BlockCollabRes(log[msg.height].estimatedBlockSize));
+
         //std::cout << "create collab msg counters for block "<< msg.height << ", tx count = " << log[msg.height].ppMsg.pPbftBlock->vReq.size() << std::endl;
     }
     
@@ -976,12 +977,11 @@ void CPbft::UpdateTxValidity(const CCollabMultiBlockMsg& msg) {
         /* because CollabMulBlkMsg contains only info for previous blockly verified tx,
          * the entry for the block must exist in  mapBlockCollabRes. */
         BlockCollabRes& block_collab_res = mapBlockCollabRes[txIdx.block_height];
-
         if (block_collab_res.collab_msg_full_tx_cnt == block_collab_res.tx_collab_valid_cnt.size()) {
-            /* all tx in this block has accumlated enough collab_verify res. ignore this msg.
+            /* all tx in this block has accumlated enough collab_verify res. ignore thistx.
              * This block is not pruned yet because we prune blocks consequtively.
              */
-            return;
+            continue;
         }
 
         if (block_collab_res.tx_collab_valid_cnt[txIdx.offset_in_block] == nFaulty + 1) {
