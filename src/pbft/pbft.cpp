@@ -9,6 +9,8 @@
 int32_t pbftID;
 struct timeval thruInterval; // calculate throughput once every "thruInterval" 
 std::atomic<uint32_t> totalTxSent(0);
+size_t groupSize = 4;
+uint32_t nFaulty = 1;
 
 TxBlockInfo::TxBlockInfo(): blockHeight(0), n(0) { }
 TxBlockInfo::TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn): tx(txIn), blockHeight(blockHeightIn), n(nIn) { }

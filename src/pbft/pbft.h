@@ -28,6 +28,8 @@
 extern int32_t pbftID;
 extern struct timeval thruInterval;
 extern std::atomic<uint32_t> totalTxSent;
+extern size_t groupSize;
+extern uint32_t nFaulty;
 
 struct LockReply{
     std::map<int32_t, std::vector<CInputShardReply>> lockReply;
@@ -112,8 +114,6 @@ private:
 
 class CPbft{
 public:
-    static const uint32_t nFaulty = 1;
-    static const size_t groupSize = 4;
     CPubKey myPubKey;
     std::vector<CNode*> leaders; // pbft leader
 //    CPubKey myPubKey;

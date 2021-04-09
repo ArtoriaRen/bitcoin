@@ -1835,13 +1835,13 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	vRecv >> idPubkey;
 	assert(idPubkey.first == threadIdx);
 	g_pbft->pubKeyMap.insert(std::make_pair(idPubkey.first, idPubkey.second));
-	if (idPubkey.first % CPbft::groupSize == 0) {
+	if (idPubkey.first == 0) {
 	    /* The g_pbft->leaders vector is not protected by a lock because we
 	     * believe different ThreadMessageHandler threads writes to the 
 	     * different part of the vector, and all reads happens after all
 	     * writes finish.
 	     */
-	    g_pbft->leaders[idPubkey.first/CPbft::groupSize] = pfrom;
+	    g_pbft->leaders[0] = pfrom;
 	}
     }
 
@@ -1855,7 +1855,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         for (const uint256& digest: reply.vTx) { 
             //std::cout << __func__ << ": received PBFT_REPLY for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
             uint32_t replyCnt = ++g_pbft->replyMap[digest];
-            if (replyCnt == CPbft::nFaulty + 1) {
+            if (replyCnt == nFaulty + 1) {
                 struct timeval endTime;
                 gettimeofday(&endTime, NULL);
                 /* ---- calculate latency ---- */

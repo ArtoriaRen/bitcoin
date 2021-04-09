@@ -816,6 +816,12 @@ void InitParameterInteraction()
         int millisecs = gArgs.GetArg("-thruinterval", 200);
 	thruInterval = {millisecs/1000, (millisecs % 1000) * 1000};
     }
+    if (gArgs.IsArgSet("-groupsize")) {
+        groupSize = gArgs.GetArg("-groupsize", 4);
+    }
+    if (gArgs.IsArgSet("-numfaultynodes")) {
+        nFaulty = gArgs.GetArg("-numfaultynodes", 1);
+    }
 }
 
 static std::string ResolveErrMsg(const char * const optname, const std::string& strBind)

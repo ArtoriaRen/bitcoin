@@ -72,7 +72,7 @@ enum BindFlags {
 };
 
 const uint SHARD_PER_THREAD = 2;
-const uint NODES_PER_THREAD = SHARD_PER_THREAD * g_pbft->groupSize;
+const uint NODES_PER_THREAD = SHARD_PER_THREAD * groupSize;
 const static std::string NET_MESSAGE_COMMAND_OTHER = "*other*";
 
 static const uint64_t RANDOMIZER_ID_NETGROUP = 0x6c0edd8036ef4036ULL; // SHA256("netgroup")[0:8]
@@ -2362,7 +2362,7 @@ bool CConnman::Start(CScheduler& scheduler, const Options& connOptions)
     }
 
     /* create one thread for every node. */
-    for (uint32_t i = 0; i < g_pbft->groupSize; i++) {
+    for (uint32_t i = 0; i < groupSize; i++) {
 	threadSocketHandler.push_back(std::thread(&TraceThread<std::function<void()> >, "net" + std::to_string(i), std::function<void()>(std::bind(&CConnman::ThreadSocketHandler, this, i))));
     }
 
@@ -2386,7 +2386,7 @@ bool CConnman::Start(CScheduler& scheduler, const Options& connOptions)
         threadOpenConnections = std::thread(&TraceThread<std::function<void()> >, "opencon", std::function<void()>(std::bind(&CConnman::ThreadOpenConnections, this, connOptions.m_specified_outgoing)));
 
     // Process messages
-    for (uint32_t i = 0; i < g_pbft->groupSize; i++) {
+    for (uint32_t i = 0; i < groupSize; i++) {
         threadMessageHandler.push_back(std::thread(&TraceThread<std::function<void()> >,  "mghnd" + std::to_string(i), std::function<void()>(std::bind(&CConnman::ThreadMessageHandler, this, i))));
     }
 
@@ -2437,7 +2437,7 @@ void CConnman::Interrupt()
 
 void CConnman::Stop()
 {
-    for (uint i = 0; i < g_pbft->groupSize; i++) {
+    for (uint i = 0; i < groupSize; i++) {
 	if (threadMessageHandler[i].joinable())
 	    threadMessageHandler[i].join();
     }
@@ -2447,7 +2447,7 @@ void CConnman::Stop()
         threadOpenAddedConnections.join();
     if (threadDNSAddressSeed.joinable())
         threadDNSAddressSeed.join();
-    for (uint i = 0; i < g_pbft->groupSize; i++) {
+    for (uint i = 0; i < groupSize; i++) {
 	if (threadSocketHandler[i].joinable())
 	    threadSocketHandler[i].join();
     }
