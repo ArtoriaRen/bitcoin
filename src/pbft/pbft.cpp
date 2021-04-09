@@ -1069,10 +1069,10 @@ void CPbft::UpdateTxValidity(const CCollabMultiBlockMsg& msg) {
         BlockCollabRes& block_collab_res = mapBlockCollabRes[txIdx.block_height];
 
         if (block_collab_res.collab_msg_full_tx_cnt == block_collab_res.tx_collab_valid_cnt.size()) {
-            /* all tx in this block has accumlated enough collab_verify res. ignore this msg.
+            /* all tx in this block has accumlated enough collab_verify res. ignore this tx.
              * This block is not pruned yet because we prune blocks consequtively.
              */
-            return;
+            continue;
         }
 
         if (block_collab_res.tx_collab_valid_cnt[txIdx.offset_in_block] == nFaulty + 1) {
