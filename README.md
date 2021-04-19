@@ -9,9 +9,10 @@ This branch (`omniledger_smartPlace_client`) is for STP client code.
 
 See branch [tx_place_pbft_omniledger_smartPlace](https://github.com/ArtoriaRen/bitcoin/tree/tx_place_pbft_omniledger_smartPlace) for STP server code.
 
-See branch [tx_place_omniledger_block_allowAbort](https://github.com/ArtoriaRen/bitcoin/tree/tx_place_omniledger_block_allowAbort) for HP client code.
+See branch [tx_place_client_correct_throughput_measure](https://github.com/ArtoriaRen/bitcoin/tree/tx_place_client_correct_throughput_measure) for HP client code.
 
-See branch [tx_place_client_correct_throughput_measure](https://github.com/ArtoriaRen/bitcoin/tree/tx_place_client_correct_throughput_measure) for HP server code.
+See branch [tx_place_omniledger_block_allowAbort](https://github.com/ArtoriaRen/bitcoin/tree/tx_place_omniledger_block_allowAbort) for HP server code.
+
 
 
 # Reproducing the 2-shard Exprimental Results in the paper
