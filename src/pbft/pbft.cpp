@@ -400,7 +400,7 @@ void CPbft::WarmUpMemoryCache() {
     CCoinsViewCache view_tenta(pcoinsTip.get());
     int lastExecutedSeqWarmUp = readBlocksFromFile();
     uint32_t nWarmUpTx = 0;
-    for (int i = 0; i < lastExecutedSeqWarmUp + 1; i++) {
+    for (int i = 0; i <= lastExecutedSeqWarmUp; i++) {
 	uint32_t block_size = log[i].ppMsg.pbft_block.vReq.size();
 	//std::cout << "executing warm-up block of size " << block_size << std::endl;
 
@@ -408,8 +408,8 @@ void CPbft::WarmUpMemoryCache() {
         /* Discard the block to prepare for performance test. */
         log[i].ppMsg.pbft_block.Clear();
 	nWarmUpTx += block_size; 
-	//std::cout << "warm up -- total executed tx: " << nWarmUpTx << std::endl;
     }
+    std::cout << "warm up -- total executed tx: " << nWarmUpTx << std::endl;
 }
 
 

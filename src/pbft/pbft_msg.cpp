@@ -430,22 +430,7 @@ void CPbftBlock::ComputeHash(){
 
 void CPbftBlock::WarmUpExecute(const int seq, CCoinsViewCache& view) const {
     for (uint i = 0; i < vReq.size(); i++) {
-	CTransaction tx(vReq[i].pReq->tx_mutable);
-	if (vReq[i].type == ClientReqType::TX) {
-	    // are the actual inputs available?
-	    if (!view.HaveInputs(tx)) {
-		std::cout << __func__ << ": TX " << tx.GetHash().GetHex() << " inputs missing/spent" << std::endl;
-	    }
-	    UpdateCoins(tx, view, g_pbft->getBlockHeight(seq));
-	} else if (vReq[i].type == ClientReqType::LOCK) {
-	    for (const uint32_t idx: (static_cast<LockReq*>(vReq[i].pReq.get()))->vInputUtxoIdxToLock) {
-		if (!view.HaveCoin(tx.vin[idx].prevout)) {
-		    std::cout << __func__ << ": LOCK " << tx.GetHash().GetHex() << " inputs missing/spent" << std::endl;
-		}
-	    }
-	} else if (vReq[i].type == ClientReqType::UNLOCK_TO_COMMIT) {
-	    UpdateUnlockCommitCoins(tx, view, g_pbft->getBlockHeight(seq));
-	}
+        UpdateCoins(vReq[i].pReq->tx_mutable, view, seq);
     }
 }
 
