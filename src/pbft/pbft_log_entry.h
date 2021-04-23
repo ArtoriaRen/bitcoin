@@ -25,6 +25,10 @@ public:
 //    std::vector<CCommit> commitArray;
     uint32_t prepareCount;
     uint32_t commitCount;
+    /* in case we receive collab msg before we receive a block, use this field to store
+     * the block size extracted from the collab msg. */
+    uint32_t blockSizeInCollabMsg;
+
 
     PbftPhase phase;
     // execution result for this log entry

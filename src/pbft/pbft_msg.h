@@ -27,6 +27,38 @@ enum PbftPhase {pre_prepare, prepare, commit, reply, end};
  */
 enum ClientReqType {TX = 0, LOCK, UNLOCK_TO_COMMIT, UNLOCK_TO_ABORT};
 
+class TxIndexOnChain {
+public:
+    uint32_t block_height;
+    uint32_t offset_in_block;
+
+    TxIndexOnChain();
+    TxIndexOnChain(const uint32_t block_height_in, const uint32_t offset_in_block_in);
+    bool IsNull();
+
+    template<typename Stream>
+    void Serialize(Stream& s) const{
+	s.write(reinterpret_cast<const char*>(&block_height), sizeof(block_height));
+	s.write(reinterpret_cast<const char*>(&offset_in_block), sizeof(offset_in_block));
+    }
+
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+	s.read(reinterpret_cast<char*>(&block_height), sizeof(block_height));
+	s.read(reinterpret_cast<char*>(&offset_in_block), sizeof(offset_in_block));
+    }
+
+    TxIndexOnChain operator+(const unsigned int oprand);
+
+    friend bool operator<(const TxIndexOnChain& a, const TxIndexOnChain& b);
+    friend bool operator>(const TxIndexOnChain& a, const TxIndexOnChain& b);
+    friend bool operator==(const TxIndexOnChain& a, const TxIndexOnChain& b);
+    friend bool operator!=(const TxIndexOnChain& a, const TxIndexOnChain& b);
+    friend bool operator<=(const TxIndexOnChain& a, const TxIndexOnChain& b);
+
+    std::string ToString() const;
+};
+
 class CPbft;
 
 class CPre_prepare;
@@ -391,6 +423,110 @@ public:
     }
 };
 
+class CCollabMessage {
+public:
+    uint32_t height;
+    uint32_t txCnt;
+    std::vector<char> validTxs;
+    std::vector<uint32_t> invalidTxs;
+    int32_t peerID;
+    uint32_t sigSize;
+    std::vector<unsigned char> vchSig; //serilized ecdsa signature.
+
+    CCollabMessage();
+    CCollabMessage(uint32_t heightIn, uint32_t txCntIn, std::vector<char>&& validTxsIn, std::vector<uint32_t>&& invalidTxsIn);
+    
+    template<typename Stream>
+    void Serialize(Stream& s) const{
+	s.write((char*)&height, sizeof(height));
+	s.write((char*)&txCnt, sizeof(txCnt));
+        uint32_t vector_size = validTxs.size();
+	s.write((char*)&vector_size, sizeof(vector_size));
+	s.write((char*)validTxs.data(), vector_size);
+        vector_size = invalidTxs.size();
+	s.write((char*)&vector_size, sizeof(vector_size));
+	s.write((char*)invalidTxs.data(), vector_size * sizeof(uint32_t));
+
+	s.write((char*)&peerID, sizeof(peerID));
+	s.write((char*)&sigSize, sizeof(sigSize));
+	s.write((char*)vchSig.data(), sigSize);
+    }
+    
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+	s.read((char*)&height, sizeof(height));
+	s.read((char*)&txCnt, sizeof(txCnt));
+        uint32_t vector_size = 0;
+        s.read((char*)&vector_size, sizeof(vector_size));
+	validTxs.resize(vector_size);
+	s.read((char*)validTxs.data(), vector_size);
+        s.read((char*)&vector_size, sizeof(vector_size));
+	invalidTxs.resize(vector_size);
+	s.read((char*)invalidTxs.data(), vector_size * sizeof(uint32_t));
+
+	s.read((char*)&peerID, sizeof(peerID));
+	s.read((char*)&sigSize, sizeof(sigSize));
+	vchSig.resize(sigSize);
+	s.read((char*)vchSig.data(), sigSize);
+    }
+    void getHash(uint256& result) const;
+
+    /* fetch the bit for this tx. If the bit is 1, then the tx is valid. */
+    bool isValidTx(const uint32_t txSeq) const;
+};
+
+class CCollabMultiBlockMsg {
+public:
+    std::vector<TxIndexOnChain> validTxs;
+    std::vector<TxIndexOnChain> invalidTxs;
+    int32_t peerID;
+    uint32_t sigSize;
+    std::vector<unsigned char> vchSig; //serilized ecdsa signature.
+
+    CCollabMultiBlockMsg();
+    CCollabMultiBlockMsg(std::vector<TxIndexOnChain>&& validTxs, std::vector<TxIndexOnChain>&& invalidTxs);
+    
+    template<typename Stream>
+    void Serialize(Stream& s) const{
+        uint32_t vector_size = validTxs.size();
+	s.write((char*)&vector_size, sizeof(vector_size));
+        for (uint i = 0; i < vector_size; i++) {
+            validTxs[i].Serialize(s);
+        }
+        vector_size = invalidTxs.size();
+	s.write((char*)&vector_size, sizeof(vector_size));
+        for (uint i = 0; i < vector_size; i++) {
+            invalidTxs[i].Serialize(s);
+        }
+
+	s.write((char*)&peerID, sizeof(peerID));
+	s.write((char*)&sigSize, sizeof(sigSize));
+	s.write((char*)vchSig.data(), sigSize);
+    }
+    
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+        uint32_t vector_size = 0;
+        s.read((char*)&vector_size, sizeof(vector_size));
+	validTxs.resize(vector_size);
+        for (uint i = 0; i < vector_size; i++) {
+            validTxs[i].Unserialize(s);
+        }
+        s.read((char*)&vector_size, sizeof(vector_size));
+	invalidTxs.resize(vector_size);
+        for (uint i = 0; i < vector_size; i++) {
+            invalidTxs[i].Unserialize(s);
+        }
+
+	s.read((char*)&peerID, sizeof(peerID));
+	s.read((char*)&sigSize, sizeof(sigSize));
+	vchSig.resize(sigSize);
+	s.read((char*)vchSig.data(), sigSize);
+    }
+    void getHash(uint256& result) const;
+    void clear();
+    bool empty() const;
+};
 
 #endif /* PBFT_MSG_H */
 

@@ -499,3 +499,100 @@ void CPbftBlock::Clear() {
 }
 
 CReqBatch::CReqBatch() { }
+
+CCollabMessage::CCollabMessage(): peerID(pbftID), sigSize(0), vchSig() {
+    vchSig.reserve(72); // the expected sig size is 72 bytes.
+}
+
+CCollabMessage::CCollabMessage(uint32_t heightIn, uint32_t txCntIn, std::vector<char>&& validTxsIn, std::vector<uint32_t>&& invalidTxsIn): height(heightIn), txCnt(txCntIn), validTxs(validTxsIn),invalidTxs(invalidTxsIn), peerID(pbftID), sigSize(0), vchSig() {
+    vchSig.reserve(72); // the expected sig size is 72 bytes.
+}
+
+void CCollabMessage::getHash(uint256& result) const {
+    CHash256().Write((const unsigned char*)&height, sizeof(height))
+            .Write((const unsigned char*)validTxs.data(), validTxs.size())
+            .Write((const unsigned char*)invalidTxs.data(), invalidTxs.size() * sizeof(uint32_t))
+	    .Finalize((unsigned char*)&result);
+}
+
+/* fetch the bit for this tx. If the bit is 1, then the tx is valid. */
+bool CCollabMessage::isValidTx(const uint32_t txSeq) const {
+    char bit_mask = 1 << (txSeq % 8);
+    return  validTxs[txSeq >> 3] & bit_mask;
+}
+
+CCollabMultiBlockMsg::CCollabMultiBlockMsg(): peerID(pbftID), sigSize(0), vchSig() {
+    vchSig.reserve(72); // the expected sig size is 72 bytes.
+}
+
+CCollabMultiBlockMsg::CCollabMultiBlockMsg(std::vector<TxIndexOnChain>&& validTxsIn, std::vector<TxIndexOnChain>&& invalidTxsIn): validTxs(validTxsIn),invalidTxs(invalidTxsIn), peerID(pbftID), sigSize(0), vchSig() {
+    vchSig.reserve(72); // the expected sig size is 72 bytes.
+}
+
+void CCollabMultiBlockMsg::getHash(uint256& result) const {
+    CHash256().Write((const unsigned char*)validTxs.data(), validTxs.size())
+            .Write((const unsigned char*)invalidTxs.data(), invalidTxs.size() * sizeof(uint32_t))
+	    .Finalize((unsigned char*)&result);
+}
+
+void CCollabMultiBlockMsg::clear() {
+    validTxs.clear();
+    invalidTxs.clear();
+}
+
+bool CCollabMultiBlockMsg::empty() const {
+    return validTxs.empty() && invalidTxs.empty();
+}
+
+TxIndexOnChain::TxIndexOnChain(): block_height(0), offset_in_block(0) { }
+
+TxIndexOnChain::TxIndexOnChain(uint32_t block_height_in, uint32_t offset_in_block_in):
+ block_height(block_height_in), offset_in_block(offset_in_block_in) { }
+
+bool TxIndexOnChain::IsNull() {
+    return block_height == 0 && offset_in_block == 0;
+}
+
+bool operator<(const TxIndexOnChain& a, const TxIndexOnChain& b)
+{
+    return a.block_height < b.block_height || 
+	    (a.block_height == b.block_height && a.offset_in_block < b.offset_in_block);
+}
+
+bool operator>(const TxIndexOnChain& a, const TxIndexOnChain& b)
+{
+    return a.block_height > b.block_height || 
+	    (a.block_height == b.block_height && a.offset_in_block > b.offset_in_block);
+}
+
+bool operator==(const TxIndexOnChain& a, const TxIndexOnChain& b) {
+    return a.block_height == b.block_height && a.offset_in_block == b.offset_in_block;
+}
+
+bool operator!=(const TxIndexOnChain& a, const TxIndexOnChain& b) {
+    return ! (a == b);
+}
+
+bool operator<=(const TxIndexOnChain& a, const TxIndexOnChain& b) {
+    return a.block_height < b.block_height || 
+	    (a.block_height == b.block_height && a.offset_in_block <= b.offset_in_block);
+}
+
+TxIndexOnChain TxIndexOnChain::operator+(const unsigned int oprand) {
+    const unsigned int cur_block_size = chainActive[block_height]->nTx;
+    if (offset_in_block + oprand < cur_block_size) {
+	return TxIndexOnChain(block_height, offset_in_block + oprand);
+    } else {
+	uint32_t cur_block = block_height + 1;
+	uint32_t cur_oprand = oprand - (cur_block_size - offset_in_block);
+	while (cur_oprand >= chainActive[cur_block]->nTx) {
+	    cur_oprand -= chainActive[cur_block]->nTx;
+	    cur_block++;
+	}
+	return TxIndexOnChain(cur_block, cur_oprand);
+    }
+}
+
+std::string TxIndexOnChain::ToString() const {
+    return "(" + std::to_string(block_height) + ", " + std::to_string(offset_in_block) + ")";
+}
