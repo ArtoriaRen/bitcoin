@@ -71,7 +71,7 @@ enum BindFlags {
     BF_WHITELIST    = (1U << 2),
 };
 
-const uint SHARD_PER_THREAD = 2;
+const uint SHARD_PER_THREAD = 1;
 const uint NODES_PER_THREAD = SHARD_PER_THREAD * g_pbft->groupSize;
 const uint32_t localCommittedTxCapacity = 100; 
 const static std::string NET_MESSAGE_COMMAND_OTHER = "*other*";

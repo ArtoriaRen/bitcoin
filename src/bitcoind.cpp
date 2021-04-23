@@ -79,6 +79,10 @@ void WaitForShutdown()
     pbft.vLoad.print();
     std::cout << std::endl;
     std::cout << "txInFly cnt = " << pbft.txInFly.size() << std::endl;
+    std::cout << "unsent dependent tx cnt = " << pbft.mapRemainingPrereq.size() << ", ready to send dependent tx cnt = " <<  pbft.depTxReady2Send.size() << std::endl;
+    if (!pbft.mapRemainingPrereq.empty()) {
+        std::cout << "first dependent tx = " << pbft.mapRemainingPrereq.begin()->first.ToString() << ", remaining prereq tx cnt = " << pbft.mapRemainingPrereq.begin()->second << std::endl;
+    }
     Interrupt();
 }
 

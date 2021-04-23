@@ -230,6 +230,7 @@ void CPbft::add2BatchOnlyBuffered(const uint32_t shardId, std::deque<TypedReq>& 
 
 /* no matter any batch is full or not, send all batches. */
 void sendAllBatch() {
+    RenameThread("batchSending");
     long totalPushMessageTime = 0;
     uint totalPushMessageCnt = 0;
     bool fShutdown = ShutdownRequested();
@@ -266,7 +267,7 @@ void sendAllBatch() {
         }
         fShutdown = ShutdownRequested();
     }
-    std::cout << "average push message time = " << totalPushMessageTime/totalPushMessageCnt << " usec/tx. totally pushed msg cnt =  " << totalPushMessageCnt << std::endl;
+    std::cout << "Batch-sending thread: average push message time = " << totalPushMessageTime/totalPushMessageCnt << " usec/tx. totally pushed msg cnt =  " << totalPushMessageCnt << std::endl;
 }
 
 void CPbft::loadBlocks(uint32_t startBlock, uint32_t endBlock) {
