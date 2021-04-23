@@ -1505,8 +1505,10 @@ void static decrementPrereqCnt(const uint256& txid, std::deque<TxIndexOnChain>& 
         /* there are some dependent tx. decrease the prereq counter for each of them.*/
         for (const TxIndexOnChain& dependent : pbft.mapDependentTx[txIndex]) {
             uint32_t old_val = pbft.mapRemainingPrereq[dependent].fetch_sub(1, std::memory_order_relaxed);
+            //std::cout << "parent tx = " << txIndex.ToString() << ", child tx " << dependent.ToString() << " has remaining prereq tx cnt = " << old_val - 1 << std::endl; 
             if (old_val == 1) {
                 bufferedDepTxReady2Send.push_back(dependent);
+                pbft.mapRemainingPrereq.erase(dependent);
             }
         }
         if (!bufferedDepTxReady2Send.empty()) {
@@ -1895,6 +1897,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		if (reply.reply == 'y') {
 			g_pbft->nSucceed.fetch_add(1, std::memory_order_relaxed);
 			decrementPrereqCnt(reply.digest, bufferedDepTxReady2Send);
+            //std::cout << "remove tx (" << g_pbft->txInFly[reply.digest].blockHeight << ", " << g_pbft->txInFly[reply.digest].n << "), " << reply.digest.ToString() << " from txInFly."<< std::endl;
 			g_pbft->txInFly.erase(reply.digest);
 			nLocalCompletedTxPerInterval++;
 		} else if (reply.reply == 'n') {

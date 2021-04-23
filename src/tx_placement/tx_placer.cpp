@@ -453,21 +453,29 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
         }
     }
 
-    /* add all req in our local batch buffer to the global batch buffer. */
-    bool localBuffersEmpty = false;
-    while (!localBuffersEmpty) {
-        localBuffersEmpty = true;
+    /* send remaing tx. For time measurement only */
+    uint32_t nAllTx = 0;
+    for (int block_height = startBlock; block_height < endBlock; block_height++) {
+        nAllTx += g_pbft->blocks2Send[block_height - startBlock].vtx.size();
+    }
+    while (cnt < nAllTx) {
+        if (ShutdownRequested())
+            break;
+        cnt += sendQueuedTx(startBlock, noop_count, batchBuffers, reqSentCnt);
+
+        /* add all req in our local batch buffer to the global batch buffer. */
         for (uint i = 0; i < batchBuffers.size(); i++) {
             std::deque<TypedReq>& shardBatchBuffer = batchBuffers[i];
             if (!shardBatchBuffer.empty()) {
-                localBuffersEmpty = false;
                 pbft.add2BatchOnlyBuffered(i, shardBatchBuffer);
             }
         }
+
+        usleep(200);
     }
 
     gettimeofday(&end_time_all_block, NULL);
-    std::cout << __func__ << ": thread " << thread_idx << " sent " << cnt << " tx in total. All tx of this thread takes " << (end_time_all_block.tv_sec - start_time_all_block.tv_sec)*1000000 + (end_time_all_block.tv_usec - start_time_all_block.tv_usec) << " us. Totally sentReqCnt = " << reqSentCnt << std::endl;
+    std::cout << __func__ << ": thread " << thread_idx << " sent " << cnt << " tx in total. All tx of this thread takes " << (end_time_all_block.tv_sec - start_time_all_block.tv_sec)*1000000 + (end_time_all_block.tv_usec - start_time_all_block.tv_usec) << " us. Totally sentReqCnt = " << reqSentCnt << ". all tx in Bitcoin blocks = " << nAllTx << std::endl;
     totalTxSent += cnt; 
     globalReqSentCnt += reqSentCnt;
 }
