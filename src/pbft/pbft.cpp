@@ -40,7 +40,7 @@ ThreadSafeQueue::ThreadSafeQueue() { }
 
 ThreadSafeQueue::~ThreadSafeQueue() { }
 
-TypedReq& ThreadSafeQueue::front() {
+std::shared_ptr<CClientReq>& ThreadSafeQueue::front() {
     std::unique_lock<std::mutex> mlock(mutex_);
     while (queue_.empty()) {
         cond_.wait(mlock);
@@ -48,25 +48,25 @@ TypedReq& ThreadSafeQueue::front() {
     return queue_.front();
 }
 
-std::deque<TypedReq> ThreadSafeQueue::get_all() {
+std::deque<std::shared_ptr<CClientReq>> ThreadSafeQueue::get_all() {
     std::unique_lock<std::mutex> mlock(mutex_);
-    std::deque<TypedReq> ret(queue_);
+    std::deque<std::shared_ptr<CClientReq>> ret(queue_);
     queue_.clear();
     return ret;
 }
 
-std::deque<TypedReq> ThreadSafeQueue::get_upto(size_t max_bytes) {
+std::deque<std::shared_ptr<CClientReq>> ThreadSafeQueue::get_upto(size_t max_bytes) {
     std::unique_lock<std::mutex> mlock(mutex_);
     size_t packageSize = 0;
     int i = 0;
     for (; i < queue_.size() && packageSize < max_bytes; i++) {
-	CMutableTransaction& tx_mutable = queue_[i].pReq->tx_mutable;
+	const CTransaction& tx = *queue_[i]->pTx;
 	//std::cout << "tx " << tx_mutable.GetHash().GetHex() << " size = " << ::GetSerializeSize(tx_mutable, SER_NETWORK, PROTOCOL_VERSION) << std::endl; 
-	packageSize += ::GetSerializeSize(tx_mutable, SER_NETWORK, PROTOCOL_VERSION);
+	packageSize += ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION);
     }
     //std::cout << "i = " << i << ", packageSize = " << packageSize << std::endl;
 
-    std::deque<TypedReq> ret(queue_.begin(), queue_.begin() + i);
+    std::deque<std::shared_ptr<CClientReq>> ret(queue_.begin(), queue_.begin() + i);
     queue_.erase(queue_.begin(), queue_.begin() + i);
     return ret;
 }
@@ -79,14 +79,14 @@ void ThreadSafeQueue::pop_front() {
     queue_.pop_front();
 }
 
-void ThreadSafeQueue::push_back(const TypedReq& item) {
+void ThreadSafeQueue::push_back(const std::shared_ptr<CClientReq>& item) {
     std::unique_lock<std::mutex> mlock(mutex_);
     queue_.push_back(item);
     mlock.unlock(); // unlock before notificiation to minimize mutex con
     cond_.notify_one(); // notify one waiting thread
 }
 
-void ThreadSafeQueue::push_back(TypedReq&& item) {
+void ThreadSafeQueue::push_back(std::shared_ptr<CClientReq>&& item) {
     std::unique_lock<std::mutex> mlock(mutex_);
     queue_.push_back(std::move(item));
     mlock.unlock(); // unlock before notificiation to minimize mutex con
@@ -95,8 +95,8 @@ void ThreadSafeQueue::push_back(TypedReq&& item) {
 
 void ThreadSafeQueue::push_back(CReqBatch& itemBatch) {
     std::unique_lock<std::mutex> mlock(mutex_);
-    for (uint i = 0; i < itemBatch.vReq.size(); i++) {
-        queue_.push_back(std::move(itemBatch.vReq[i]));
+    for (uint i = 0; i < itemBatch.vPReq.size(); i++) {
+        queue_.push_back(std::move(itemBatch.vPReq[i]));
     }
     mlock.unlock(); // unlock before notificiation to minimize mutex con
     cond_.notify_one(); // notify one waiting thread
@@ -115,7 +115,7 @@ bool ThreadSafeQueue::empty() {
     return queue_.empty();
 }
 
-CPbft::CPbft() : localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastConsecutiveSeqInReplyPhase(-1), client(nullptr), peers(std::vector<CNode*>(groupSize * num_committees)), nReqInFly(0), clientConnMan(nullptr), notEnoughReqStartTime(std::chrono::milliseconds::zero()), startBlkHeight(0), nInputShardSigs(0), lastReplySentSeq(-1),  lastBlockVerifiedThisGroup(-1), privateKey(CKey()) {
+CPbft::CPbft() : localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastConsecutiveSeqInReplyPhase(-1), client(nullptr), peers(std::vector<CNode*>(groupSize * num_committees)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), notEnoughReqStartTime(std::chrono::milliseconds::zero()), startBlkHeight(0), nInputShardSigs(0), lastReplySentSeq(-1),  lastBlockVerifiedThisGroup(-1), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
@@ -315,7 +315,7 @@ CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char e
     /* 'y' --- execute sucessfully
      * 'n' --- execute fail
      */
-    CReply toSent(exe_res, log[seq].ppMsg.pbft_block.vReq[idx].pReq->GetDigest());
+    CReply toSent(exe_res, log[seq].ppMsg.pbft_block.vPReq[idx]->GetDigest());
     //uint256 hash;
     //toSent.getHash(hash);
     //privateKey.Sign(hash, toSent.vchSig);
@@ -324,7 +324,7 @@ CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char e
 }
 
 CInputShardReply CPbft::assembleInputShardReply(const uint32_t seq, const uint32_t idx, const char exe_res, const CAmount& inputUtxoValueSum) {
-    CInputShardReply toSent(exe_res, log[seq].ppMsg.pbft_block.vReq[idx].pReq->GetDigest(), inputUtxoValueSum);
+    CInputShardReply toSent(exe_res, log[seq].ppMsg.pbft_block.vPReq[idx]->GetDigest(), inputUtxoValueSum);
     uint256 hash;
     toSent.getHash(hash);
     privateKey.Sign(hash, toSent.vchSig);
@@ -344,7 +344,7 @@ CInputShardReply CPbft::assembleInputShardReply(const uint32_t seq, const uint32
  * wait for spend-spend-conflict prereq-tx to abort the tx.
  */
 bool CPbft::havePrereqTxCollab(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs, bool alreadyInGraph) {
-    CTransaction tx = log[height].ppMsg.pbft_block.vReq[txSeq].pReq->tx_mutable;
+    const CTransaction& tx = *log[height].ppMsg.pbft_block.vPReq[txSeq]->pTx;
     if (tx.IsCoinBase()) {
         return false;
     }
@@ -390,19 +390,19 @@ void CPbft::addTx2GraphAsDependent(uint32_t height, uint32_t txSeq, std::unorder
     mapPrereqCnt.emplace(TxIndexOnChain(height, txSeq), PendingTxStatus(preReqTxs.size(), 1));
 }
 
-void CPbft::addTx2GraphAsPrerequiste(CTransactionRef pTx) {
+void CPbft::addTx2GraphAsPrerequiste(const CTransaction& tx) {
     /* add this tx as a potential prereqTx to the dependency graph. */
-    mapTxDependency.emplace(pTx->GetHash(), std::deque<TxIndexOnChain>()); 
-    if (pTx->IsCoinBase()) {
+    mapTxDependency.emplace(tx.GetHash(), std::deque<TxIndexOnChain>()); 
+    if (tx.IsCoinBase()) {
         return;
     }
-    for (const CTxIn& inputUtxo: pTx->vin) {
+    for (const CTxIn& inputUtxo: tx.vin) {
         if (mapUtxoConflict.find(inputUtxo.prevout) == mapUtxoConflict.end()) {
-            mapUtxoConflict.emplace(inputUtxo.prevout, std::deque<uint256>(1, pTx->GetHash())); // create an entry for this UTXO and put this tx in the list
+            mapUtxoConflict.emplace(inputUtxo.prevout, std::deque<uint256>(1, tx.GetHash())); // create an entry for this UTXO and put this tx in the list
         } else {
             /* add this tx to the UTXO spending list so that future tx spending this UTXO
              * know this tx is a prerequisite tx for it. */
-            mapUtxoConflict[inputUtxo.prevout].emplace_back(pTx->GetHash());
+            mapUtxoConflict[inputUtxo.prevout].emplace_back(tx.GetHash());
         }
     }
 }
@@ -415,25 +415,152 @@ void CPbft::informReplySendingThread(uint32_t height, std::deque<uint32_t>& qDep
 }
 
 bool CPbft::executeLog() {
-    /* execute all lower-seq tx until this one if possible. */
-//    CCoinsViewCache view(pcoinsTip.get());
-//    /* We should go on to execute all log slots that are in reply phase even
-//     * their seqs are greater than the seq passed in. If we only execute up to
-//     * the seq passed in, a slot missing a pbftc msg might permanently block
-//     * log slots after it to be executed. */
-//    for (uint i = lastExecutedSeq + 1; i < logSize && log[i].phase == PbftPhase::reply; i++) {
-//	log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, g_connman.get(), view);
-//	lastExecutedSeq = i;
-//	std::cout << "Executed block " << i  << ", block size = " 
-//		<< log[i].ppMsg.pbft_block.vReq.size()  
-//		<< ", Total TX cnt = " << totalExeCount[0]
-//		<< ", Total LOCK cnt = " << totalExeCount[1]
-//		<< ", Total COMMIT cnt = " << totalExeCount[2]
-//
-//		<< std::endl;
-//    }
-//    bool flushed = view.Flush(); // flush to pcoinsTip
-//    assert(flushed);
+    bool doneSomething = false;
+    struct timeval start_time, end_time;
+    /* valid and invalid tx array for assembling possible collabMulBlk msg.*/
+    std::vector<TxIndexOnChain> validTxsMulBlk;
+    std::vector<TxIndexOnChain> invalidTxsMulBlk;
+    /* Step 1: verify the successor block of the last block we have verified
+     * if it belongs to our group. Otherwise, use collab_vrf result to execute
+     * tx in the block. */
+    if (lastBlockVerifiedThisGroup < lastConsecutiveSeqInReplyPhase){
+        doneSomething = true;
+        uint32_t curHeight = lastBlockVerifiedThisGroup + 1;
+        CPbftBlock& block = log[curHeight].ppMsg.pbft_block;
+        if(isInVerifySubGroup(pbftID, block.hash)) {
+            /* This is a block to be verified by our subgroup. 
+             * Verify and Execute prerequiste-clear tx in this block.
+             * (The VerifyTx call includes executing tx.) 
+             */
+            struct timeval totalVrfTime = {0, 0};
+            //struct timeval collabMsgSendingTime = {0, 0};
+            gettimeofday(&start_time, NULL);
+            std::vector<char> validTxs((block.vPReq.size() + 7) >> 3); // +7 for ceiling
+            std::vector<uint32_t> invalidTxs;
+            std::cout << "verifying block " << curHeight << " of size " << block.vPReq.size() << std::endl;
+            uint32_t validTxCnt = block.Verify(curHeight, *pcoinsTip, validTxs, invalidTxs);
+            gettimeofday(&end_time, NULL);
+            totalVrfTime += end_time - start_time;
+            lastBlockVerifiedThisGroup++;
+            nCompletedTx += validTxCnt;
+            //thruputLogger.logServerSideThruput(end_time, nCompletedTx);
+            //gettimeofday(&start_time, NULL);
+            mutexCollabMsgQ.lock();
+            qCollabMsg[collabMsgQIdx].emplace_back(curHeight, block.vPReq.size(), std::move(validTxs), std::move(invalidTxs));
+            mutexCollabMsgQ.unlock();
+            //gettimeofday(&end_time, NULL);
+            //collabMsgSendingTime += end_time - start_time;
+            //std::cout << "Enqueue Collab msg for block " << curHeight << "takes " << (collabMsgSendingTime.tv_sec * 1000000 + collabMsgSendingTime.tv_usec) << " us. valid tx cnt = " << validTxCnt << ". invalid tx cnt = " << invalidTxs.size() << std::endl;
+        } else {
+            /* This is a block of the other subgroup.
+             * Check if we have collab_vrf results for this block. If so, execute
+             * valid tx, and add not yet verified tx to the dependency graph.
+             */
+            struct timeval totalExeTime = {0, 0};
+            struct timeval totalDependencyCheckTime = {0, 0};
+            struct timeval totalAdd2GraphTime = {0, 0};
+            uint32_t outstandingTxCnt = 0;
+            if (futureCollabVrfedBlocks.find(curHeight) != futureCollabVrfedBlocks.end()) {
+                /* a queue of tx that are not executed b/c dependency. */
+                std::deque<uint32_t> qDependentTx; 
+                uint32_t localExecutedTxCnt = 0;
+                //std::cout << " future map has block "  << curHeight << std::endl;
+                for (uint i = 0; i < block.vPReq.size(); i++) {
+                    const CTransaction& tx = *block.vPReq[i]->pTx;
+                    if (futureCollabVrfedBlocks[curHeight][i] == 1) {
+                        /* valid tx */
+                        std::unordered_set<uint256, uint256Hasher> preReqTxs;
+                        gettimeofday(&start_time, NULL);
+                        bool hasPrereqTx = havePrereqTxCollab(curHeight, i, preReqTxs, false);
+                        gettimeofday(&end_time, NULL);
+                        totalDependencyCheckTime += end_time - start_time;
+                        if (!hasPrereqTx ) {
+                            /* this tx is prereq-clear.execute it. 
+                             * Because this tx has never been added to the dependency 
+                             * graph, we can execute it without checking its dependent
+                             * tx.
+                             */
+                            gettimeofday(&start_time, NULL);
+                            block.vPReq[i]->Execute(curHeight, *pcoinsTip);
+                            gettimeofday(&end_time, NULL);
+                            totalExeTime += end_time - start_time;
+                            localExecutedTxCnt++;
+                        } else {
+                            /* This tx has some prereq tx and cannot be executed now.
+                             * Its execution will be triggerred by the last prereq tx.
+                             */
+                            gettimeofday(&start_time, NULL);
+                            addTx2GraphAsDependent(curHeight, i, preReqTxs);
+                            addTx2GraphAsPrerequiste(tx);
+                            gettimeofday(&end_time, NULL);
+                            totalAdd2GraphTime += end_time - start_time;
+                            /* We cannot execute the tx b/c of dependency in the our group*/
+                            qDependentTx.push_back(i);
+                        }
+                    } else if (futureCollabVrfedBlocks[curHeight][i] == 0) {
+                        /* not-yet-verified tx
+                         * add this tx as a potential prereqTx to the dependency graph. 
+                         */
+                        gettimeofday(&start_time, NULL);
+                        addTx2GraphAsPrerequiste(tx);
+                        gettimeofday(&end_time, NULL);
+                        totalAdd2GraphTime += end_time - start_time;
+                        /* We cannot execute the tx b/c of dependency in the other group*/
+                        qDependentTx.push_back(i);
+                        outstandingTxCnt++;
+                    } /* for invalid tx, there is nothing to do because the tx is not
+                       * yet added to the dependency graph. */
+                }
+                std::cout << "Collab processing block " << curHeight << ": average execution time = " << (totalExeTime.tv_sec * 1000000 + totalExeTime.tv_usec) / localExecutedTxCnt << " us/req, average dependency checking time = " << (totalDependencyCheckTime.tv_sec + totalDependencyCheckTime.tv_usec) /futureCollabVrfedBlocks[curHeight].size();
+                //if (!qDependentTx.empty()) {
+                //    std::cout << " us/req, average add to graph time = " << (totalAdd2GraphTime.tv_sec + totalAdd2GraphTime.tv_usec) / qDependentTx.size();
+                //}
+                //std::cout << std::endl;
+                gettimeofday(&end_time, NULL);
+                if (outstandingTxCnt > 0) {
+                    mapSkippedBlocks.emplace(curHeight, CSkippedBlockEntry(end_time, std::move(futureCollabVrfedBlocks[curHeight]), outstandingTxCnt));
+                    if (mapSkippedBlocks.size() == 1) {
+                        firstOutstandingBlock = mapSkippedBlocks.begin()->first;
+                        //std::cout << "Step 1: firstOutstandingBlock = " << firstOutstandingBlock << std::endl;
+                    }
+                } else if (mapSkippedBlocks.empty()) {
+                    /* there is no skipped blocks. use the next block as the first
+                     * outstanding block for mapBlockCollabRes pruning. */
+                    firstOutstandingBlock = curHeight + 1;
+                    //std::cout << "Step 1: firstOutstandingBlock = " << firstOutstandingBlock << std::endl;
+                }
+                futureCollabVrfedBlocks.erase(curHeight);
+                informReplySendingThread(curHeight, qDependentTx);
+                nCompletedTx += localExecutedTxCnt;
+                //thruputLogger.logServerSideThruput(end_time, nCompletedTx);
+            } else {
+                std::cout << " future map DOES'T have block "  << curHeight << std::endl;
+                /* we haven't received collab_vrf results for any tx in the block, add
+                 * all tx in the block to the dependency graph as potential prereqTx.
+                 */
+                //std::cout << "add all " << block.vReq.size() << " tx in block " << curHeight << " to dependency graph as potential prereqTx." << std::endl;
+                /* tx belongs to the other group are not added to mapPreqCnt b/c we are not interest in its prereq tx until later we have to verify such tx by ourselves. */
+                for (std::shared_ptr<CClientReq> pReq: block.vPReq) {
+                    addTx2GraphAsPrerequiste(*pReq->pTx);
+                }
+                outstandingTxCnt = block.vPReq.size();
+                gettimeofday(&end_time, NULL);
+                mapSkippedBlocks.emplace(curHeight, CSkippedBlockEntry(end_time, std::deque<char>(outstandingTxCnt, 0), outstandingTxCnt));
+                firstOutstandingBlock = mapSkippedBlocks.begin()->first;
+            }
+
+            /*Although we did not verified tx in this block, we advance the 
+             * pointer so that we would not check the same block next time. */
+            lastBlockVerifiedThisGroup++;
+        }
+	std::cout << "Executed block " << lastBlockVerifiedThisGroup - 1 << ", block size = " 
+		<< log[lastBlockVerifiedThisGroup - 1].ppMsg.pbft_block.vPReq.size()  
+		<< ", Total TX cnt = " << totalExeCount[0]
+		<< ", Total LOCK cnt = " << totalExeCount[1]
+		<< ", Total COMMIT cnt = " << totalExeCount[2]
+		<< std::endl;
+    }
+
     return true;
 }
 
@@ -602,7 +729,7 @@ void CPbft::WarmUpMemoryCache() {
     int lastExecutedSeqWarmUp = readBlocksFromFile();
     uint32_t nWarmUpTx = 0;
     for (int i = 0; i <= lastExecutedSeqWarmUp; i++) {
-	uint32_t block_size = log[i].ppMsg.pbft_block.vReq.size();
+	uint32_t block_size = log[i].ppMsg.pbft_block.vPReq.size();
 	//std::cout << "executing warm-up block of size " << block_size << std::endl;
 
         log[i].ppMsg.pbft_block.WarmUpExecute(i, view_tenta);
@@ -768,7 +895,7 @@ void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
             log[msg.height].blockSizeInCollabMsg = msg.txCnt;
         }
         else {
-            log[msg.height].blockSizeInCollabMsg = log[msg.height].ppMsg.pbft_block.vReq.size();
+            log[msg.height].blockSizeInCollabMsg = log[msg.height].ppMsg.pbft_block.vPReq.size();
         }
         mapBlockCollabRes.emplace(msg.height, BlockCollabRes(log[msg.height].blockSizeInCollabMsg));
         //std::cout << "create collab msg counters for block "<< msg.height << ", tx count = " << log[msg.height].ppMsg.pPbftBlock->vReq.size() << std::endl;

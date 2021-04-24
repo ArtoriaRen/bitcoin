@@ -60,24 +60,9 @@ void CReply::getHash(uint256& result) const {
 	    .Finalize((unsigned char*)&result);
 }
 
-
-CClientReq::CClientReq(const CTransaction& tx): tx_mutable(tx), hash(tx.GetHash()) { }
-
-void CClientReq::UpdateHash() {
-    hash = tx_mutable.GetHash();
-}
-
-const uint256& CClientReq::GetHash() const {
-    return hash;
-}
-
-bool CClientReq::IsCoinBase() const {
-    return (tx_mutable.vin.size() == 1 && tx_mutable.vin[0].prevout.IsNull());
-}
-
-char TxReq::Execute(const int seq, CCoinsViewCache& view) const {
+bool TxReq::Verify(const int seq, CCoinsViewCache& view) const {
     /* -------------logic from Bitcoin code for tx processing--------- */
-    CTransaction tx(tx_mutable);
+    const CTransaction& tx = *pTx;
     if(tx.IsCoinBase()) {
         UpdateCoins(tx, view, g_pbft->getBlockHeight(seq));
         //std::cout << __func__ << ": excuted coinbase tx " << tx.GetHash().ToString()
@@ -139,12 +124,23 @@ char TxReq::Execute(const int seq, CCoinsViewCache& view) const {
     return 'y';
 }
 
+bool TxReq::Execute(const int seq, CCoinsViewCache& view) const {
+    const CTransaction& tx = *pTx;
+    UpdateCoins(tx, view, g_pbft->getBlockHeight(seq));
+    return true;
+}
+
 uint256 TxReq::GetDigest() const {
-    return tx_mutable.GetHash();
+    const uint256& tx_hash = pTx->GetHash();
+    uint256 result;
+    CHash256().Write((const unsigned char*)tx_hash.begin(), tx_hash.size())
+            .Write((const unsigned char*)type, sizeof(type))
+            .Finalize((unsigned char*)&result);
+    return result;
 }
 
 
-char LockReq::Execute(const int seq, CCoinsViewCache& view) const {
+bool LockReq::Verify(const int seq, CCoinsViewCache& view) const {
     /* we did not check if there is any input coins belonging our shard because
      * we believe the client is honest and will not send an LOCK req to a 
      * irrelavant shard. In OmniLedger, we already beleive in the client to be 
@@ -152,7 +148,7 @@ char LockReq::Execute(const int seq, CCoinsViewCache& view) const {
      */
 
     /* -------------logic from Bitcoin code for tx processing--------- */
-    CTransaction tx(tx_mutable);
+    const CTransaction& tx = *pTx;
     struct timeval start_time, end_time;
     uint64_t timeElapsed = 0;
     gettimeofday(&start_time, NULL);
@@ -217,8 +213,19 @@ char LockReq::Execute(const int seq, CCoinsViewCache& view) const {
     return 'y';
 }
 
+bool LockReq::Execute(const int seq, CCoinsViewCache& view) const {
+    const CTransaction& tx = *pTx;
+    CTxUndo txUndo;
+    UpdateLockCoins(tx, view, txUndo, g_pbft->getBlockHeight(seq));
+}
+
 uint256 LockReq::GetDigest() const {
-    return tx_mutable.GetHash();
+    const uint256& tx_hash = pTx->GetHash();
+    uint256 result;
+    CHash256().Write((const unsigned char*)tx_hash.begin(), tx_hash.size())
+            .Write((const unsigned char*)type, sizeof(type))
+            .Finalize((unsigned char*)&result);
+    return result;
 }
 
 CInputShardReply::CInputShardReply(): CReply() {};
@@ -234,13 +241,15 @@ void CInputShardReply::getHash(uint256& result) const {
 	    .Finalize((unsigned char*)&result);
 }
 
-UnlockToCommitReq::UnlockToCommitReq(): CClientReq(CMutableTransaction()) {}
-UnlockToCommitReq::UnlockToCommitReq(const CTransaction& txIn, const uint sigCountIn, std::vector<CInputShardReply>&& vReply) : CClientReq(txIn), nInputShardReplies(sigCountIn), vInputShardReply(vReply){}
+UnlockToCommitReq::UnlockToCommitReq() { }
+
+UnlockToCommitReq::UnlockToCommitReq(const CTransactionRef pTxIn, const uint sigCountIn, std::vector<CInputShardReply>&& vReply): CClientReq(pTxIn), nInputShardReplies(sigCountIn), vInputShardReply(vReply){}
 
 uint256 UnlockToCommitReq::GetDigest() const {
-    uint256 tx_hash(tx_mutable.GetHash());
+    const uint256& tx_hash = pTx->GetHash();
     CHash256 hasher;
-    hasher.Write((const unsigned char*)tx_hash.begin(), tx_hash.size());
+    hasher.Write((const unsigned char*)tx_hash.begin(), tx_hash.size())
+            .Write((const unsigned char*)type, sizeof(type));
     for (uint i = 0; i < nInputShardReplies; i++) {
 	uint256 tmp;
 	vInputShardReply[i].getHash(tmp);
@@ -254,7 +263,7 @@ uint256 UnlockToCommitReq::GetDigest() const {
 
 bool checkInputShardReplySigs(const std::vector<CInputShardReply>& vReplies);
 
-char UnlockToCommitReq::Execute(const int seq, CCoinsViewCache& view) const {
+bool UnlockToCommitReq::Verify(const int seq, CCoinsViewCache& view) const {
     struct timeval start_time, end_time;
     uint64_t timeElapsed = 0;
     gettimeofday(&start_time, NULL);
@@ -267,8 +276,7 @@ char UnlockToCommitReq::Execute(const int seq, CCoinsViewCache& view) const {
     g_pbft->detailTime[STEP::COMMIT_SIG_CHECK] = timeElapsed;
 
     /* -------------logic from Bitcoin code for tx processing--------- */
-    CTransaction tx(tx_mutable);
-    
+    const CTransaction& tx = *pTx;
     CValidationState state;
     unsigned int flags = SCRIPT_VERIFY_NONE; // only verify pay to public key hash
 
@@ -321,6 +329,11 @@ char UnlockToCommitReq::Execute(const int seq, CCoinsViewCache& view) const {
     return 'y';
 }
 
+bool UnlockToCommitReq::Execute(const int seq, CCoinsViewCache& view) const {
+    const CTransaction& tx = *pTx;
+    UpdateUnlockCommitCoins(tx, view, g_pbft->getBlockHeight(seq));
+}
+
 bool checkInputShardReplySigs(const std::vector<CInputShardReply>& vReplies) {
     // verify signature and return false if at least one sig is wrong
     g_pbft->nInputShardSigs = vReplies.size();
@@ -340,16 +353,16 @@ bool checkInputShardReplySigs(const std::vector<CInputShardReply>& vReplies) {
     return true;
 }
 
-UnlockToAbortReq::UnlockToAbortReq(): CClientReq(CMutableTransaction()) {
+UnlockToAbortReq::UnlockToAbortReq() {
     vNegativeReply.resize(CPbft::nFaulty + 1);
 }
 
-UnlockToAbortReq::UnlockToAbortReq(const CTransaction& txIn, const std::vector<CInputShardReply>& lockFailReplies) : CClientReq(txIn), vNegativeReply(lockFailReplies){
+UnlockToAbortReq::UnlockToAbortReq(const CTransactionRef pTxIn, const std::vector<CInputShardReply>& lockFailReplies): CClientReq(pTxIn), vNegativeReply(lockFailReplies){
     assert(vNegativeReply.size() == CPbft::nFaulty + 1);
 }
 
 uint256 UnlockToAbortReq::GetDigest() const {
-    uint256 tx_hash(tx_mutable.GetHash());
+    const uint256& tx_hash = pTx->GetHash();
     CHash256 hasher;
     hasher.Write((const unsigned char*)tx_hash.begin(), tx_hash.size());
     for (uint i = 0; i < vNegativeReply.size(); i++) {
@@ -363,15 +376,14 @@ uint256 UnlockToAbortReq::GetDigest() const {
     return result;
 }
 
-char UnlockToAbortReq::Execute(const int seq, CCoinsViewCache& view) const {
+bool UnlockToAbortReq::Verify(const int seq, CCoinsViewCache& view) const {
+    const CTransaction& tx = *pTx;
     if (!checkInputShardReplySigs(vNegativeReply)) {
         std::cout << __func__ << ": verify sigs fail!" << std::endl;
 	return 'n';
     }
 
     /* -------------logic from Bitcoin code for tx processing--------- */
-    CTransaction tx(tx_mutable);
-    
     /* Step 1: check all replies are negative. */
     for (auto r: vNegativeReply) {
 	assert(r.reply == 'n');
@@ -395,42 +407,136 @@ char UnlockToAbortReq::Execute(const int seq, CCoinsViewCache& view) const {
     return 'y';
 }
 
-CPbftBlock::CPbftBlock(){
-    hash.SetNull();
-    vReq.clear();
+bool UnlockToAbortReq::Execute(const int seq, CCoinsViewCache& view) const {
+    const CTransaction& tx = *pTx;
+    UpdateUnlockAbortCoins(tx, view, mapTxUndo[tx.GetHash()]);
 }
 
-CPbftBlock::CPbftBlock(std::deque<TypedReq> vReqIn) {
+CPbftBlock::CPbftBlock(){
     hash.SetNull();
-    vReq.insert(vReq.end(), vReqIn.begin(), vReqIn.end());
+    vPReq.clear();
+}
+
+CPbftBlock::CPbftBlock(std::deque<std::shared_ptr<CClientReq>>&& vPReqIn) {
+    hash.SetNull();
+    vPReq.insert(vPReq.end(), vPReqIn.begin(), vPReqIn.end());
 }
 
 void CPbftBlock::ComputeHash(){
     CHash256 hasher;
-    for (uint i = 0; i < vReq.size(); i++) {
-	hasher.Write((const unsigned char*)vReq[i].pReq->GetHash().begin(), vReq[i].pReq->GetHash().size());
+    for (uint i = 0; i < vPReq.size(); i++) {
+        uint256 req_hash = vPReq[i]->GetDigest();
+	hasher.Write((const unsigned char*)req_hash.begin(), req_hash.size());
     }
     hasher.Finalize((unsigned char*)&hash);
 }
 
 void CPbftBlock::WarmUpExecute(const int seq, CCoinsViewCache& view) const {
-    for (uint i = 0; i < vReq.size(); i++) {
-        UpdateCoins(vReq[i].pReq->tx_mutable, view, seq);
+    for (uint i = 0; i < vPReq.size(); i++) {
+        UpdateCoins(*(vPReq[i]->pTx), view, seq);
     }
+}
+
+/* check if the tx have create-spend or spend-spend dependency with tx not yet verified. */
+static bool havePrereqTx(uint32_t height, uint32_t txSeq) {
+    CPbft& pbft = *g_pbft;
+    const CTransaction& tx = *pbft.log[height].ppMsg.pbft_block.vPReq[txSeq]->pTx;
+    if (tx.IsCoinBase()) {
+        return false;
+    }
+    std::unordered_set<uint256, uint256Hasher> preReqTxs;
+    for (const CTxIn& inputUtxo: tx.vin) {
+        /* check create-spend dependency. */
+        if (pbft.mapTxDependency.find(inputUtxo.prevout.hash) != pbft.mapTxDependency.end()) {
+            preReqTxs.emplace(inputUtxo.prevout.hash);
+        }
+        /* check spend-spend dependency. */
+        if (pbft.mapUtxoConflict.find(inputUtxo.prevout) != pbft.mapUtxoConflict.end()) {
+            for (uint256& conflictTx: pbft.mapUtxoConflict[inputUtxo.prevout]) {
+                preReqTxs.emplace(conflictTx);
+                std::cout << "UTXO-conflict tx of (" << height << ", " << txSeq << "): " << conflictTx.ToString() << std::endl;
+            }
+            /* add this tx to the UTXO spending list so that future tx spending this UTXO
+             * know this tx is a prerequisite tx for it. */
+            pbft.mapUtxoConflict[inputUtxo.prevout].emplace_back(tx.GetHash());
+        }
+    }
+
+    if (preReqTxs.size() != 0) {
+        /* add this tx as a dependent tx to the dependency graph. */
+        for (const uint256& prereqTx: preReqTxs) {
+            pbft.mapTxDependency[prereqTx].emplace_back(height, txSeq);
+        }
+        pbft.mapPrereqCnt.emplace(TxIndexOnChain(height, txSeq), PendingTxStatus(preReqTxs.size(), 2));
+        /* add this tx as a potential prereqTx to the dependency graph. */
+        pbft.mapTxDependency.emplace(tx.GetHash(), std::deque<TxIndexOnChain>()); 
+        for (const CTxIn& inputUtxo: tx.vin) {
+            if (pbft.mapUtxoConflict.find(inputUtxo.prevout) == pbft.mapUtxoConflict.end()) {
+                pbft.mapUtxoConflict.emplace(inputUtxo.prevout, std::deque<uint256>(1, tx.GetHash())); // create an entry for this UTXO and put this tx in the list
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
+/* verify and execute prereq-clear tx in this block. */
+uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view, std::vector<char>& validTxs, std::vector<uint32_t>& invalidTxs) const {
+    uint32_t validTxCnt = 0;
+    /* a queue of tx that are not executed b/c dependency. */
+    std::deque<uint32_t> qDependentTx; 
+    struct timeval start_time, end_time;
+    struct timeval totalVrfTime = {0, 0};
+    struct timeval totalDependencyCheckTime = {0, 0};
+    for (uint i = 0; i < vPReq.size(); i++) {
+        /* the block is not yet collab verified. We have to verify tx.*/
+        gettimeofday(&start_time, NULL);
+        bool hasPrereqTx = havePrereqTx(seq, i);
+        gettimeofday(&end_time, NULL);
+        totalDependencyCheckTime += end_time - start_time;
+        if (hasPrereqTx) {
+            qDependentTx.push_back(i);
+            continue;
+        }
+        gettimeofday(&start_time, NULL);
+        bool isValid = vPReq[i]->Verify(seq, view);
+        gettimeofday(&end_time, NULL);
+        totalVrfTime += end_time - start_time;
+        if (isValid) {
+            char bit = 1 << (i % 8); 
+            validTxs[i >> 3] |= bit; 
+            validTxCnt++;
+        } else {
+            invalidTxs.push_back(i);
+        }
+    }
+
+    if (vPReq.size() > qDependentTx.size()) {
+        std::cout << "Average verify time of block " << seq << ": " << (totalVrfTime.tv_sec * 1000000 + totalVrfTime.tv_usec) / (vPReq.size() - qDependentTx.size()) << " us/req";
+    } else {
+        std::cout << "Average verify time of block " << seq << ": 0 tx are verified";
+    }
+    std::cout << ". valid tx cnt = " << validTxCnt << ". invalid tx cnt = " << invalidTxs.size() << ", average dependency checking time = " << (totalDependencyCheckTime.tv_sec * 1000000 + totalDependencyCheckTime.tv_usec)/vPReq.size() << std::endl;
+    /* inform the reply sending thread of what tx is not executed. 
+     * We cannot include invalid tx because all reply are hard-coded to 
+     * positive execution results.
+     */
+    g_pbft->informReplySendingThread(seq, qDependentTx);
+    return validTxCnt;
 }
 
 uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& view) const {
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
     uint32_t txCnt = 0;
     CPbft& pbft = *g_pbft; 
-    for (uint i = 0; i < vReq.size(); i++) {
+    for (uint i = 0; i < vPReq.size(); i++) {
 	struct timeval start_time, end_time, detail_start_time, detail_end_time;
         uint64_t timeElapsed = 0;
 	gettimeofday(&start_time, NULL);
-	char exe_res = vReq[i].pReq->Execute(seq, view);
-	if (vReq[i].type == ClientReqType::LOCK) {
+	char exe_res = vPReq[i]->Execute(seq, view);
+	if (vPReq[i]->type == ClientReqType::LOCK) {
             gettimeofday(&detail_start_time, NULL);
-	    CInputShardReply reply = pbft.assembleInputShardReply(seq, i, exe_res, ((LockReq*)vReq[i].pReq.get())->totalValueInOfShard);
+	    CInputShardReply reply = pbft.assembleInputShardReply(seq, i, exe_res, ((LockReq*)vPReq[i].get())->totalValueInOfShard);
             gettimeofday(&detail_end_time, NULL);
             timeElapsed = (detail_end_time.tv_sec - detail_start_time.tv_sec) * 1000000 + (detail_end_time.tv_usec - detail_start_time.tv_usec);
             pbft.detailTime[STEP::LOCK_RES_SIGN] = timeElapsed;
@@ -447,11 +553,11 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& 
 	}
 
 	/* update execution time and count. Only count non-coinbase tx.*/
-	if (!vReq[i].pReq->IsCoinBase()) {
+	if (!vPReq[i]->pTx->IsCoinBase()) {
             timeElapsed = (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
-	    g_pbft->totalExeTime[vReq[i].type] = timeElapsed;
-	    g_pbft->totalExeCount[vReq[i].type]++;
-            if (vReq[i].type == ClientReqType::TX) {
+	    g_pbft->totalExeTime[vPReq[i]->type] = timeElapsed;
+	    g_pbft->totalExeCount[vPReq[i]->type]++;
+            if (vPReq[i]->type == ClientReqType::TX) {
                 std::cout << "TX_STAT. Overall time = " << g_pbft->totalExeTime[0]  
                         << ". Detail time: TX_UTXO_EXIST_AND_VALUE = " << g_pbft->detailTime[STEP::TX_UTXO_EXIST_AND_VALUE]
                         << ", TX_SIG_CHECK = " << g_pbft->detailTime[STEP::TX_SIG_CHECK] 
@@ -459,7 +565,7 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& 
                         << ", TX_INPUT_UTXO_NUM = " << g_pbft->inputCount[INPUT_CNT::TX_INPUT_CNT]
                         << ", TX_cnt = " << g_pbft->totalExeCount[0] << std::endl;
 
-            } else if (vReq[i].type == ClientReqType::LOCK) {
+            } else if (vPReq[i]->type == ClientReqType::LOCK) {
                 std::cout << "LOCK_STAT. Overall time = " << g_pbft->totalExeTime[1]  
                         << ". Detail time: LOCK_UTXO_EXIST = " << g_pbft->detailTime[STEP::LOCK_UTXO_EXIST] 
                         << ", LOCK_SIG_CHECK = " << g_pbft->detailTime[STEP::LOCK_SIG_CHECK]
@@ -470,7 +576,7 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& 
                         << ", LOCK_INPUT_UTXO_NUM = " << g_pbft->inputCount[INPUT_CNT::LOCK_INPUT_CNT]
                         << ", LOCK_cnt = " << g_pbft->totalExeCount[1] << std::endl;
 
-            } else if (vReq[i].type == ClientReqType::UNLOCK_TO_COMMIT) {
+            } else if (vPReq[i]->type == ClientReqType::UNLOCK_TO_COMMIT) {
                 std::cout << "COMMIT_STAT. Overall time = " << g_pbft->totalExeTime[2] 
                         << ". Detail time: COMMIT_SIG_CHECK = " << g_pbft->detailTime[STEP::COMMIT_SIG_CHECK] 
                         << ", COMMIT_VALUE_CHECK = " << g_pbft->detailTime[STEP::COMMIT_VALUE_CHECK]
@@ -478,7 +584,7 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& 
 			<< ", nInputShardSigs = " << g_pbft->nInputShardSigs
                         << ", COMMIT_cnt = " << g_pbft->totalExeCount[2] << std::endl;
 
-            } else if (vReq[i].type == ClientReqType::UNLOCK_TO_ABORT) {
+            } else if (vPReq[i]->type == ClientReqType::UNLOCK_TO_ABORT) {
                 std::cout << "ABORT = " << g_pbft->totalExeTime[3] << " us, ABORT_cnt = " << g_pbft->totalExeCount[3] << std::endl;
             }
 	}
@@ -486,16 +592,10 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& 
     return txCnt;
 }
 
-uint256 TypedReq::GetHash() const {
-    uint256 req_hash(pReq->GetDigest());
-    uint256 result;
-    CHash256().Write((const unsigned char*)req_hash.begin(), req_hash.size()).Write((const unsigned char*)type, sizeof(type)).Finalize((unsigned char*)&result);
-    return result;
-}
 
 void CPbftBlock::Clear() {
     hash.SetNull();
-    vReq.clear();
+    vPReq.clear();
 }
 
 CReqBatch::CReqBatch() { }
@@ -596,3 +696,12 @@ TxIndexOnChain TxIndexOnChain::operator+(const unsigned int oprand) {
 std::string TxIndexOnChain::ToString() const {
     return "(" + std::to_string(block_height) + ", " + std::to_string(offset_in_block) + ")";
 }
+
+CClientReq::CClientReq() { }
+CClientReq::CClientReq(const CTransactionRef pTxIn): pTx(pTxIn) {}
+
+TxReq::TxReq() { }
+TxReq::TxReq(const CTransactionRef pTxIn): CClientReq(pTxIn) { }
+
+LockReq::LockReq() { }
+LockReq::LockReq(const CTransactionRef pTxIn): CClientReq(pTxIn) { }

@@ -45,20 +45,20 @@ public:
     ThreadSafeQueue();
     ~ThreadSafeQueue();
 
-    TypedReq& front();
-    std::deque<TypedReq> get_all();
-    std::deque<TypedReq> get_upto(size_t max_bytes);
+    std::shared_ptr<CClientReq>& front();
+    std::deque<std::shared_ptr<CClientReq>> get_all();
+    std::deque<std::shared_ptr<CClientReq>> get_upto(size_t max_bytes);
     void pop_front();
 
-    void push_back(const TypedReq& item);
-    void push_back(TypedReq&& item);
+    void push_back(const std::shared_ptr<CClientReq>& item);
+    void push_back(std::shared_ptr<CClientReq>&& item);
     void push_back(CReqBatch& itemBatch);
 
     int size();
     bool empty();
 
 private:
-    std::deque<TypedReq> queue_;
+    std::deque<std::shared_ptr<CClientReq>> queue_;
     std::mutex mutex_;
     std::condition_variable cond_;
 };
@@ -182,6 +182,7 @@ public:
      * req  enters the reply phase, another req at the front of the reqQueue is 
      * added to the pbft log and start consensus process. */
     int nReqInFly; 
+    volatile uint32_t nCompletedTx;
     /* a queue storing client req waiting for being processed. */
     ThreadSafeQueue reqQueue;
     /* we need the client conn man to wake up the client listening thread to send
@@ -312,7 +313,7 @@ public:
     /* resolve dependency. preReqTxs are all prereqTx. */
     bool havePrereqTxCollab(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs, bool alreadyInGraph);
     void addTx2GraphAsDependent(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs);
-    void addTx2GraphAsPrerequiste(CTransactionRef pTx);
+    void addTx2GraphAsPrerequiste(const CTransaction& tx);
     bool executeLog();
     void executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnChain>& validTxs, std::vector<TxIndexOnChain>& invalidTxs);
     void informReplySendingThread(uint32_t height, std::deque<uint32_t>& qDependentTx);

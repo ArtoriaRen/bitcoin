@@ -2976,7 +2976,7 @@ bool PeerLogicValidation::SendPPMessages(){
 	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	    std::cout << __func__ << ": log slot "<< ppMsg.seq << " for pbftblock = "
 		    << pbft->log[ppMsg.seq].ppMsg.pbft_block.hash.GetHex().substr(0, 10)
-		    << ", block size = " << pbft->log[ppMsg.seq].ppMsg.pbft_block.vReq.size()
+		    << ", block size = " << pbft->log[ppMsg.seq].ppMsg.pbft_block.vPReq.size()
 		    << " reqs." << std::endl;
 	    uint32_t start_peerID = pbftID + 1; // skip the leader id b/c it is myself
 	    uint32_t end_peerID = start_peerID + CPbft::groupSize - 1;
@@ -3477,8 +3477,7 @@ bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CD
     else if (strCommand == NetMsgType::OMNI_UNLOCK_COMMIT) {
 	std::shared_ptr<UnlockToCommitReq> pUnlockCommitReq(new UnlockToCommitReq());
         vRecv >> *pUnlockCommitReq;
-	TypedReq typedReq = {ClientReqType::UNLOCK_TO_COMMIT, pUnlockCommitReq};
-	pbft->reqQueue.push_back(typedReq);
+	pbft->reqQueue.push_back(pUnlockCommitReq);
         g_connman->WakeMessageHandler();
 //	CTransaction tx(pUnlockCommitReq->tx_mutable);
 //	std::cout << __func__ << ": push to req queue unlockCommitReq. tx = " << tx.GetHash().GetHex().substr(0, 10) << std::endl;
@@ -3488,8 +3487,7 @@ bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CD
     else if (strCommand == NetMsgType::OMNI_UNLOCK_ABORT) {
 	std::shared_ptr<UnlockToAbortReq> pUnlockAbortReq(new UnlockToAbortReq());
         vRecv >> *pUnlockAbortReq;
-	TypedReq typedReq = {ClientReqType::UNLOCK_TO_ABORT, pUnlockAbortReq};
-	pbft->reqQueue.push_back(typedReq);
+	pbft->reqQueue.push_back(pUnlockAbortReq);
         g_connman->WakeMessageHandler();
 //	CTransaction tx(pUnlockCommitReq->tx_mutable);
 //	std::cout << __func__ << ": push to req queue unlockCommitReq. tx = " << tx.GetHash().GetHex().substr(0, 10) << std::endl;
