@@ -97,7 +97,7 @@ static void delayByNoop(const int noop_count) {
     std::cerr << "loop noop for " << k << " times. oprand becomes " << oprand << std::endl;
 }
 
-static uint32_t sendTxChunk(const CBlock& block, const uint start_height, const uint block_height, const uint32_t start_tx, const int noop_count, std::vector<std::deque<TypedReq>>& batchBuffers, uint32_t& reqSentCnt) {
+static uint32_t sendTxChunk(const CBlock& block, const uint start_height, const uint block_height, const uint32_t start_tx, const int noop_count, std::vector<std::deque<std::shared_ptr<CClientReq>>>& batchBuffers, uint32_t& reqSentCnt) {
     uint32_t cnt = 0;
     CPbft& pbft = *g_pbft;
     uint32_t end_tx = std::min(start_tx + txChunkSize, pbft.indepTx2Send[block_height - start_height] .size());
@@ -113,7 +113,7 @@ static uint32_t sendTxChunk(const CBlock& block, const uint start_height, const 
     return cnt;
 }
 
-static uint32_t sendQueuedTx(const int startBlock, const int noop_count, std::vector<std::deque<TypedReq>>& batchBuffers, uint32_t& reqSentCnt) {
+static uint32_t sendQueuedTx(const int startBlock, const int noop_count, std::vector<std::deque<std::shared_ptr<CClientReq>>>& batchBuffers, uint32_t& reqSentCnt) {
     int txSentCnt = 0;
     CPbft& pbft = *g_pbft;
     if (pbft.depTxReady2Send.empty())
@@ -145,7 +145,7 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
     RenameThread(("sendTx" + std::to_string(thread_idx)).c_str());
     uint32_t cnt = 0, reqSentCnt = 0;
     const uint32_t jump_length = num_threads * txChunkSize;
-    std::vector<std::deque<TypedReq>> batchBuffers(num_committees);
+    std::vector<std::deque<std::shared_ptr<CClientReq>>> batchBuffers(num_committees);
     TxPlacer txPlacer;
     CPbft& pbft = *g_pbft;
     struct timeval start_time, end_time;
@@ -184,7 +184,7 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
 
         /* add all req in our local batch buffer to the global batch buffer. */
         for (uint i = 0; i < batchBuffers.size(); i++) {
-            std::deque<TypedReq>& shardBatchBuffer = batchBuffers[i];
+            std::deque<std::shared_ptr<CClientReq>>& shardBatchBuffer = batchBuffers[i];
             if (!shardBatchBuffer.empty()) {
                 pbft.add2BatchOnlyBuffered(i, shardBatchBuffer);
             }
@@ -244,7 +244,7 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
 //}
 
 
-bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height, std::vector<std::deque<TypedReq>>& batchBuffers, uint32_t& reqSentCnt) {
+bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height, std::vector<std::deque<std::shared_ptr<CClientReq>>>& batchBuffers, uint32_t& reqSentCnt) {
 	/* get the input shards and output shards id*/
 	TxPlacer txPlacer;
 	CCoinsViewCache view(pcoinsTip.get());
