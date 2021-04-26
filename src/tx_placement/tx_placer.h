@@ -125,7 +125,7 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
 uint32_t sendAllTailTx(int noop_count);
 
 /* return true if the tx is sent, false if the tx is queued. */
-bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height, const uint32_t start_height, std::vector<std::deque<TypedReq>>& batchBuffers, uint32_t& reqSentCnt);
+bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height, const uint32_t start_height, std::vector<std::deque<std::shared_ptr<CClientReq>>>& batchBuffers, uint32_t& reqSentCnt);
 
 inline std::string getDependencyFilename() {
     return "/hdd2/davina/dependency_file/dependency.out";

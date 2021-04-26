@@ -18,6 +18,29 @@ void CReply::getHash(uint256& result) const {
 	    .Finalize((unsigned char*)&result);
 }
 
+uint256 TxReq::GetDigest() const {
+    const uint256& tx_hash = pTx->GetHash();
+    uint256 result;
+    CHash256().Write((const unsigned char*)tx_hash.begin(), tx_hash.size())
+            .Write((const unsigned char*)type, sizeof(type))
+            .Finalize((unsigned char*)&result);
+    return result;
+}
+
+
+uint256 LockReq::GetDigest() const {
+    const uint256& tx_hash = pTx->GetHash();
+    CHash256 hasher;
+    hasher.Write((const unsigned char*)tx_hash.begin(), tx_hash.size())
+            .Write((const unsigned char*)type, sizeof(type));
+    for (uint i = 0; i < nOutpointToLock; i++) {
+        hasher.Write((const unsigned char*)&vInputUtxoIdxToLock[i], sizeof(vInputUtxoIdxToLock[i]));
+    }
+    uint256 result;
+    hasher.Finalize((unsigned char*)&result);
+    return result;
+}
+
 CInputShardReply::CInputShardReply(): CReply() {};
 
 CInputShardReply::CInputShardReply(char replyIn, const uint256& digestIn, CAmount valueIn):
@@ -31,30 +54,15 @@ void CInputShardReply::getHash(uint256& result) const {
 	    .Finalize((unsigned char*)&result);
 }
 
-UnlockToCommitReq::UnlockToCommitReq(): CClientReq(CMutableTransaction()) {}
+UnlockToCommitReq::UnlockToCommitReq(): CClientReq(ClientReqType::UNLOCK_TO_COMMIT) {}
 
-UnlockToCommitReq::UnlockToCommitReq(const CTransaction& txIn, const uint sigCountIn, std::vector<CInputShardReply>&& vReply) : CClientReq(txIn), nInputShardReplies(sigCountIn), vInputShardReply(vReply){}
-
-uint256 TxReq::GetDigest() const {
-    return tx_mutable.GetHash();
-}
-
-uint256 LockReq::GetDigest() const {
-    uint256 tx_hash(tx_mutable.GetHash());
-    CHash256 hasher;
-    hasher.Write((const unsigned char*)tx_hash.begin(), tx_hash.size());
-    for (uint i = 0; i < nOutpointToLock; i++) {
-	hasher .Write((const unsigned char*)&vInputUtxoIdxToLock[i], sizeof(vInputUtxoIdxToLock[i]));
-    }
-    uint256 result;
-    hasher.Finalize((unsigned char*)&result);
-    return result;
-}
+UnlockToCommitReq::UnlockToCommitReq(const CTransactionRef pTxIn, const uint sigCountIn, std::vector<CInputShardReply>&& vReply) : CClientReq(ClientReqType::UNLOCK_TO_COMMIT, pTxIn), nInputShardReplies(sigCountIn), vInputShardReply(vReply){}
 
 uint256 UnlockToCommitReq::GetDigest() const {
-    uint256 tx_hash(tx_mutable.GetHash());
+    const uint256& tx_hash = pTx->GetHash();
     CHash256 hasher;
-    hasher.Write((const unsigned char*)tx_hash.begin(), tx_hash.size());
+    hasher.Write((const unsigned char*)tx_hash.begin(), tx_hash.size())
+            .Write((const unsigned char*)type, sizeof(type));
     for (uint i = 0; i < nInputShardReplies; i++) {
 	uint256 tmp;
 	vInputShardReply[i].getHash(tmp);
@@ -66,16 +74,16 @@ uint256 UnlockToCommitReq::GetDigest() const {
     return result;
 }
 
-UnlockToAbortReq::UnlockToAbortReq(): CClientReq(CMutableTransaction()) {
+UnlockToAbortReq::UnlockToAbortReq(): CClientReq(ClientReqType::UNLOCK_TO_ABORT) {
     vNegativeReply.resize(CPbft::nFaulty + 1);
 }
 
-UnlockToAbortReq::UnlockToAbortReq(const CTransaction& txIn, const std::vector<CInputShardReply>& lockFailReplies) : CClientReq(txIn), vNegativeReply(lockFailReplies){
+UnlockToAbortReq::UnlockToAbortReq(const CTransactionRef pTxIn, const std::vector<CInputShardReply>& lockFailReplies): CClientReq(ClientReqType::UNLOCK_TO_ABORT, pTxIn), vNegativeReply(lockFailReplies){
     assert(vNegativeReply.size() == CPbft::nFaulty + 1);
 }
 
 uint256 UnlockToAbortReq::GetDigest() const {
-    uint256 tx_hash(tx_mutable.GetHash());
+    const uint256& tx_hash = pTx->GetHash();
     CHash256 hasher;
     hasher.Write((const unsigned char*)tx_hash.begin(), tx_hash.size());
     for (uint i = 0; i < vNegativeReply.size(); i++) {
@@ -89,32 +97,14 @@ uint256 UnlockToAbortReq::GetDigest() const {
     return result;
 }
 
-CClientReq::CClientReq(const CTransaction& tx) : tx_mutable(tx), hash(tx.GetHash()) {
-}
+CReqBatch::CReqBatch() { }
 
-void CClientReq::UpdateHash() {
-    hash = tx_mutable.GetHash();
-}
+CClientReq::CClientReq(const ClientReqType typeIn): type(typeIn) { }
+CClientReq::CClientReq(const ClientReqType typeIn, const CTransactionRef pTxIn): type(typeIn), pTx(pTxIn) {}
 
-const uint256& CClientReq::GetHash() const {
-    return hash;
-}
+TxReq::TxReq(): CClientReq(ClientReqType::TX) { }
+TxReq::TxReq(const CTransactionRef pTxIn): CClientReq(ClientReqType::TX, pTxIn) { }
 
-bool CClientReq::IsCoinBase() const {
-    return (tx_mutable.vin.size() == 1 && tx_mutable.vin[0].prevout.IsNull());
-}
+LockReq::LockReq(): CClientReq(ClientReqType::TX) { }
+LockReq::LockReq(const CTransactionRef pTxIn, const std::vector<uint32_t>& vInputUTXOInShard) : CClientReq(ClientReqType::TX, pTxIn), nOutpointToLock(vInputUTXOInShard.size()), vInputUtxoIdxToLock(vInputUTXOInShard) { }
 
-TypedReq::TypedReq(ClientReqType typeIn, std::shared_ptr<CClientReq> pReqIn): type(typeIn), pReq(pReqIn) { }
-
-uint256 TypedReq::GetHash() const {
-    uint256 req_hash(pReq->GetDigest());
-    uint256 result;
-    CHash256().Write((const unsigned char*)req_hash.begin(), req_hash.size()).Write((const unsigned char*)type, sizeof(type)).Finalize((unsigned char*)&result);
-    return result;
-}
-
-CReqBatch::CReqBatch(){ }
-
-void CReqBatch::emplace_back(ClientReqType typeIn, std::shared_ptr<CClientReq> pReqIn) {
-    vReq.emplace_back(typeIn, pReqIn);
-}

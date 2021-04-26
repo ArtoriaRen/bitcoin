@@ -2005,7 +2005,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    }
             
 	    assert(g_pbft->txInFly.exist(reply.digest));
-	    UnlockToCommitReq commitReq(std::move(CMutableTransaction(*g_pbft->txInFly[reply.digest].tx)), vReply.size(), std::move(vReply));
+	    UnlockToCommitReq commitReq(g_pbft->txInFly[reply.digest].tx, vReply.size(), std::move(vReply));
 
 	    g_pbft->txUnlockReqMap.insert(std::make_pair(commitReq.GetDigest(), reply.digest));
 
