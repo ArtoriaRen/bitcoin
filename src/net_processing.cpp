@@ -3468,16 +3468,19 @@ bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CD
     else if (strCommand == NetMsgType::REQ_BATCH) {
         CReqBatch reqBatch;
         vRecv >> reqBatch;
-	pbft->reqQueue.push_back(reqBatch);
+        pbft->reqQueue.push_back(reqBatch);
         g_connman->WakeMessageHandler();
 	//std::cout << __func__ << ": push to req queue tx = " << ptx->GetHash().GetHex().substr(0, 10) << std::endl;
     }
 
     /* received an unlock_to_commit req, put it in queue . */
     else if (strCommand == NetMsgType::OMNI_UNLOCK_COMMIT) {
-	std::shared_ptr<UnlockToCommitReq> pUnlockCommitReq(new UnlockToCommitReq());
+        std::shared_ptr<UnlockToCommitReq> pUnlockCommitReq(new UnlockToCommitReq());
+        /* discard the first few bytes for type b/c the unserialization method does not read type. This is for consistency when unserializing CReqBatch.*/
+        ClientReqType type;
+        vRecv.read((char*)&type, sizeof(type));
         vRecv >> *pUnlockCommitReq;
-	pbft->reqQueue.push_back(pUnlockCommitReq);
+        pbft->reqQueue.push_back(pUnlockCommitReq);
         g_connman->WakeMessageHandler();
 //	CTransaction tx(pUnlockCommitReq->tx_mutable);
 //	std::cout << __func__ << ": push to req queue unlockCommitReq. tx = " << tx.GetHash().GetHex().substr(0, 10) << std::endl;
@@ -3485,9 +3488,12 @@ bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CD
 
     /* received an unlock_to_abort req, put it in queue . */
     else if (strCommand == NetMsgType::OMNI_UNLOCK_ABORT) {
-	std::shared_ptr<UnlockToAbortReq> pUnlockAbortReq(new UnlockToAbortReq());
+        std::shared_ptr<UnlockToAbortReq> pUnlockAbortReq(new UnlockToAbortReq());
+        /* discard the first few bytes for type b/c the unserialization method does not read type. This is for consistency when unserializing CReqBatch.*/
+        ClientReqType type;
+        vRecv.read((char*)&type, sizeof(type));
         vRecv >> *pUnlockAbortReq;
-	pbft->reqQueue.push_back(pUnlockAbortReq);
+        pbft->reqQueue.push_back(pUnlockAbortReq);
         g_connman->WakeMessageHandler();
 //	CTransaction tx(pUnlockCommitReq->tx_mutable);
 //	std::cout << __func__ << ": push to req queue unlockCommitReq. tx = " << tx.GetHash().GetHex().substr(0, 10) << std::endl;
