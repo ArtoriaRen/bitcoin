@@ -46,20 +46,20 @@ public:
     ThreadSafeQueue();
     ~ThreadSafeQueue();
 
-    TypedReq& front();
-    std::deque<TypedReq> get_all();
-    std::deque<TypedReq> get_upto(size_t max_bytes);
+    std::shared_ptr<CClientReq>& front();
+    std::deque<std::shared_ptr<CClientReq>> get_all();
+    std::deque<std::shared_ptr<CClientReq>> get_upto(size_t max_bytes);
     void pop_front();
 
-    void push_back(const TypedReq& item);
-    void push_back(TypedReq&& item);
+    void push_back(const std::shared_ptr<CClientReq>& item);
+    void push_back(std::shared_ptr<CClientReq>&& item);
     void push_back(CReqBatch& itemBatch);
 
     int size();
     bool empty();
 
 private:
-    std::deque<TypedReq> queue_;
+    std::deque<std::shared_ptr<CClientReq>> queue_;
     std::mutex mutex_;
     std::condition_variable cond_;
 };
