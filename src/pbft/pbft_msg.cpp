@@ -101,5 +101,5 @@ CClientReq::CClientReq(const ClientReqType typeIn, const CTransactionRef pTxIn):
 TxReq::TxReq(): CClientReq(ClientReqType::TX) { }
 TxReq::TxReq(const CTransactionRef pTxIn): CClientReq(ClientReqType::TX, pTxIn) { }
 
-LockReq::LockReq(): CClientReq(ClientReqType::TX) { }
-LockReq::LockReq(const CTransactionRef pTxIn): CClientReq(ClientReqType::TX, pTxIn) { }
+LockReq::LockReq(): CClientReq(ClientReqType::LOCK) { }
+LockReq::LockReq(const CTransactionRef pTxIn): CClientReq(ClientReqType::LOCK, pTxIn) { }
