@@ -19,21 +19,23 @@ void CReply::getHash(uint256& result) const {
 }
 
 uint256 TxReq::GetDigest() const {
-    const uint256& tx_hash = pTx->GetHash();
-    uint256 result;
-    CHash256().Write((const unsigned char*)tx_hash.begin(), tx_hash.size())
-            .Write((const unsigned char*)type, sizeof(type))
-            .Finalize((unsigned char*)&result);
-    return result;
+    return pTx->GetHash();
+    //const uint256& tx_hash = pTx->GetHash();
+    //uint256 result;
+    //CHash256().Write((const unsigned char*)tx_hash.begin(), tx_hash.size())
+    //        .Write((const unsigned char*)&type, sizeof(type))
+    //        .Finalize((unsigned char*)&result);
+    //return result;
 }
 
 uint256 LockReq::GetDigest() const {
-    const uint256& tx_hash = pTx->GetHash();
-    uint256 result;
-    CHash256().Write((const unsigned char*)tx_hash.begin(), tx_hash.size())
-            .Write((const unsigned char*)type, sizeof(type))
-            .Finalize((unsigned char*)&result);
-    return result;
+    return pTx->GetHash();
+    //const uint256& tx_hash = pTx->GetHash();
+    //uint256 result;
+    //CHash256().Write((const unsigned char*)tx_hash.begin(), tx_hash.size())
+    //        .Write((const unsigned char*)&type, sizeof(type))
+    //        .Finalize((unsigned char*)&result);
+    //return result;
 }
 
 CInputShardReply::CInputShardReply(): CReply() {};
@@ -57,12 +59,11 @@ uint256 UnlockToCommitReq::GetDigest() const {
     const uint256& tx_hash = pTx->GetHash();
     CHash256 hasher;
     hasher.Write((const unsigned char*)tx_hash.begin(), tx_hash.size())
-            .Write((const unsigned char*)type, sizeof(type));
+            .Write((const unsigned char*)&type, sizeof(type));
     for (uint i = 0; i < nInputShardReplies; i++) {
-	uint256 tmp;
-	vInputShardReply[i].getHash(tmp);
-	hasher.Write((const unsigned char*)tmp.begin(), tmp.size());
-
+        uint256 tmp;
+        vInputShardReply[i].getHash(tmp);
+        hasher.Write((const unsigned char*)tmp.begin(), tmp.size());
     }
     uint256 result;
     hasher.Finalize((unsigned char*)&result);
@@ -80,12 +81,12 @@ UnlockToAbortReq::UnlockToAbortReq(const CTransactionRef pTxIn, const std::vecto
 uint256 UnlockToAbortReq::GetDigest() const {
     const uint256& tx_hash = pTx->GetHash();
     CHash256 hasher;
-    hasher.Write((const unsigned char*)tx_hash.begin(), tx_hash.size());
+    hasher.Write((const unsigned char*)tx_hash.begin(), tx_hash.size())
+            .Write((const unsigned char*)&type, sizeof(type));
     for (uint i = 0; i < vNegativeReply.size(); i++) {
-	uint256 tmp;
-	vNegativeReply[i].getHash(tmp);
-	hasher.Write((const unsigned char*)tmp.begin(), tmp.size());
-
+        uint256 tmp;
+        vNegativeReply[i].getHash(tmp);
+        hasher.Write((const unsigned char*)tmp.begin(), tmp.size());
     }
     uint256 result;
     hasher.Finalize((unsigned char*)&result);
