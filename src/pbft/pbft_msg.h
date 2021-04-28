@@ -70,7 +70,7 @@ public:
     void getHash(uint256& result);
 };
 
-/*Local pre-prepare message*/
+/*reply message*/
 class CReply {
 public:
     char reply; // execution result
@@ -130,49 +130,38 @@ public:
 
 class CClientReq{
 public:
-    CMutableTransaction tx_mutable;
+    ClientReqType type;
+    CTransactionRef pTx;
 
-    /* in-memory only. for fast hash retrivel. should never go across network. */
-    uint256 hash;
+    CClientReq(const ClientReqType typeIn);
+    CClientReq(const ClientReqType typeIn, const CTransactionRef pTxIn);
 
-    CClientReq(const CTransaction& tx);
-    void UpdateHash();
-    const uint256& GetHash() const;
-    bool IsCoinBase() const;
-    
     /* we did not put serialization methods here because c++ does not allow
      * virtual template method.
      */
     virtual char Execute(const int seq, CCoinsViewCache& view) const = 0; // seq is passed in because we use it as block height.
-    virtual uint256 GetDigest() const = 0;
+    virtual const uint256 GetDigest() const = 0;
 
-    template<typename Stream>
-    void Serialize(Stream& s) const{
-	tx_mutable.Serialize(s);
-    }
-    template<typename Stream>
-    void Unserialize(Stream& s) {
-	tx_mutable.Unserialize(s);
-	UpdateHash();
-    }
 //    virtual ~CClientReq(){};
 };
 
 class TxReq: public CClientReq {
 public:
-    TxReq(): CClientReq(CMutableTransaction()) {}
-    TxReq(const CTransaction& txIn) : CClientReq(txIn){}
+    TxReq();
+    TxReq(const CTransactionRef pTxIn);
 
     template<typename Stream>
     void Serialize(Stream& s) const{
-	CClientReq::Serialize(s);
+        s.write((char*) &(type), sizeof(type));
+        pTx->Serialize(s);
     }
     template<typename Stream>
     void Unserialize(Stream& s) {
-	CClientReq::Unserialize(s);
+        type = ClientReqType::TX;
+        s >> pTx;
     }
     char Execute(const int seq, CCoinsViewCache& view) const override;
-    uint256 GetDigest() const override;
+    const uint256 GetDigest() const override;
 };
 
 /* Although the LockReq class has the same member variable as the TxReq class,
@@ -184,19 +173,21 @@ public:
     /* total input amount in our shard. Only in-memory. No need to serialize it. */
     mutable CAmount totalValueInOfShard;
     
-    LockReq(): CClientReq(CMutableTransaction()) {}
-    LockReq(const CTransaction& txIn) : CClientReq(txIn){}
+    LockReq();
+    LockReq(const CTransactionRef pTxIn);
 
     template<typename Stream>
     void Serialize(Stream& s) const{
-	CClientReq::Serialize(s);
+        s.write((char*) &(type), sizeof(type));
+        pTx->Serialize(s);
     }
     template<typename Stream>
     void Unserialize(Stream& s) {
-	CClientReq::Unserialize(s);
+        type = ClientReqType::LOCK;
+        s >> pTx;
     }
     char Execute(const int seq, CCoinsViewCache& view) const override;
-    uint256 GetDigest() const override;
+    const uint256 GetDigest() const override;
 };
 
 class UnlockToCommitReq: public CClientReq {
@@ -215,27 +206,29 @@ public:
     std::vector<CInputShardReply> vInputShardReply;
 
     UnlockToCommitReq();
-    UnlockToCommitReq(const CTransaction& txIn, const uint sigCountIn, std::vector<CInputShardReply>&& vReply);
+    UnlockToCommitReq(const CTransactionRef pTxIn, const uint sigCountIn, std::vector<CInputShardReply>&& vReply);
 
     template<typename Stream>
     void Serialize(Stream& s) const{
-	CClientReq::Serialize(s);
-	s.write((char*)&nInputShardReplies, sizeof(nInputShardReplies));
-	for (uint i = 0; i < nInputShardReplies; i++) {
-	    vInputShardReply[i].Serialize(s);
-	}
+        s.write((char*) &(type), sizeof(type));
+        pTx->Serialize(s);
+        s.write((char*)&nInputShardReplies, sizeof(nInputShardReplies));
+        for (uint i = 0; i < nInputShardReplies; i++) {
+            vInputShardReply[i].Serialize(s);
+        }
     }
     template<typename Stream>
     void Unserialize(Stream& s) {
-	CClientReq::Unserialize(s);
-	s.read((char*)&nInputShardReplies, sizeof(nInputShardReplies));
-	vInputShardReply.resize(nInputShardReplies);
-	for (uint i = 0; i < nInputShardReplies; i++) {
-	    vInputShardReply[i].Unserialize(s);
-	}
+        type = ClientReqType::UNLOCK_TO_COMMIT;
+        s >> pTx;
+        s.read((char*)&nInputShardReplies, sizeof(nInputShardReplies));
+        vInputShardReply.resize(nInputShardReplies);
+        for (uint i = 0; i < nInputShardReplies; i++) {
+            vInputShardReply[i].Unserialize(s);
+        }
     }
     char Execute(const int seq, CCoinsViewCache& view) const override;
-    uint256 GetDigest() const override;
+    const uint256 GetDigest() const override;
 };
 
 class UnlockToAbortReq: public CClientReq {
@@ -246,77 +239,35 @@ public:
     std::vector<CInputShardReply> vNegativeReply;
 
     UnlockToAbortReq();
-    UnlockToAbortReq(const CTransaction& txIn, const std::vector<CInputShardReply>& lockFailReplies);
+    UnlockToAbortReq(const CTransactionRef pTxIn, const std::vector<CInputShardReply>& lockFailReplies);
 
     template<typename Stream>
     void Serialize(Stream& s) const{
-	CClientReq::Serialize(s);
-	for (auto reply: vNegativeReply) {
-	    reply.Serialize(s);
-	}
+        s.write((char*) &(type), sizeof(type));
+        pTx->Serialize(s);
+        for (auto reply: vNegativeReply) {
+            reply.Serialize(s);
+        }
     }
     template<typename Stream>
     void Unserialize(Stream& s) {
-	CClientReq::Unserialize(s);
-	for (uint i = 0; i < vNegativeReply.size(); i++) {
-	     vNegativeReply[i].Unserialize(s);
-	}
+        type = ClientReqType::UNLOCK_TO_ABORT;
+        s >> pTx;
+        for (uint i = 0; i < vNegativeReply.size(); i++) {
+             vNegativeReply[i].Unserialize(s);
+        }
     }
     char Execute(const int seq, CCoinsViewCache& view) const override;
-    uint256 GetDigest() const override;
-};
-
-class TypedReq{
-public:
-    ClientReqType type;
-    std::shared_ptr<CClientReq> pReq;
-
-    uint256 GetHash() const;
-
-    template<typename Stream>
-    void Serialize(Stream& s) const{
-        s.write((char*) &type, sizeof (type));
-        if (type == ClientReqType::TX) {
-            assert(pReq != nullptr);
-            static_cast<TxReq*> (pReq.get())->Serialize(s);
-        } else if (type == ClientReqType::LOCK) {
-            assert(pReq != nullptr);
-            static_cast<LockReq*> (pReq.get())->Serialize(s);
-        } else if (type == ClientReqType::UNLOCK_TO_COMMIT) {
-            assert(pReq != nullptr);
-            static_cast<UnlockToCommitReq*> (pReq.get())->Serialize(s);
-        } else if (type == ClientReqType::UNLOCK_TO_ABORT) {
-            assert(pReq != nullptr);
-            static_cast<UnlockToAbortReq*> (pReq.get())->Serialize(s);
-        }  
-    }
-
-    template<typename Stream>
-    void Unserialize(Stream& s) {
-	s.read((char*)&type, sizeof(type));
-	if(type == ClientReqType::TX) {
-	    pReq.reset(new TxReq());
-	    static_cast<TxReq*>(pReq.get())->Unserialize(s);
-	} else if(type == ClientReqType::LOCK) {
-	    pReq.reset(new LockReq());
-	    static_cast<LockReq*>(pReq.get())->Unserialize(s);
-	} else if(type == ClientReqType::UNLOCK_TO_COMMIT) {
-	    pReq.reset(new UnlockToCommitReq());
-	    static_cast<UnlockToCommitReq*>(pReq.get())->Unserialize(s);
-	} else if(type == ClientReqType::UNLOCK_TO_ABORT) {
-	    pReq.reset(new UnlockToAbortReq());
-	    static_cast<UnlockToAbortReq*>(pReq.get())->Unserialize(s);
-	}
-    }
+    const uint256 GetDigest() const override;
 };
 
 class CPbftBlock{
 public:
     uint256 hash; 
-    std::vector<TypedReq> vReq;
+    std::vector<std::shared_ptr<CClientReq>> vPReq;
 
     CPbftBlock();
-    CPbftBlock(std::deque<TypedReq> vReqIn);
+    CPbftBlock(std::deque<std::shared_ptr<CClientReq>>&& vPReqIn);
     void ComputeHash();
     void WarmUpExecute(const int seq, CCoinsViewCache& view) const;
     uint32_t Execute(const int seq, CConnman* connman, CCoinsViewCache& view) const;
@@ -324,21 +275,48 @@ public:
 
     template<typename Stream>
     void Serialize(Stream& s) const{
-	uint block_size = vReq.size();
-	s.write((char*)&block_size, sizeof(block_size));
-	for (uint i = 0; i < vReq.size(); i++) {
-	    vReq[i].Serialize(s);
-	}
+        uint block_size = vPReq.size();
+        s.write((char*)&block_size, sizeof(block_size));
+        for (uint i = 0; i < vPReq.size(); i++) {
+                ClientReqType type = vPReq[i]->type;
+                if (type == ClientReqType::TX) {
+                    assert(vPReq[i] != nullptr);
+                    static_cast<TxReq*>(vPReq[i].get())->Serialize(s);
+                } else if (type == ClientReqType::LOCK) {
+                    assert(vPReq[i] != nullptr);
+                    static_cast<LockReq*>(vPReq[i].get())->Serialize(s);
+                } else if (type == ClientReqType::UNLOCK_TO_COMMIT) {
+                    assert(vPReq[i] != nullptr);
+                    static_cast<UnlockToCommitReq*>(vPReq[i].get())->Serialize(s);
+                } else if (type == ClientReqType::UNLOCK_TO_ABORT) {
+                    assert(vPReq[i] != nullptr);
+                    static_cast<UnlockToAbortReq*>(vPReq[i].get())->Serialize(s);
+                }
+        }
     }
 
     template<typename Stream>
     void Unserialize(Stream& s) {
 	uint block_size;
 	s.read((char*)&block_size, sizeof(block_size));
-	vReq.resize(block_size);
-	for (uint i = 0; i < vReq.size(); i++) {
-	    vReq[i].Unserialize(s);
-	}
+    	vPReq.resize(block_size);
+        ClientReqType type;
+        for (uint i = 0; i < vPReq.size(); i++) {
+            s.read((char*)&type, sizeof(type));
+            if(type == ClientReqType::TX) {
+                vPReq[i].reset(new TxReq());
+                static_cast<TxReq*>(vPReq[i].get())->Unserialize(s);
+            } else if(type == ClientReqType::LOCK) {
+                vPReq[i].reset(new LockReq());
+                static_cast<LockReq*>(vPReq[i].get())->Unserialize(s);
+            } else if(type == ClientReqType::UNLOCK_TO_COMMIT) {
+                vPReq[i].reset(new UnlockToCommitReq());
+                static_cast<UnlockToCommitReq*>(vPReq[i].get())->Unserialize(s);
+            } else if(type == ClientReqType::UNLOCK_TO_ABORT) {
+                vPReq[i].reset(new UnlockToAbortReq());
+                static_cast<UnlockToAbortReq*>(vPReq[i].get())->Unserialize(s);
+            }
+        }
     }
 };
 
@@ -367,16 +345,29 @@ public:
 
 class CReqBatch {
 public:
-    std::deque<TypedReq> vReq;
+    std::deque<std::shared_ptr<CClientReq>> vPReq;
 
     CReqBatch();
 
     template<typename Stream>
     void Serialize(Stream& s) const {
-        uint batch_size = vReq.size();
+        uint batch_size = vPReq.size();
         s.write((char*) &batch_size, sizeof (batch_size));
-        for (uint i = 0; i < vReq.size(); i++) {
-            vReq[i].Serialize(s);
+        for (uint i = 0; i < vPReq.size(); i++) {
+            ClientReqType type = vPReq[i]->type;
+            if (type == ClientReqType::TX) {
+                assert(vPReq[i] != nullptr);
+                static_cast<TxReq*>(vPReq[i].get())->Serialize(s);
+            } else if (type == ClientReqType::LOCK) {
+                assert(vPReq[i] != nullptr);
+                static_cast<LockReq*>(vPReq[i].get())->Serialize(s);
+            } else if (type == ClientReqType::UNLOCK_TO_COMMIT) {
+                assert(vPReq[i] != nullptr);
+                static_cast<UnlockToCommitReq*>(vPReq[i].get())->Serialize(s);
+            } else if (type == ClientReqType::UNLOCK_TO_ABORT) {
+                assert(vPReq[i] != nullptr);
+                static_cast<UnlockToAbortReq*>(vPReq[i].get())->Serialize(s);
+            }
         }
     }
 
@@ -384,9 +375,23 @@ public:
     void Unserialize(Stream& s) {
         uint batch_size;
         s.read((char*) &batch_size, sizeof (batch_size));
-        vReq.resize(batch_size);
-        for (uint i = 0; i < vReq.size(); i++) {
-            vReq[i].Unserialize(s);
+        vPReq.resize(batch_size);
+        ClientReqType type;
+        for (uint i = 0; i < vPReq.size(); i++) {
+            s.read((char*)&type, sizeof(type));
+            if(type == ClientReqType::TX) {
+                vPReq[i].reset(new TxReq());
+                static_cast<TxReq*>(vPReq[i].get())->Unserialize(s);
+            } else if(type == ClientReqType::LOCK) {
+                vPReq[i].reset(new LockReq());
+                static_cast<LockReq*>(vPReq[i].get())->Unserialize(s);
+            } else if(type == ClientReqType::UNLOCK_TO_COMMIT) {
+                vPReq[i].reset(new UnlockToCommitReq());
+                static_cast<UnlockToCommitReq*>(vPReq[i].get())->Unserialize(s);
+            } else if(type == ClientReqType::UNLOCK_TO_ABORT) {
+                vPReq[i].reset(new UnlockToAbortReq());
+                static_cast<UnlockToAbortReq*>(vPReq[i].get())->Unserialize(s);
+            }
         }
     }
 };

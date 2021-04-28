@@ -40,7 +40,7 @@ ThreadSafeQueue::ThreadSafeQueue() { }
 
 ThreadSafeQueue::~ThreadSafeQueue() { }
 
-TypedReq& ThreadSafeQueue::front() {
+std::shared_ptr<CClientReq>& ThreadSafeQueue::front() {
     std::unique_lock<std::mutex> mlock(mutex_);
     while (queue_.empty()) {
         cond_.wait(mlock);
@@ -48,25 +48,25 @@ TypedReq& ThreadSafeQueue::front() {
     return queue_.front();
 }
 
-std::deque<TypedReq> ThreadSafeQueue::get_all() {
+std::deque<std::shared_ptr<CClientReq>> ThreadSafeQueue::get_all() {
     std::unique_lock<std::mutex> mlock(mutex_);
-    std::deque<TypedReq> ret(queue_);
+    std::deque<std::shared_ptr<CClientReq>> ret(queue_);
     queue_.clear();
     return ret;
 }
 
-std::deque<TypedReq> ThreadSafeQueue::get_upto(size_t max_bytes) {
+std::deque<std::shared_ptr<CClientReq>> ThreadSafeQueue::get_upto(size_t max_bytes) {
     std::unique_lock<std::mutex> mlock(mutex_);
     size_t packageSize = 0;
     int i = 0;
     for (; i < queue_.size() && packageSize < max_bytes; i++) {
-	CMutableTransaction& tx_mutable = queue_[i].pReq->tx_mutable;
-	//std::cout << "tx " << tx_mutable.GetHash().GetHex() << " size = " << ::GetSerializeSize(tx_mutable, SER_NETWORK, PROTOCOL_VERSION) << std::endl; 
-	packageSize += ::GetSerializeSize(tx_mutable, SER_NETWORK, PROTOCOL_VERSION);
+        const CTransaction& tx = *queue_[i]->pTx;
+        //std::cout << "tx " << tx_mutable.GetHash().GetHex() << " size = " << ::GetSerializeSize(tx_mutable, SER_NETWORK, PROTOCOL_VERSION) << std::endl; 
+        packageSize += ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION);
     }
     //std::cout << "i = " << i << ", packageSize = " << packageSize << std::endl;
 
-    std::deque<TypedReq> ret(queue_.begin(), queue_.begin() + i);
+    std::deque<std::shared_ptr<CClientReq>> ret(queue_.begin(), queue_.begin() + i);
     queue_.erase(queue_.begin(), queue_.begin() + i);
     return ret;
 }
@@ -79,14 +79,14 @@ void ThreadSafeQueue::pop_front() {
     queue_.pop_front();
 }
 
-void ThreadSafeQueue::push_back(const TypedReq& item) {
+void ThreadSafeQueue::push_back(const std::shared_ptr<CClientReq>& item) {
     std::unique_lock<std::mutex> mlock(mutex_);
     queue_.push_back(item);
     mlock.unlock(); // unlock before notificiation to minimize mutex con
     cond_.notify_one(); // notify one waiting thread
 }
 
-void ThreadSafeQueue::push_back(TypedReq&& item) {
+void ThreadSafeQueue::push_back(std::shared_ptr<CClientReq>&& item) {
     std::unique_lock<std::mutex> mlock(mutex_);
     queue_.push_back(std::move(item));
     mlock.unlock(); // unlock before notificiation to minimize mutex con
@@ -95,8 +95,8 @@ void ThreadSafeQueue::push_back(TypedReq&& item) {
 
 void ThreadSafeQueue::push_back(CReqBatch& itemBatch) {
     std::unique_lock<std::mutex> mlock(mutex_);
-    for (uint i = 0; i < itemBatch.vReq.size(); i++) {
-        queue_.push_back(std::move(itemBatch.vReq[i]));
+    for (uint i = 0; i < itemBatch.vPReq.size(); i++) {
+        queue_.push_back(std::move(itemBatch.vPReq[i]));
     }
     mlock.unlock(); // unlock before notificiation to minimize mutex con
     cond_.notify_one(); // notify one waiting thread
@@ -315,7 +315,7 @@ CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char e
     /* 'y' --- execute sucessfully
      * 'n' --- execute fail
      */
-    CReply toSent(exe_res, log[seq].ppMsg.pbft_block.vReq[idx].pReq->GetDigest());
+    CReply toSent(exe_res, log[seq].ppMsg.pbft_block.vPReq[idx]->GetDigest());
     //uint256 hash;
     //toSent.getHash(hash);
     //privateKey.Sign(hash, toSent.vchSig);
@@ -324,7 +324,7 @@ CReply CPbft::assembleReply(const uint32_t seq, const uint32_t idx, const char e
 }
 
 CInputShardReply CPbft::assembleInputShardReply(const uint32_t seq, const uint32_t idx, const char exe_res, const CAmount& inputUtxoValueSum) {
-    CInputShardReply toSent(exe_res, log[seq].ppMsg.pbft_block.vReq[idx].pReq->GetDigest(), inputUtxoValueSum);
+    CInputShardReply toSent(exe_res, log[seq].ppMsg.pbft_block.vPReq[idx]->GetDigest(), inputUtxoValueSum);
     uint256 hash;
     toSent.getHash(hash);
     privateKey.Sign(hash, toSent.vchSig);
@@ -334,24 +334,20 @@ CInputShardReply CPbft::assembleInputShardReply(const uint32_t seq, const uint32
 
 int CPbft::executeLog() {
     /* execute all lower-seq tx until this one if possible. */
-    CCoinsViewCache view(pcoinsTip.get());
     /* We should go on to execute all log slots that are in reply phase even
      * their seqs are greater than the seq passed in. If we only execute up to
      * the seq passed in, a slot missing a pbftc msg might permanently block
      * log slots after it to be executed. */
     for (uint i = lastExecutedSeq + 1; i < logSize && log[i].phase == PbftPhase::reply; i++) {
-	log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, g_connman.get(), view);
-	lastExecutedSeq = i;
-	std::cout << "Executed block " << i  << ", block size = " 
-		<< log[i].ppMsg.pbft_block.vReq.size()  
-		<< ", Total TX cnt = " << totalExeCount[0]
-		<< ", Total LOCK cnt = " << totalExeCount[1]
-		<< ", Total COMMIT cnt = " << totalExeCount[2]
-
-		<< std::endl;
+        log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, g_connman.get(), *pcoinsTip);
+        lastExecutedSeq = i;
+        std::cout << "Executed block " << i  << ", block size = " 
+            << log[i].ppMsg.pbft_block.vPReq.size()  
+            << ", Total TX cnt = " << totalExeCount[0]
+            << ", Total LOCK cnt = " << totalExeCount[1]
+            << ", Total COMMIT cnt = " << totalExeCount[2]
+            << std::endl;
     }
-    bool flushed = view.Flush(); // flush to pcoinsTip
-    assert(flushed);
     return lastExecutedSeq;
 }
 
@@ -396,13 +392,13 @@ void CPbft::WarmUpMemoryCache() {
     int lastExecutedSeqWarmUp = readBlocksFromFile();
     uint32_t nWarmUpTx = 0;
     for (int i = 0; i <= lastExecutedSeqWarmUp; i++) {
-	uint32_t block_size = log[i].ppMsg.pbft_block.vReq.size();
-	//std::cout << "executing warm-up block of size " << block_size << std::endl;
+        uint32_t block_size = log[i].ppMsg.pbft_block.vPReq.size();
+        //std::cout << "executing warm-up block of size " << block_size << std::endl;
 
         log[i].ppMsg.pbft_block.WarmUpExecute(i, view_tenta);
         /* Discard the block to prepare for performance test. */
         log[i].ppMsg.pbft_block.Clear();
-	nWarmUpTx += block_size; 
+        nWarmUpTx += block_size; 
     }
     std::cout << "warm up -- total executed tx: " << nWarmUpTx << std::endl;
 }
@@ -421,16 +417,16 @@ void CPbft::sendReplies(CConnman* connman) {
     while (lastExecutedSeq > lastReplySentSeq) {
         /* sent reply msg for all executed blocks. */
 	int seq = ++lastReplySentSeq;
-	std::vector<TypedReq>& vReq = log[seq].ppMsg.pbft_block.vReq;
-        const uint num_tx = vReq.size();
+	std::vector<std::shared_ptr<CClientReq>>& vPReq = log[seq].ppMsg.pbft_block.vPReq;
+        const uint num_tx = vPReq.size();
 	//std::cout << "sending reply for block " << seq <<",  lastReplySentSeq = "<<  lastReplySentSeq << ", lastExecutedSeq = " << lastExecutedSeq << std::endl;
 	/*send reply for non-LOCK requests in the block. (Because we are doing closed-loop test, there should be no ABORT request.)*/
         for (uint i = 0; i < num_tx; i++) {
-	    if (vReq[i].type != ClientReqType::LOCK) {
-		/* hard code execution result as 'y' since we are replaying tx on Bitcoin's chain. */
-		CReply reply = assembleReply(seq, i,'y');
-		connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
-	    }
+            if (vPReq[i]->type != ClientReqType::LOCK) {
+            /* hard code execution result as 'y' since we are replaying tx on Bitcoin's chain. */
+                CReply reply = assembleReply(seq, i,'y');
+                connman->PushMessage(client, msgMaker.Make(NetMsgType::PBFT_REPLY, reply));
+            }
         }
     }
 }

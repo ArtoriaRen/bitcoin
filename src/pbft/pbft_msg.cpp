@@ -60,24 +60,9 @@ void CReply::getHash(uint256& result) const {
 	    .Finalize((unsigned char*)&result);
 }
 
-
-CClientReq::CClientReq(const CTransaction& tx): tx_mutable(tx), hash(tx.GetHash()) { }
-
-void CClientReq::UpdateHash() {
-    hash = tx_mutable.GetHash();
-}
-
-const uint256& CClientReq::GetHash() const {
-    return hash;
-}
-
-bool CClientReq::IsCoinBase() const {
-    return (tx_mutable.vin.size() == 1 && tx_mutable.vin[0].prevout.IsNull());
-}
-
 char TxReq::Execute(const int seq, CCoinsViewCache& view) const {
     /* -------------logic from Bitcoin code for tx processing--------- */
-    CTransaction tx(tx_mutable);
+    const CTransaction& tx = *pTx;
     if(tx.IsCoinBase()) {
         UpdateCoins(tx, view, g_pbft->getBlockHeight(seq));
         //std::cout << __func__ << ": excuted coinbase tx " << tx.GetHash().ToString()
@@ -139,8 +124,14 @@ char TxReq::Execute(const int seq, CCoinsViewCache& view) const {
     return 'y';
 }
 
-uint256 TxReq::GetDigest() const {
-    return tx_mutable.GetHash();
+const uint256 TxReq::GetDigest() const {
+    return pTx->GetHash();
+    //const uint256& tx_hash = pTx->GetHash();
+    //uint256 result;
+    //CHash256().Write((const unsigned char*)tx_hash.begin(), tx_hash.size())
+    //        .Write((const unsigned char*)&type, sizeof(type))
+    //        .Finalize((unsigned char*)&result);
+    //return result;
 }
 
 
@@ -152,7 +143,7 @@ char LockReq::Execute(const int seq, CCoinsViewCache& view) const {
      */
 
     /* -------------logic from Bitcoin code for tx processing--------- */
-    CTransaction tx(tx_mutable);
+    const CTransaction& tx = *pTx;
     struct timeval start_time, end_time;
     uint64_t timeElapsed = 0;
     gettimeofday(&start_time, NULL);
@@ -217,8 +208,14 @@ char LockReq::Execute(const int seq, CCoinsViewCache& view) const {
     return 'y';
 }
 
-uint256 LockReq::GetDigest() const {
-    return tx_mutable.GetHash();
+const uint256 LockReq::GetDigest() const {
+    return pTx->GetHash();
+    //const uint256& tx_hash = pTx->GetHash();
+    //uint256 result;
+    //CHash256().Write((const unsigned char*)tx_hash.begin(), tx_hash.size())
+    //        .Write((const unsigned char*)&type, sizeof(type))
+    //        .Finalize((unsigned char*)&result);
+    //return result;
 }
 
 CInputShardReply::CInputShardReply(): CReply() {};
@@ -234,18 +231,19 @@ void CInputShardReply::getHash(uint256& result) const {
 	    .Finalize((unsigned char*)&result);
 }
 
-UnlockToCommitReq::UnlockToCommitReq(): CClientReq(CMutableTransaction()) {}
-UnlockToCommitReq::UnlockToCommitReq(const CTransaction& txIn, const uint sigCountIn, std::vector<CInputShardReply>&& vReply) : CClientReq(txIn), nInputShardReplies(sigCountIn), vInputShardReply(vReply){}
+UnlockToCommitReq::UnlockToCommitReq(): CClientReq(ClientReqType::UNLOCK_TO_COMMIT) { }
 
-uint256 UnlockToCommitReq::GetDigest() const {
-    uint256 tx_hash(tx_mutable.GetHash());
+UnlockToCommitReq::UnlockToCommitReq(const CTransactionRef pTxIn, const uint sigCountIn, std::vector<CInputShardReply>&& vReply): CClientReq(ClientReqType::UNLOCK_TO_COMMIT, pTxIn), nInputShardReplies(sigCountIn), vInputShardReply(vReply){}
+
+const uint256 UnlockToCommitReq::GetDigest() const {
+    const uint256& tx_hash = pTx->GetHash();
     CHash256 hasher;
-    hasher.Write((const unsigned char*)tx_hash.begin(), tx_hash.size());
+    hasher.Write((const unsigned char*)tx_hash.begin(), tx_hash.size())
+        .Write((const unsigned char*)&type, sizeof(type));
     for (uint i = 0; i < nInputShardReplies; i++) {
-	uint256 tmp;
-	vInputShardReply[i].getHash(tmp);
-	hasher.Write((const unsigned char*)tmp.begin(), tmp.size());
-
+        uint256 tmp;
+        vInputShardReply[i].getHash(tmp);
+        hasher.Write((const unsigned char*)tmp.begin(), tmp.size());
     }
     uint256 result;
     hasher.Finalize((unsigned char*)&result);
@@ -267,7 +265,7 @@ char UnlockToCommitReq::Execute(const int seq, CCoinsViewCache& view) const {
     g_pbft->detailTime[STEP::COMMIT_SIG_CHECK] = timeElapsed;
 
     /* -------------logic from Bitcoin code for tx processing--------- */
-    CTransaction tx(tx_mutable);
+    const CTransaction& tx = *pTx;
     
     CValidationState state;
     unsigned int flags = SCRIPT_VERIFY_NONE; // only verify pay to public key hash
@@ -340,23 +338,23 @@ bool checkInputShardReplySigs(const std::vector<CInputShardReply>& vReplies) {
     return true;
 }
 
-UnlockToAbortReq::UnlockToAbortReq(): CClientReq(CMutableTransaction()) {
+UnlockToAbortReq::UnlockToAbortReq(): CClientReq(ClientReqType::UNLOCK_TO_ABORT) {
     vNegativeReply.resize(CPbft::nFaulty + 1);
 }
 
-UnlockToAbortReq::UnlockToAbortReq(const CTransaction& txIn, const std::vector<CInputShardReply>& lockFailReplies) : CClientReq(txIn), vNegativeReply(lockFailReplies){
+UnlockToAbortReq::UnlockToAbortReq(const CTransactionRef pTxIn, const std::vector<CInputShardReply>& lockFailReplies): CClientReq(ClientReqType::UNLOCK_TO_ABORT, pTxIn), vNegativeReply(lockFailReplies){
     assert(vNegativeReply.size() == CPbft::nFaulty + 1);
 }
 
-uint256 UnlockToAbortReq::GetDigest() const {
-    uint256 tx_hash(tx_mutable.GetHash());
+const uint256 UnlockToAbortReq::GetDigest() const {
+    const uint256& tx_hash = pTx->GetHash();
     CHash256 hasher;
-    hasher.Write((const unsigned char*)tx_hash.begin(), tx_hash.size());
+    hasher.Write((const unsigned char*)tx_hash.begin(), tx_hash.size())
+        .Write((const unsigned char*)&type, sizeof(type));
     for (uint i = 0; i < vNegativeReply.size(); i++) {
-	uint256 tmp;
-	vNegativeReply[i].getHash(tmp);
-	hasher.Write((const unsigned char*)tmp.begin(), tmp.size());
-
+        uint256 tmp;
+        vNegativeReply[i].getHash(tmp);
+        hasher.Write((const unsigned char*)tmp.begin(), tmp.size());
     }
     uint256 result;
     hasher.Finalize((unsigned char*)&result);
@@ -370,7 +368,7 @@ char UnlockToAbortReq::Execute(const int seq, CCoinsViewCache& view) const {
     }
 
     /* -------------logic from Bitcoin code for tx processing--------- */
-    CTransaction tx(tx_mutable);
+    const CTransaction& tx = *pTx;
     
     /* Step 1: check all replies are negative. */
     for (auto r: vNegativeReply) {
@@ -397,25 +395,26 @@ char UnlockToAbortReq::Execute(const int seq, CCoinsViewCache& view) const {
 
 CPbftBlock::CPbftBlock(){
     hash.SetNull();
-    vReq.clear();
+    vPReq.clear();
 }
 
-CPbftBlock::CPbftBlock(std::deque<TypedReq> vReqIn) {
+CPbftBlock::CPbftBlock(std::deque<std::shared_ptr<CClientReq>>&& vPReqIn) {
     hash.SetNull();
-    vReq.insert(vReq.end(), vReqIn.begin(), vReqIn.end());
+    vPReq.insert(vPReq.end(), vPReqIn.begin(), vPReqIn.end());
 }
 
 void CPbftBlock::ComputeHash(){
     CHash256 hasher;
-    for (uint i = 0; i < vReq.size(); i++) {
-	hasher.Write((const unsigned char*)vReq[i].pReq->GetHash().begin(), vReq[i].pReq->GetHash().size());
+    for (uint i = 0; i < vPReq.size(); i++) {
+        uint256 req_hash = vPReq[i]->GetDigest();
+        hasher.Write((const unsigned char*)req_hash.begin(), req_hash.size());
     }
     hasher.Finalize((unsigned char*)&hash);
 }
 
 void CPbftBlock::WarmUpExecute(const int seq, CCoinsViewCache& view) const {
-    for (uint i = 0; i < vReq.size(); i++) {
-        UpdateCoins(vReq[i].pReq->tx_mutable, view, seq);
+    for (uint i = 0; i < vPReq.size(); i++) {
+        UpdateCoins(*(vPReq[i]->pTx), view, seq);
     }
 }
 
@@ -423,43 +422,42 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& 
     const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
     uint32_t txCnt = 0;
     CPbft& pbft = *g_pbft; 
-    for (uint i = 0; i < vReq.size(); i++) {
-	struct timeval start_time, end_time, detail_start_time, detail_end_time;
+    for (uint i = 0; i < vPReq.size(); i++) {
+        struct timeval start_time, end_time, detail_start_time, detail_end_time;
         uint64_t timeElapsed = 0;
-	gettimeofday(&start_time, NULL);
-	char exe_res = vReq[i].pReq->Execute(seq, view);
-	if (vReq[i].type == ClientReqType::LOCK) {
+        gettimeofday(&start_time, NULL);
+        char exe_res = vPReq[i]->Execute(seq, view);
+        if (vPReq[i]->type == ClientReqType::LOCK) {
             gettimeofday(&detail_start_time, NULL);
-	    CInputShardReply reply = pbft.assembleInputShardReply(seq, i, exe_res, ((LockReq*)vReq[i].pReq.get())->totalValueInOfShard);
+            CInputShardReply reply = pbft.assembleInputShardReply(seq, i, exe_res, ((LockReq*)vPReq[i].get())->totalValueInOfShard);
             gettimeofday(&detail_end_time, NULL);
             timeElapsed = (detail_end_time.tv_sec - detail_start_time.tv_sec) * 1000000 + (detail_end_time.tv_usec - detail_start_time.tv_usec);
             pbft.detailTime[STEP::LOCK_RES_SIGN] = timeElapsed;
             gettimeofday(&detail_start_time, NULL);
-	    connman->PushMessage(pbft.client, msgMaker.Make(NetMsgType::OMNI_LOCK_REPLY, reply));
+            connman->PushMessage(pbft.client, msgMaker.Make(NetMsgType::OMNI_LOCK_REPLY, reply));
             gettimeofday(&detail_end_time, NULL);
-	    gettimeofday(&end_time, NULL);
+            gettimeofday(&end_time, NULL);
             timeElapsed = (detail_end_time.tv_sec - detail_start_time.tv_sec) * 1000000 + (detail_end_time.tv_usec - detail_start_time.tv_usec);
             pbft.detailTime[STEP::LOCK_RES_SEND] = timeElapsed;
-	} else {
-	    gettimeofday(&end_time, NULL);
-	    /* only count TX and UNLOCK_TO_COMMIT requests */
-	    txCnt++;
-	}
+        } else {
+            gettimeofday(&end_time, NULL);
+            /* only count TX and UNLOCK_TO_COMMIT requests */
+            txCnt++;
+        }
 
-	/* update execution time and count. Only count non-coinbase tx.*/
-	if (!vReq[i].pReq->IsCoinBase()) {
+        /* update execution time and count. Only count non-coinbase tx.*/
+        if (!vPReq[i]->pTx->IsCoinBase()) {
             timeElapsed = (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
-	    g_pbft->totalExeTime[vReq[i].type] = timeElapsed;
-	    g_pbft->totalExeCount[vReq[i].type]++;
-            if (vReq[i].type == ClientReqType::TX) {
+            g_pbft->totalExeTime[vPReq[i]->type] = timeElapsed;
+            g_pbft->totalExeCount[vPReq[i]->type]++;
+            if (vPReq[i]->type == ClientReqType::TX) {
                 std::cout << "TX_STAT. Overall time = " << g_pbft->totalExeTime[0]  
                         << ". Detail time: TX_UTXO_EXIST_AND_VALUE = " << g_pbft->detailTime[STEP::TX_UTXO_EXIST_AND_VALUE]
                         << ", TX_SIG_CHECK = " << g_pbft->detailTime[STEP::TX_SIG_CHECK] 
                         << ", TX_DB_UPDATE = " << g_pbft->detailTime[STEP::TX_DB_UPDATE] 
                         << ", TX_INPUT_UTXO_NUM = " << g_pbft->inputCount[INPUT_CNT::TX_INPUT_CNT]
                         << ", TX_cnt = " << g_pbft->totalExeCount[0] << std::endl;
-
-            } else if (vReq[i].type == ClientReqType::LOCK) {
+            } else if (vPReq[i]->type == ClientReqType::LOCK) {
                 std::cout << "LOCK_STAT. Overall time = " << g_pbft->totalExeTime[1]  
                         << ". Detail time: LOCK_UTXO_EXIST = " << g_pbft->detailTime[STEP::LOCK_UTXO_EXIST] 
                         << ", LOCK_SIG_CHECK = " << g_pbft->detailTime[STEP::LOCK_SIG_CHECK]
@@ -469,33 +467,33 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& 
                         << ", LOCK_INPUT_COPY = " << g_pbft->detailTime[STEP::LOCK_INPUT_COPY] 
                         << ", LOCK_INPUT_UTXO_NUM = " << g_pbft->inputCount[INPUT_CNT::LOCK_INPUT_CNT]
                         << ", LOCK_cnt = " << g_pbft->totalExeCount[1] << std::endl;
-
-            } else if (vReq[i].type == ClientReqType::UNLOCK_TO_COMMIT) {
+            } else if (vPReq[i]->type == ClientReqType::UNLOCK_TO_COMMIT) {
                 std::cout << "COMMIT_STAT. Overall time = " << g_pbft->totalExeTime[2] 
                         << ". Detail time: COMMIT_SIG_CHECK = " << g_pbft->detailTime[STEP::COMMIT_SIG_CHECK] 
                         << ", COMMIT_VALUE_CHECK = " << g_pbft->detailTime[STEP::COMMIT_VALUE_CHECK]
                         << ", COMMIT_UTXO_ADD = " << g_pbft->detailTime[STEP::COMMIT_UTXO_ADD] 
-			<< ", nInputShardSigs = " << g_pbft->nInputShardSigs
+                        << ", nInputShardSigs = " << g_pbft->nInputShardSigs
                         << ", COMMIT_cnt = " << g_pbft->totalExeCount[2] << std::endl;
-
-            } else if (vReq[i].type == ClientReqType::UNLOCK_TO_ABORT) {
+            } else if (vPReq[i]->type == ClientReqType::UNLOCK_TO_ABORT) {
                 std::cout << "ABORT = " << g_pbft->totalExeTime[3] << " us, ABORT_cnt = " << g_pbft->totalExeCount[3] << std::endl;
             }
-	}
+        }
     }
     return txCnt;
 }
 
-uint256 TypedReq::GetHash() const {
-    uint256 req_hash(pReq->GetDigest());
-    uint256 result;
-    CHash256().Write((const unsigned char*)req_hash.begin(), req_hash.size()).Write((const unsigned char*)type, sizeof(type)).Finalize((unsigned char*)&result);
-    return result;
-}
-
 void CPbftBlock::Clear() {
     hash.SetNull();
-    vReq.clear();
+    vPReq.clear();
 }
 
 CReqBatch::CReqBatch() { }
+
+CClientReq::CClientReq(const ClientReqType typeIn): type(typeIn) { }
+CClientReq::CClientReq(const ClientReqType typeIn, const CTransactionRef pTxIn): type(typeIn), pTx(pTxIn) {}
+
+TxReq::TxReq(): CClientReq(ClientReqType::TX) { }
+TxReq::TxReq(const CTransactionRef pTxIn): CClientReq(ClientReqType::TX, pTxIn) { }
+
+LockReq::LockReq(): CClientReq(ClientReqType::TX) { }
+LockReq::LockReq(const CTransactionRef pTxIn): CClientReq(ClientReqType::TX, pTxIn) { }
