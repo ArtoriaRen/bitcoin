@@ -325,7 +325,7 @@ public:
     bool checkCollabMulBlkMsg(const CCollabMultiBlockMsg& msg);
     bool SendCollabMsg();
     bool SendCollabMultiBlkMsg(); 
-    void sendReplies(CConnman* connman);
+    bool sendReplies(CConnman* connman);
 
     inline void printQueueSize(){
 	std::chrono::milliseconds current = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());

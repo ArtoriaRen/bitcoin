@@ -165,15 +165,15 @@ public:
     ClientReqType type;
     CTransactionRef pTx; 
 
-    CClientReq();
-    CClientReq(const CTransactionRef pTxIn);
+    CClientReq(const ClientReqType typeIn);
+    CClientReq(const ClientReqType typeIn, const CTransactionRef pTxIn);
 
     /* we did not put serialization methods here because c++ does not allow
      * virtual template method.
      */
     virtual bool Verify(const int seq, CCoinsViewCache& view) const = 0; // seq is passed in because we use it as block height.
     virtual bool Execute(const int seq, CCoinsViewCache& view) const = 0; // seq is passed in because we use it as block height.
-    virtual uint256 GetDigest() const = 0;
+    virtual const uint256 GetDigest() const = 0;
 
 //    virtual ~CClientReq(){};
 };
@@ -198,7 +198,7 @@ public:
     }
     bool Verify(const int seq, CCoinsViewCache& view) const override;
     bool Execute(const int seq, CCoinsViewCache& view) const override;
-    uint256 GetDigest() const override;
+    const uint256 GetDigest() const override;
 };
 
 /* Although the LockReq class has the same member variable as the TxReq class,
@@ -225,7 +225,7 @@ public:
     }
     bool Verify(const int seq, CCoinsViewCache& view) const override;
     bool Execute(const int seq, CCoinsViewCache& view) const override;
-    uint256 GetDigest() const override;
+    const uint256 GetDigest() const override;
 };
 
 class UnlockToCommitReq: public CClientReq {
@@ -267,7 +267,7 @@ public:
     }
     bool Verify(const int seq, CCoinsViewCache& view) const override;
     bool Execute(const int seq, CCoinsViewCache& view) const override;
-    uint256 GetDigest() const override;
+    const uint256 GetDigest() const override;
 };
 
 class UnlockToAbortReq: public CClientReq {
@@ -298,7 +298,7 @@ public:
     }
     bool Verify(const int seq, CCoinsViewCache& view) const override;
     bool Execute(const int seq, CCoinsViewCache& view) const override;
-    uint256 GetDigest() const override;
+    const uint256 GetDigest() const override;
 };
 
 class CPbftBlock{
