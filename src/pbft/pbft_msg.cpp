@@ -105,6 +105,6 @@ CClientReq::CClientReq(const ClientReqType typeIn, const CTransactionRef pTxIn):
 TxReq::TxReq(): CClientReq(ClientReqType::TX) { }
 TxReq::TxReq(const CTransactionRef pTxIn): CClientReq(ClientReqType::TX, pTxIn) { }
 
-LockReq::LockReq(): CClientReq(ClientReqType::TX) { }
-LockReq::LockReq(const CTransactionRef pTxIn, const std::vector<uint32_t>& vInputUTXOInShard) : CClientReq(ClientReqType::TX, pTxIn), nOutpointToLock(vInputUTXOInShard.size()), vInputUtxoIdxToLock(vInputUTXOInShard) { }
+LockReq::LockReq(): CClientReq(ClientReqType::LOCK) { }
+LockReq::LockReq(const CTransactionRef pTxIn, const std::vector<uint32_t>& vInputUTXOInShard) : CClientReq(ClientReqType::LOCK, pTxIn), nOutpointToLock(vInputUTXOInShard.size()), vInputUtxoIdxToLock(vInputUTXOInShard) { }
 
