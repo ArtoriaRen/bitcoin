@@ -102,6 +102,8 @@ public:
      */
     std::vector<int32_t> optchainPlace(const CTransactionRef pTx, std::deque<std::vector<uint32_t>>& vShardUtxoIdxToLock);
 
+    std::vector<int32_t> mostInputUTXOPlace(const CTransactionRef pTx, std::deque<std::vector<uint32_t>>& vShardUtxoIdxToLock);
+
     void printPlaceResult();
 };
 
