@@ -193,6 +193,7 @@ UniValue placetx(const JSONRPCRequest& request) {
     int endHeight = request.params[1].get_int();
     int nSingleShard = 0, nCrossShard = 0;
     TxPlacer txPlacer;
+    std::deque<int> shardTxStat(num_committees, 0);
     for (int i = startHeight; i < endHeight; i++) {
         CBlockIndex* pblockindex = chainActive[i];
         CBlock block;
@@ -202,6 +203,7 @@ UniValue placetx(const JSONRPCRequest& request) {
         for(int j = 0; j < block.vtx.size(); j++) {
             std::deque<std::vector<uint32_t>> vShardUtxoIdxToLock;
             std::vector<int32_t> shards = txPlacer.optchainPlace(block.vtx[j], vShardUtxoIdxToLock);
+            shardTxStat[shards[0]]++;
             if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
                 nSingleShard++;
             } else {
@@ -209,7 +211,12 @@ UniValue placetx(const JSONRPCRequest& request) {
             }
         }
     }
-    std::cout << "Placement res : num_single_shard_tx = " << nSingleShard << ", num_cross_shard_tx = " << nCrossShard << ". num_total = " << nSingleShard + nCrossShard << std::endl;
+    std::cout << "Placement res : num_single_shard_tx = " << nSingleShard << ", num_cross_shard_tx = " << nCrossShard << ". num_total = " << nSingleShard + nCrossShard << " in "  << endHeight - startHeight << " blocks" << std::endl;
+    std::cout << "tx cnt in each shard : ";
+    for (int i = 0; i < num_committees; i++) {
+        std::cout << i << " = " << shardTxStat[i] << ", ";
+    }
+    std::cout << std::endl;
     return nCrossShard;
 }
 
@@ -1799,7 +1806,7 @@ static const CRPCCommand commands[] =
     { "blockchain",         "preciousblock",          &preciousblock,          {"blockhash"} },
 
     { "blockchain",         "sendtxinblocks",         &sendtxinblocks,         {"startblockheight","endblockheight","sendrate","nthreads"} },
-    { "blockchain",         "sendtxinblocks",         &placetx,                {"startblockheight","endblockheight"} },
+    { "blockchain",         "placetx",                &placetx,                {"startblockheight","endblockheight"} },
     { "blockchain",         "gendependgraph",         &gendependgraph,         {"endblockheight"} },
     { "blockchain",         "printdependgraph",       &printdependgraph,       {} },
     /* Not shown in help */
