@@ -179,6 +179,40 @@ UniValue getblockcount(const JSONRPCRequest& request)
     return chainActive.Height();
 }
 
+UniValue placetx(const JSONRPCRequest& request) {
+
+    if (request.fHelp || request.params.size() != 2)
+        throw std::runtime_error(
+            "placetx\n"
+            "\nReturns number of cross-shard tx\n"
+            "\nExamples:\n"
+            + HelpExampleCli("placetx", "<start_block_height>, <end_block_height>")
+            + HelpExampleRpc("placetx", "<start_block_height>, <end_block_height>")
+        );
+    int startHeight = request.params[0].get_int();
+    int endHeight = request.params[1].get_int();
+    int nSingleShard = 0, nCrossShard = 0;
+    TxPlacer txPlacer;
+    for (int i = startHeight; i < endHeight; i++) {
+        CBlockIndex* pblockindex = chainActive[i];
+        CBlock block;
+        if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
+            std::cerr << "Block not found on disk" << std::endl;
+        }
+        for(int j = 0; j < block.vtx.size(); j++) {
+            std::deque<std::vector<uint32_t>> vShardUtxoIdxToLock;
+            std::vector<int32_t> shards = txPlacer.optchainPlace(block.vtx[j], vShardUtxoIdxToLock);
+            if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
+                nSingleShard++;
+            } else {
+                nCrossShard++;
+            }
+        }
+    }
+    std::cout << "Placement res : num_single_shard_tx = " << nSingleShard << ", num_cross_shard_tx = " << nCrossShard << ". num_total = " << nSingleShard + nCrossShard << std::endl;
+    return nCrossShard;
+}
+
 UniValue getbestblockhash(const JSONRPCRequest& request)
 {
     if (request.fHelp || request.params.size() != 0)
@@ -1765,6 +1799,7 @@ static const CRPCCommand commands[] =
     { "blockchain",         "preciousblock",          &preciousblock,          {"blockhash"} },
 
     { "blockchain",         "sendtxinblocks",         &sendtxinblocks,         {"startblockheight","endblockheight","sendrate","nthreads"} },
+    { "blockchain",         "sendtxinblocks",         &placetx,                {"startblockheight","endblockheight"} },
     { "blockchain",         "gendependgraph",         &gendependgraph,         {"endblockheight"} },
     { "blockchain",         "printdependgraph",       &printdependgraph,       {} },
     /* Not shown in help */
