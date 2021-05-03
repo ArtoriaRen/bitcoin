@@ -29,13 +29,16 @@ uint256 TxReq::GetDigest() const {
 }
 
 uint256 LockReq::GetDigest() const {
-    return pTx->GetHash();
-    //const uint256& tx_hash = pTx->GetHash();
-    //uint256 result;
-    //CHash256().Write((const unsigned char*)tx_hash.begin(), tx_hash.size())
-    //        .Write((const unsigned char*)&type, sizeof(type))
-    //        .Finalize((unsigned char*)&result);
-    //return result;
+    const uint256& tx_hash = pTx->GetHash();
+    CHash256 hasher;
+    hasher.Write((const unsigned char*)tx_hash.begin(), tx_hash.size())
+            .Write((const unsigned char*)&type, sizeof(type));
+    for (uint i = 0; i < vInputUtxoIdxToLock.size(); i++) {
+        hasher.Write((const unsigned char*)&vInputUtxoIdxToLock[i], sizeof(vInputUtxoIdxToLock[i]));
+    }
+    uint256 result;
+    hasher.Finalize((unsigned char*)&result);
+    return result;
 }
 
 CInputShardReply::CInputShardReply(): CReply() {};
@@ -102,4 +105,4 @@ TxReq::TxReq(): CClientReq(ClientReqType::TX) { }
 TxReq::TxReq(const CTransactionRef pTxIn): CClientReq(ClientReqType::TX, pTxIn) { }
 
 LockReq::LockReq(): CClientReq(ClientReqType::LOCK) { }
-LockReq::LockReq(const CTransactionRef pTxIn): CClientReq(ClientReqType::LOCK, pTxIn) { }
+LockReq::LockReq(const CTransactionRef pTxIn, const std::vector<uint32_t>& vInputUTXOInShard): CClientReq(ClientReqType::LOCK, pTxIn), vInputUtxoIdxToLock(vInputUTXOInShard) { }

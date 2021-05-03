@@ -50,20 +50,57 @@ public:
     }
 };
 
+class uint256Hasher {
+public:
+
+    size_t operator()(const uint256& id) const {
+        return id.GetCheapHash();
+    }
+};
+
+class CPlacementStatus {
+public:
+    std::vector<float> fitnessScore;
+    uint32_t numOutTx;
+    uint32_t numUnspentCoin; 
+    int32_t placementRes;
+    CPlacementStatus();
+    CPlacementStatus(uint32_t num_upspent_coin);
+};
+
 class TxPlacer{
 public:
     std::map<uint, std::map<uint, uint>> shardCntMap; // < input_utxo_count, shard_count, tx_count>
     uint totalTxNum;
+
+    /* OptChain data stuctures*/
+    float alpha;
+    /* key is txid, value is the p'(v) in the OptChain paper and the remaing number
+     * of unspent coins of the tx. If the count becomes 0, the tx is removed from 
+     * this map because future tx placement does not need their fitness score 
+     * anymore. 
+     */
+    std::unordered_map<uint256, CPlacementStatus, uint256Hasher> mapNotFullySpentTx;
+    /* the number of tx assigned to each shard. */
+    std::vector<uint32_t> vecShardTxCount;
 
     /* return the number of shards that input UTXOs and output UTXOs span */
     TxPlacer();
 
     /* return a vector of shard ids. 
      * The first element is the output shard id, and other elements are input shard ids. */
-    std::vector<int32_t> randomPlace(const CTransaction& tx, const CCoinsViewCache& cache);
+    std::vector<int32_t> randomPlace(const CTransaction& tx);
 
     /* return the shard hosting the UTXO whose producing tx is txid */
     int32_t randomPlaceUTXO(const uint256& txid);
+
+    /* place a tx using the OptChain algorithm */
+    /* The first element of the returned vector is the output shard id, and 
+     * other elements are input shard ids. 
+     * The vShardUtxoIdxToLock is filled with input utxo index to lock for each input
+     * shard.
+     */
+    std::vector<int32_t> optchainPlace(const CTransactionRef pTx, std::deque<std::vector<uint32_t>>& vShardUtxoIdxToLock);
 
     void printPlaceResult();
 };

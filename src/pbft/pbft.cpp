@@ -183,7 +183,7 @@ void CPbft::loadDependencyGraph(uint32_t startBlock, uint32_t endBlock) {
     dependencyFileStream.close();
 }
 
-void CPbft::add2Batch(const uint32_t shardId, const ClientReqType type, const CTransactionRef txRef, std::deque<std::shared_ptr<CClientReq>>& threadLocalBatchBuffer) {
+void CPbft::add2Batch(const uint32_t shardId, const ClientReqType type, const CTransactionRef txRef, std::deque<std::shared_ptr<CClientReq>>& threadLocalBatchBuffer, const std::vector<uint32_t>* utxoIdxToLock) {
     const uint256& hashTx = txRef->GetHash();
     struct TxStat stat;
     std::shared_ptr<CClientReq> req;
@@ -193,7 +193,7 @@ void CPbft::add2Batch(const uint32_t shardId, const ClientReqType type, const CT
     }
     else {
         stat.type = TxType::CROSS_SHARD;
-        req = std::make_shared<LockReq>(txRef);
+        req = std::make_shared<LockReq>(txRef, *utxoIdxToLock);
     }
     mapTxStartTime.insert(std::make_pair(hashTx, stat));
     if (vBatchBufferMutex[shardId].try_lock()) {

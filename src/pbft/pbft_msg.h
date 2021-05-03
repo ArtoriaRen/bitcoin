@@ -128,21 +128,33 @@ public:
  */
 class LockReq: public CClientReq {
 public:
+    std::vector<uint32_t> vInputUtxoIdxToLock;
     /* total input amount in our shard. Only in-memory. No need to serialize it. */
     mutable CAmount totalValueInOfShard;
     
     LockReq();
-    LockReq(const CTransactionRef pTxIn);
+    LockReq(const CTransactionRef pTxIn, const std::vector<uint32_t>& vInputUTXOInShard);
 
     template<typename Stream>
     void Serialize(Stream& s) const{
         s.write((char*) &(type), sizeof(type));
         pTx->Serialize(s);
+        uint32_t nOutpointToLock = vInputUtxoIdxToLock.size();
+        s.write((char*) &nOutpointToLock, sizeof (nOutpointToLock));
+        for (uint i = 0; i < vInputUtxoIdxToLock.size(); i++) {
+            s.write((char*) &vInputUtxoIdxToLock[i], sizeof (vInputUtxoIdxToLock[i]));
+        }
     }
     template<typename Stream>
     void Unserialize(Stream& s) {
         type = ClientReqType::LOCK;
         s >> pTx;
+        uint32_t nOutpointToLock;
+        s.read((char*) &nOutpointToLock, sizeof (nOutpointToLock));
+        vInputUtxoIdxToLock.resize(nOutpointToLock);
+        for (uint i = 0; i < nOutpointToLock; i++) {
+            s.read((char*) &vInputUtxoIdxToLock[i], sizeof (vInputUtxoIdxToLock[i]));
+        }
     }
     uint256 GetDigest() const override;
 };

@@ -32,11 +32,11 @@ size_t txChunkSize = 100;
 //uint32_t txStartBlock;
 //uint32_t txEndBlock;
 
-TxPlacer::TxPlacer():totalTxNum(0){}
+TxPlacer::TxPlacer():totalTxNum(0), alpha(0.5f), vecShardTxCount(num_committees, 0){}
 
 
 /* all output UTXOs of a tx is stored in one shard. */
-std::vector<int32_t> TxPlacer::randomPlace(const CTransaction& tx, const CCoinsViewCache& cache){
+std::vector<int32_t> TxPlacer::randomPlace(const CTransaction& tx) {
     std::vector<int32_t> ret;
 
     std::set<int> inputShardIds;
@@ -73,6 +73,75 @@ int32_t TxPlacer::randomPlaceUTXO(const uint256& txid) {
     return txid.GetCheapHash() % num_committees;
 }
 
+CPlacementStatus::CPlacementStatus(): fitnessScore(num_committees, 0.0f), numOutTx(0), numUnspentCoin(0), placementRes(-1) { }
+
+CPlacementStatus::CPlacementStatus(uint32_t num_upspent_coin): fitnessScore(num_committees, 0.0f), numOutTx(0), numUnspentCoin(num_upspent_coin), placementRes(-1) { }
+
+std::vector<int32_t> TxPlacer::optchainPlace(const CTransactionRef pTx, std::deque<std::vector<uint32_t>>& vShardUtxoIdxToLock) {
+    int32_t outputShard = -1;
+    /* key is shard id, value is a vector of input utxos in this shard. */
+    std::map<int32_t, std::vector<uint32_t>> mapInputShardUTXO;
+    CPlacementStatus placementStatus(pTx->vout.size());
+    if (pTx->IsCoinBase()) {
+        outputShard = randomPlaceUTXO(pTx->GetHash());
+    } else {
+        /* --------Compute T2S score -----*/
+        /* Step 1: find all parent tx. */
+        std::unordered_set<uint256, uint256Hasher> preReqTxs;
+        for (uint32_t i = 0; i < pTx->vin.size(); i++) {
+            const uint256& parentTxid = pTx->vin[i].prevout.hash;
+            /* decrement the remaining coin count of the parent tx */
+            assert(mapNotFullySpentTx.find(parentTxid) != mapNotFullySpentTx.end());
+            mapNotFullySpentTx[parentTxid].numUnspentCoin--;
+            preReqTxs.emplace(parentTxid);
+            mapInputShardUTXO[mapNotFullySpentTx[parentTxid].placementRes].push_back(i);
+        }
+
+        /* Step 2: calculate p'(u) */
+        std::vector<float> sumScore(num_committees, 0.0f);
+        for (const uint256& txid: preReqTxs) {
+            /* increment the number of out tx of this parent tx. */
+            mapNotFullySpentTx[txid].numOutTx++;
+            /* calculate the weighted fitness score sum */
+            for (uint32_t i = 0; i < num_committees; i++) {
+                const CPlacementStatus& parentStatus = mapNotFullySpentTx[txid];
+                sumScore[i] += parentStatus.fitnessScore[i]/parentStatus.numOutTx;
+            }
+            if (mapNotFullySpentTx[txid].numUnspentCoin == 0) {
+                /* remove a tx b/c all its UTXOs has been spent. */
+                mapNotFullySpentTx.erase(txid);
+            }
+        }
+        float maxScore = 0;
+        for (uint32_t i = 0; i < num_committees; i++) {
+            placementStatus.fitnessScore[i] = (1 - alpha) * sumScore[i];
+            if (placementStatus.fitnessScore[i] >= maxScore) {
+               maxScore = placementStatus.fitnessScore[i];
+               outputShard = i; 
+            }
+        }
+    }
+
+    auto iter_bool_pair = mapNotFullySpentTx.emplace(pTx->GetHash(), std::move(placementStatus));
+    /* update p'(u)  after placement. */
+    iter_bool_pair.first->second.fitnessScore[outputShard] += alpha;
+    iter_bool_pair.first->second.placementRes = outputShard;
+
+    /* increment tx count of the chosen shard. */
+    vecShardTxCount[outputShard]++;
+    
+    placementStatus.placementRes = outputShard;
+    /* prepare a resultant vector for return */
+    std::vector<int32_t> ret;
+    ret.reserve(mapInputShardUTXO.size() + 1);
+    ret.push_back(outputShard); // put the outShardId as the first element
+    for (auto it = mapInputShardUTXO.begin(); it != mapInputShardUTXO.end(); it++) {
+        ret.push_back(it->first);
+        vShardUtxoIdxToLock.push_back(it->second);
+    }
+    assert(vShardUtxoIdxToLock.size() + 1 == ret.size());
+    return ret;
+}
 
 void TxPlacer::printPlaceResult(){
     std::cout << "total tx num = " << totalTxNum << std::endl;
@@ -248,7 +317,9 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 	/* get the input shards and output shards id*/
 	TxPlacer txPlacer;
 	CCoinsViewCache view(pcoinsTip.get());
-	std::vector<int32_t> shards = txPlacer.randomPlace(*tx, view);
+	//std::vector<int32_t> shards = txPlacer.randomPlace(*tx);
+        std::deque<std::vector<uint32_t>> vShardUtxoIdxToLock;
+	std::vector<int32_t> shards = txPlacer.optchainPlace(tx, vShardUtxoIdxToLock);
 	const uint256& hashTx = tx->GetHash();
 
 	assert((tx->IsCoinBase() && shards.size() == 1) || (!tx->IsCoinBase() && shards.size() >= 2)); // there must be at least one output shard and one input shard for non-coinbase tx.
@@ -271,18 +342,18 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 	    g_pbft->add2Batch(shards[0], ClientReqType::TX, tx, batchBuffers[shards[0]]);
         reqSentCnt++;
 	    if (shards.size() != 1) {
-            /* only count non-coinbase tx b/c coinbase tx do not 
-             * have the time-consuming sig verification step. */
-            g_pbft->vLoad.add(shards[0], CPbft::LOAD_TX);
+                /* only count non-coinbase tx b/c coinbase tx do not 
+                 * have the time-consuming sig verification step. */
+                g_pbft->vLoad.add(shards[0], CPbft::LOAD_TX);
 	    }
 	} else {
 	    /* this is a cross-shard tx */
 	    for (uint i = 1; i < shards.size(); i++) {
-            g_pbft->inputShardReplyMap[hashTx].lockReply.insert(std::make_pair(shards[i], std::vector<CInputShardReply>()));
-            g_pbft->inputShardReplyMap[hashTx].decision.store('\0', std::memory_order_relaxed);
-            g_pbft->add2Batch(shards[i], ClientReqType::LOCK, tx, batchBuffers[shards[i]]);
-            reqSentCnt++;
-            g_pbft->vLoad.add(shards[i], CPbft::LOAD_LOCK);
+                g_pbft->inputShardReplyMap[hashTx].lockReply.insert(std::make_pair(shards[i], std::vector<CInputShardReply>()));
+                g_pbft->inputShardReplyMap[hashTx].decision.store('\0', std::memory_order_relaxed);
+                g_pbft->add2Batch(shards[i], ClientReqType::LOCK, tx, batchBuffers[shards[i]], &vShardUtxoIdxToLock[i - 1]);
+                reqSentCnt++;
+                g_pbft->vLoad.add(shards[i], CPbft::LOAD_LOCK);
 	    }
 	}
 	return true;

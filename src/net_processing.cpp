@@ -1999,7 +1999,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	    TxPlacer txPlacer;
 	    CTransactionRef tx = g_pbft->txInFly[reply.digest].tx;
-	    std::vector<int32_t> shards = txPlacer.randomPlace(*tx, *pcoinsTip);
+	    std::vector<int32_t> shards = txPlacer.randomPlace(*tx);
 	    std::cout << "sending unlock_to_abort with req_hash = " << abortReq.GetDigest().GetHex().substr(0, 10) << " to shards: " << std::endl;
 	    for (uint i = 1; i < shards.size(); i++) {
 		std::cout << shards[i] << ", ";

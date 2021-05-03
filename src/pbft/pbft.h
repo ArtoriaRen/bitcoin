@@ -272,7 +272,7 @@ public:
     bool checkReplySig(const CReply* pReply) const;
     void logThruput(struct timeval& endTime);
     void loadDependencyGraph(uint32_t startBlock, uint32_t endBlock);
-    void add2Batch(const uint32_t shardId, const ClientReqType type, const CTransactionRef txRef, std::deque<std::shared_ptr<CClientReq>>& threadLocalBatchBuffer);
+    void add2Batch(const uint32_t shardId, const ClientReqType type, const CTransactionRef txRef, std::deque<std::shared_ptr<CClientReq>>& threadLocalBatchBuffer, const std::vector<uint32_t>* utxoIdxToLock = nullptr);
     void add2BatchOnlyBuffered(const uint32_t shardId, std::deque<std::shared_ptr<CClientReq>>& threadLocalBatchBuffer);
     /* called by the rpc thread to load all blocks about to send. */
     void loadBlocks(uint32_t startBlock, uint32_t endBlock);
