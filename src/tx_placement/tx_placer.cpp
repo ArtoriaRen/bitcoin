@@ -224,7 +224,7 @@ std::vector<int32_t> TxPlacer::mostInputValuePlace(const CTransactionRef pTx, st
             preReqTxs.emplace(parentTxid);
             InputShardStat& inShardStat = mapInputShardUTXO[mapNotFullySpentTx[parentTxid].placementRes];
             inShardStat.utxoIndices.push_back(i);
-            inShardStat.totalValue += pcoinsTip->AccessCoin(pTx->vin[i].prevout).out.nValue;
+            inShardStat.totalValue += mapNotFullySpentTx[parentTxid].txRef->vout[pTx->vin[i].prevout.n].nValue;
         }
 
         /* assign tx to the shard with the most input value. */
@@ -248,6 +248,7 @@ std::vector<int32_t> TxPlacer::mostInputValuePlace(const CTransactionRef pTx, st
     auto iter_bool_pair = mapNotFullySpentTx.emplace(pTx->GetHash(), std::move(placementStatus));
     /* update placementRes after placement. */
     iter_bool_pair.first->second.placementRes = outputShard;
+    iter_bool_pair.first->second.txRef = pTx;
 
     /* increment tx count of the chosen shard. */
     vecShardTxCount[outputShard]++;

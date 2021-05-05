@@ -64,6 +64,7 @@ public:
     uint32_t numOutTx;
     uint32_t numUnspentCoin; 
     int32_t placementRes;
+    CTransactionRef txRef;
     CPlacementStatus();
     CPlacementStatus(uint32_t num_upspent_coin);
 };
