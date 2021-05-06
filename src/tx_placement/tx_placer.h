@@ -83,7 +83,7 @@ public:
      */
     std::unordered_map<uint256, CPlacementStatus, uint256Hasher> mapNotFullySpentTx;
     /* the number of tx assigned to each shard. */
-    std::vector<uint32_t> vecShardTxCount;
+    std::vector<uint> vecShardTxCount;
 
     /* return the number of shards that input UTXOs and output UTXOs span */
     TxPlacer();

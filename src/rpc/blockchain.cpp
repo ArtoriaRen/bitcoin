@@ -179,7 +179,25 @@ UniValue getblockcount(const JSONRPCRequest& request)
     return chainActive.Height();
 }
 
-UniValue placetx(const JSONRPCRequest& request) {
+static void printPlacementRes(const int nSingleShard, const int nCrossShard, const TxPlacer& txPlacer, int num_blocks) {
+    std::cout << "Placement res : num_single_shard_tx = " << nSingleShard << ", num_cross_shard_tx = " << nCrossShard << ". num_total = " << nSingleShard + nCrossShard << " in "  <<  num_blocks << " blocks" << std::endl;
+
+    uint maxTxCnt = 0, minTxCnt = UINT_MAX; 
+    std::cout << "tx cnt in each shard : ";
+    for (int i = 0; i < num_committees; i++) {
+        uint txCntInShard = txPlacer.vecShardTxCount[i];
+        std::cout << i << " = " << txCntInShard << ", ";
+        if (txCntInShard > maxTxCnt) {
+            maxTxCnt = txCntInShard;
+        }
+        if (txCntInShard < minTxCnt) {
+            minTxCnt = txCntInShard;
+        }
+    }
+    std::cout << "Max difference = " << maxTxCnt - minTxCnt << std::endl;
+}
+
+UniValue placetxOptchain(const JSONRPCRequest& request) {
 
     if (request.fHelp || request.params.size() != 2)
         throw std::runtime_error(
@@ -201,8 +219,76 @@ UniValue placetx(const JSONRPCRequest& request) {
         }
         for(int j = 0; j < block.vtx.size(); j++) {
             std::deque<std::vector<uint32_t>> vShardUtxoIdxToLock;
-            //std::vector<int32_t> shards = txPlacer.optchainPlace(block.vtx[j], vShardUtxoIdxToLock);
-            //std::vector<int32_t> shards = txPlacer.mostInputUTXOPlace(block.vtx[j], vShardUtxoIdxToLock);
+            std::vector<int32_t> shards = txPlacer.optchainPlace(block.vtx[j], vShardUtxoIdxToLock);
+            if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
+                nSingleShard++;
+            } else {
+                nCrossShard++;
+            }
+        }
+    }
+
+    printPlacementRes(nSingleShard, nCrossShard, txPlacer, endHeight - startHeight);
+
+    return nCrossShard;
+}
+
+UniValue placetxCount(const JSONRPCRequest& request) {
+
+    if (request.fHelp || request.params.size() != 2)
+        throw std::runtime_error(
+            "placetx\n"
+            "\nReturns number of cross-shard tx\n"
+            "\nExamples:\n"
+            + HelpExampleCli("placetx", "<start_block_height>, <end_block_height>")
+            + HelpExampleRpc("placetx", "<start_block_height>, <end_block_height>")
+        );
+    int startHeight = request.params[0].get_int();
+    int endHeight = request.params[1].get_int();
+    int nSingleShard = 0, nCrossShard = 0;
+    TxPlacer txPlacer;
+    for (int i = startHeight; i < endHeight; i++) {
+        CBlockIndex* pblockindex = chainActive[i];
+        CBlock block;
+        if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
+            std::cerr << "Block not found on disk" << std::endl;
+        }
+        for(int j = 0; j < block.vtx.size(); j++) {
+            std::deque<std::vector<uint32_t>> vShardUtxoIdxToLock;
+            std::vector<int32_t> shards = txPlacer.mostInputUTXOPlace(block.vtx[j], vShardUtxoIdxToLock);
+            if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
+                nSingleShard++;
+            } else {
+                nCrossShard++;
+            }
+        }
+    }
+    printPlacementRes(nSingleShard, nCrossShard, txPlacer, endHeight - startHeight);
+    return nCrossShard;
+}
+
+UniValue placetxValue(const JSONRPCRequest& request) {
+
+    if (request.fHelp || request.params.size() != 2)
+        throw std::runtime_error(
+            "placetx\n"
+            "\nReturns number of cross-shard tx\n"
+            "\nExamples:\n"
+            + HelpExampleCli("placetx", "<start_block_height>, <end_block_height>")
+            + HelpExampleRpc("placetx", "<start_block_height>, <end_block_height>")
+        );
+    int startHeight = request.params[0].get_int();
+    int endHeight = request.params[1].get_int();
+    int nSingleShard = 0, nCrossShard = 0;
+    TxPlacer txPlacer;
+    for (int i = startHeight; i < endHeight; i++) {
+        CBlockIndex* pblockindex = chainActive[i];
+        CBlock block;
+        if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
+            std::cerr << "Block not found on disk" << std::endl;
+        }
+        for(int j = 0; j < block.vtx.size(); j++) {
+            std::deque<std::vector<uint32_t>> vShardUtxoIdxToLock;
             std::vector<int32_t> shards = txPlacer.mostInputValuePlace(block.vtx[j], vShardUtxoIdxToLock);
             if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
                 nSingleShard++;
@@ -211,12 +297,41 @@ UniValue placetx(const JSONRPCRequest& request) {
             }
         }
     }
-    std::cout << "Placement res : num_single_shard_tx = " << nSingleShard << ", num_cross_shard_tx = " << nCrossShard << ". num_total = " << nSingleShard + nCrossShard << " in "  << endHeight - startHeight << " blocks" << std::endl;
-    std::cout << "tx cnt in each shard : ";
-    for (int i = 0; i < num_committees; i++) {
-        std::cout << i << " = " << txPlacer.vecShardTxCount[i] << ", ";
+    printPlacementRes(nSingleShard, nCrossShard, txPlacer, endHeight - startHeight);
+    return nCrossShard;
+}
+
+UniValue placetxFirst(const JSONRPCRequest& request) {
+
+    if (request.fHelp || request.params.size() != 2)
+        throw std::runtime_error(
+            "placetx\n"
+            "\nReturns number of cross-shard tx\n"
+            "\nExamples:\n"
+            + HelpExampleCli("placetx", "<start_block_height>, <end_block_height>")
+            + HelpExampleRpc("placetx", "<start_block_height>, <end_block_height>")
+        );
+    int startHeight = request.params[0].get_int();
+    int endHeight = request.params[1].get_int();
+    int nSingleShard = 0, nCrossShard = 0;
+    TxPlacer txPlacer;
+    for (int i = startHeight; i < endHeight; i++) {
+        CBlockIndex* pblockindex = chainActive[i];
+        CBlock block;
+        if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
+            std::cerr << "Block not found on disk" << std::endl;
+        }
+        for(int j = 0; j < block.vtx.size(); j++) {
+            std::deque<std::vector<uint32_t>> vShardUtxoIdxToLock;
+            std::vector<int32_t> shards = txPlacer.firstUtxoPlace(block.vtx[j], vShardUtxoIdxToLock);
+            if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
+                nSingleShard++;
+            } else {
+                nCrossShard++;
+            }
+        }
     }
-    std::cout << std::endl;
+    printPlacementRes(nSingleShard, nCrossShard, txPlacer, endHeight - startHeight);
     return nCrossShard;
 }
 
@@ -1806,7 +1921,10 @@ static const CRPCCommand commands[] =
     { "blockchain",         "preciousblock",          &preciousblock,          {"blockhash"} },
 
     { "blockchain",         "sendtxinblocks",         &sendtxinblocks,         {"startblockheight","endblockheight","sendrate","nthreads"} },
-    { "blockchain",         "placetx",                &placetx,                {"startblockheight","endblockheight"} },
+    { "blockchain",         "placetxOptchain",        &placetxOptchain,        {"startblockheight","endblockheight"} },
+    { "blockchain",         "placetxCount",           &placetxCount,           {"startblockheight","endblockheight"} },
+    { "blockchain",         "placetxValue",           &placetxValue,           {"startblockheight","endblockheight"} },
+    { "blockchain",         "placetxFirst",           &placetxFirst,           {"startblockheight","endblockheight"} },
     { "blockchain",         "gendependgraph",         &gendependgraph,         {"endblockheight"} },
     { "blockchain",         "printdependgraph",       &printdependgraph,       {} },
     /* Not shown in help */
