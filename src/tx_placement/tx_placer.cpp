@@ -228,7 +228,7 @@ std::vector<int32_t> TxPlacer::mostInputValuePlace(const CTransactionRef pTx, st
         }
 
         /* assign tx to the shard with the most input value. */
-        CAmount maxValue = 0;
+        CAmount maxValue = -1;
         for (auto const& p: mapInputShardUTXO) {
             if (p.second.totalValue > maxValue) {
                maxValue = p.second.totalValue;
@@ -260,6 +260,58 @@ std::vector<int32_t> TxPlacer::mostInputValuePlace(const CTransactionRef pTx, st
     for (auto it = mapInputShardUTXO.begin(); it != mapInputShardUTXO.end(); it++) {
         ret.push_back(it->first);
         vShardUtxoIdxToLock.push_back(it->second.utxoIndices);
+    }
+    assert(vShardUtxoIdxToLock.size() + 1 == ret.size());
+    return ret;
+}
+
+std::vector<int32_t> TxPlacer::firstUtxoPlace(const CTransactionRef pTx, std::deque<std::vector<uint32_t>>& vShardUtxoIdxToLock) {
+    int32_t outputShard = -1;
+    /* key is shard id, value is a vector of input utxos in this shard. */
+    std::map<int32_t, std::vector<uint32_t>> mapInputShardUTXO;
+    CPlacementStatus placementStatus(pTx->vout.size());
+    if (pTx->IsCoinBase()) {
+        outputShard = randomPlaceUTXO(pTx->GetHash());
+    } else {
+        /* Step 1: find all parent tx. */
+        std::unordered_set<uint256, uint256Hasher> preReqTxs;
+        for (uint32_t i = 0; i < pTx->vin.size(); i++) {
+            const uint256& parentTxid = pTx->vin[i].prevout.hash;
+            /* decrement the remaining coin count of the parent tx */
+            assert(mapNotFullySpentTx.find(parentTxid) != mapNotFullySpentTx.end());
+            mapNotFullySpentTx[parentTxid].numUnspentCoin--;
+            preReqTxs.emplace(parentTxid);
+            mapInputShardUTXO[mapNotFullySpentTx[parentTxid].placementRes].push_back(i);
+            if (i == 0) {
+                outputShard = mapNotFullySpentTx[parentTxid].placementRes; 
+            }
+        }
+
+
+        /* clear fully spent tx. */
+        for (const uint256& txid: preReqTxs) {
+            if (mapNotFullySpentTx[txid].numUnspentCoin == 0) {
+                /* remove a tx b/c all its UTXOs has been spent. */
+                mapNotFullySpentTx.erase(txid);
+            }
+        }
+    }
+
+    auto iter_bool_pair = mapNotFullySpentTx.emplace(pTx->GetHash(), std::move(placementStatus));
+    /* update placementRes after placement. */
+    iter_bool_pair.first->second.placementRes = outputShard;
+    iter_bool_pair.first->second.txRef = pTx;
+
+    /* increment tx count of the chosen shard. */
+    vecShardTxCount[outputShard]++;
+    
+    /* prepare a resultant vector for return */
+    std::vector<int32_t> ret;
+    ret.reserve(mapInputShardUTXO.size() + 1);
+    ret.push_back(outputShard); // put the outShardId as the first element
+    for (auto it = mapInputShardUTXO.begin(); it != mapInputShardUTXO.end(); it++) {
+        ret.push_back(it->first);
+        vShardUtxoIdxToLock.push_back(it->second);
     }
     assert(vShardUtxoIdxToLock.size() + 1 == ret.size());
     return ret;

@@ -107,6 +107,8 @@ public:
 
     std::vector<int32_t> mostInputValuePlace(const CTransactionRef pTx, std::deque<std::vector<uint32_t>>& vShardUtxoIdxToLock);
 
+    std::vector<int32_t> firstUtxoPlace(const CTransactionRef pTx, std::deque<std::vector<uint32_t>>& vShardUtxoIdxToLock);
+
     void printPlaceResult();
 };
 

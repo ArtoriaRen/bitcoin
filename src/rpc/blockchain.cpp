@@ -202,6 +202,7 @@ UniValue placetx(const JSONRPCRequest& request) {
         for(int j = 0; j < block.vtx.size(); j++) {
             std::deque<std::vector<uint32_t>> vShardUtxoIdxToLock;
             //std::vector<int32_t> shards = txPlacer.optchainPlace(block.vtx[j], vShardUtxoIdxToLock);
+            //std::vector<int32_t> shards = txPlacer.mostInputUTXOPlace(block.vtx[j], vShardUtxoIdxToLock);
             std::vector<int32_t> shards = txPlacer.mostInputValuePlace(block.vtx[j], vShardUtxoIdxToLock);
             if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
                 nSingleShard++;
