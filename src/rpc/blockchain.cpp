@@ -180,13 +180,15 @@ UniValue getblockcount(const JSONRPCRequest& request)
 }
 
 static void printPlacementRes(const int nSingleShard, const int nCrossShard, const TxPlacer& txPlacer, int  num_blocks) {
-    std::cout << "Placement res : num_single_shard_tx = " << nSingleShard << ", num_cross_shard_tx = " << nCrossShard << ". num_total = " << nSingleShard + nCrossShard << " in "  <<  num_blocks << " blocks" << std::endl;
+    /* single-shard tx cnt, cross-shard tx cnt, total tx cnt, block height,
+     *  max shard tx cnt difference. */
+    std::cout << nSingleShard << "," << nCrossShard << "," << nSingleShard + nCrossShard << ","  << num_blocks << "," << std::endl;
 
     uint maxTxCnt = 0, minTxCnt = UINT_MAX; 
-    std::cout << "tx cnt in each shard : ";
+    //std::cout << "tx cnt in each shard : ";
     for (int i = 0; i < num_committees; i++) {
         uint txCntInShard = txPlacer.vecShardTxCount[i];
-        std::cout << i << " = " << txCntInShard << ", ";
+        //std::cout << i << " = " << txCntInShard << ", ";
         if (txCntInShard > maxTxCnt) {
             maxTxCnt = txCntInShard;
         }
@@ -194,7 +196,7 @@ static void printPlacementRes(const int nSingleShard, const int nCrossShard, con
             minTxCnt = txCntInShard;
         }
     }
-    std::cout << "Max difference = " << maxTxCnt - minTxCnt << std::endl;
+    std::cout << maxTxCnt - minTxCnt << std::endl;
 }
 
 UniValue placetxOptchain(const JSONRPCRequest& request) {
@@ -226,7 +228,7 @@ UniValue placetxOptchain(const JSONRPCRequest& request) {
                 nCrossShard++;
             }
         }
-        if (i % 20000 == 0) {
+        if (i % 40000 == 0) {
             printPlacementRes(nSingleShard, nCrossShard, txPlacer, i - startHeight);
         }
     }
@@ -263,7 +265,7 @@ UniValue placetxCount(const JSONRPCRequest& request) {
                 nCrossShard++;
             }
         }
-        if (i % 20000 == 0) {
+        if (i % 40000 == 0) {
             printPlacementRes(nSingleShard, nCrossShard, txPlacer, i - startHeight);
         }
     }
@@ -299,7 +301,7 @@ UniValue placetxValue(const JSONRPCRequest& request) {
                 nCrossShard++;
             }
         }
-        if (i % 20000 == 0) {
+        if (i % 40000 == 0) {
             printPlacementRes(nSingleShard, nCrossShard, txPlacer, i - startHeight);
         }
     }
@@ -335,7 +337,7 @@ UniValue placetxFirst(const JSONRPCRequest& request) {
                 nCrossShard++;
             }
         }
-        if (i % 20000 == 0) {
+        if (i % 40000 == 0) {
             printPlacementRes(nSingleShard, nCrossShard, txPlacer, i - startHeight);
         }
     }
