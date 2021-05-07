@@ -179,7 +179,7 @@ UniValue getblockcount(const JSONRPCRequest& request)
     return chainActive.Height();
 }
 
-static void printPlacementRes(const int nSingleShard, const int nCrossShard, const TxPlacer& txPlacer, int num_blocks) {
+static void printPlacementRes(const int nSingleShard, const int nCrossShard, const TxPlacer& txPlacer, int  num_blocks) {
     std::cout << "Placement res : num_single_shard_tx = " << nSingleShard << ", num_cross_shard_tx = " << nCrossShard << ". num_total = " << nSingleShard + nCrossShard << " in "  <<  num_blocks << " blocks" << std::endl;
 
     uint maxTxCnt = 0, minTxCnt = UINT_MAX; 
@@ -226,9 +226,10 @@ UniValue placetxOptchain(const JSONRPCRequest& request) {
                 nCrossShard++;
             }
         }
+        if (i % 20000 == 0) {
+            printPlacementRes(nSingleShard, nCrossShard, txPlacer, i - startHeight);
+        }
     }
-
-    printPlacementRes(nSingleShard, nCrossShard, txPlacer, endHeight - startHeight);
 
     return nCrossShard;
 }
@@ -262,8 +263,10 @@ UniValue placetxCount(const JSONRPCRequest& request) {
                 nCrossShard++;
             }
         }
+        if (i % 20000 == 0) {
+            printPlacementRes(nSingleShard, nCrossShard, txPlacer, i - startHeight);
+        }
     }
-    printPlacementRes(nSingleShard, nCrossShard, txPlacer, endHeight - startHeight);
     return nCrossShard;
 }
 
@@ -296,8 +299,10 @@ UniValue placetxValue(const JSONRPCRequest& request) {
                 nCrossShard++;
             }
         }
+        if (i % 20000 == 0) {
+            printPlacementRes(nSingleShard, nCrossShard, txPlacer, i - startHeight);
+        }
     }
-    printPlacementRes(nSingleShard, nCrossShard, txPlacer, endHeight - startHeight);
     return nCrossShard;
 }
 
@@ -330,8 +335,10 @@ UniValue placetxFirst(const JSONRPCRequest& request) {
                 nCrossShard++;
             }
         }
+        if (i % 20000 == 0) {
+            printPlacementRes(nSingleShard, nCrossShard, txPlacer, i - startHeight);
+        }
     }
-    printPlacementRes(nSingleShard, nCrossShard, txPlacer, endHeight - startHeight);
     return nCrossShard;
 }
 
