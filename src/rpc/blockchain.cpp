@@ -180,9 +180,9 @@ UniValue getblockcount(const JSONRPCRequest& request)
 }
 
 static void printPlacementRes(const int nSingleShard, const int nCrossShard, const TxPlacer& txPlacer, int  num_blocks) {
-    /* single-shard tx cnt, cross-shard tx cnt, total tx cnt, block height,
+    /* single-shard tx cnt, cross-shard tx cnt, total tx cnt, number of blocks,
      *  max shard tx cnt difference. */
-    std::cout << nSingleShard << "," << nCrossShard << "," << nSingleShard + nCrossShard << ","  << num_blocks << "," << std::endl;
+    std::cout << nSingleShard << "," << nCrossShard << "," << nSingleShard + nCrossShard << ","  << num_blocks << ",";
 
     uint maxTxCnt = 0, minTxCnt = UINT_MAX; 
     //std::cout << "tx cnt in each shard : ";
@@ -213,6 +213,7 @@ UniValue placetxOptchain(const JSONRPCRequest& request) {
     int endHeight = request.params[1].get_int();
     int nSingleShard = 0, nCrossShard = 0;
     TxPlacer txPlacer;
+    std::cout<< __func__ << std::endl;
     for (int i = startHeight; i < endHeight; i++) {
         CBlockIndex* pblockindex = chainActive[i];
         CBlock block;
@@ -228,8 +229,8 @@ UniValue placetxOptchain(const JSONRPCRequest& request) {
                 nCrossShard++;
             }
         }
-        if (i % 40000 == 0) {
-            printPlacementRes(nSingleShard, nCrossShard, txPlacer, i - startHeight);
+        if ((i - startHeight + 1) % 50000 == 0) {
+            printPlacementRes(nSingleShard, nCrossShard, txPlacer, i - startHeight + 1);
         }
     }
 
@@ -250,6 +251,7 @@ UniValue placetxCount(const JSONRPCRequest& request) {
     int endHeight = request.params[1].get_int();
     int nSingleShard = 0, nCrossShard = 0;
     TxPlacer txPlacer;
+    std::cout<< __func__ << std::endl;
     for (int i = startHeight; i < endHeight; i++) {
         CBlockIndex* pblockindex = chainActive[i];
         CBlock block;
@@ -265,8 +267,8 @@ UniValue placetxCount(const JSONRPCRequest& request) {
                 nCrossShard++;
             }
         }
-        if (i % 40000 == 0) {
-            printPlacementRes(nSingleShard, nCrossShard, txPlacer, i - startHeight);
+        if ((i - startHeight + 1) % 50000 == 0) {
+            printPlacementRes(nSingleShard, nCrossShard, txPlacer, i - startHeight + 1);
         }
     }
     return nCrossShard;
@@ -286,6 +288,7 @@ UniValue placetxValue(const JSONRPCRequest& request) {
     int endHeight = request.params[1].get_int();
     int nSingleShard = 0, nCrossShard = 0;
     TxPlacer txPlacer;
+    std::cout<< __func__ << std::endl;
     for (int i = startHeight; i < endHeight; i++) {
         CBlockIndex* pblockindex = chainActive[i];
         CBlock block;
@@ -301,8 +304,8 @@ UniValue placetxValue(const JSONRPCRequest& request) {
                 nCrossShard++;
             }
         }
-        if (i % 40000 == 0) {
-            printPlacementRes(nSingleShard, nCrossShard, txPlacer, i - startHeight);
+        if ((i - startHeight + 1) % 50000 == 0) {
+            printPlacementRes(nSingleShard, nCrossShard, txPlacer, i - startHeight + 1);
         }
     }
     return nCrossShard;
@@ -322,6 +325,7 @@ UniValue placetxFirst(const JSONRPCRequest& request) {
     int endHeight = request.params[1].get_int();
     int nSingleShard = 0, nCrossShard = 0;
     TxPlacer txPlacer;
+    std::cout<< __func__ << std::endl;
     for (int i = startHeight; i < endHeight; i++) {
         CBlockIndex* pblockindex = chainActive[i];
         CBlock block;
@@ -337,8 +341,8 @@ UniValue placetxFirst(const JSONRPCRequest& request) {
                 nCrossShard++;
             }
         }
-        if (i % 40000 == 0) {
-            printPlacementRes(nSingleShard, nCrossShard, txPlacer, i - startHeight);
+        if ((i - startHeight + 1) % 50000 == 0) {
+            printPlacementRes(nSingleShard, nCrossShard, txPlacer, i - startHeight + 1);
         }
     }
     return nCrossShard;
