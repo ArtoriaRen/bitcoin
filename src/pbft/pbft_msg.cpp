@@ -76,7 +76,7 @@ char TxReq::Execute(const int seq, CCoinsViewCache& view) const {
     gettimeofday(&start_time, NULL);
     CValidationState state;
     bool fScriptChecks = true;
-    unsigned int flags = SCRIPT_VERIFY_NONE; // only verify pay to public key hash
+    unsigned int flags = SCRIPT_VERIFY_NONE | SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_WITNESS;
     CAmount txfee = 0;
     /* We use  INT_MAX as block height, so that we never fail coinbase 
      * maturity check. */
@@ -150,7 +150,7 @@ char LockReq::Execute(const int seq, CCoinsViewCache& view) const {
     CValidationState state;
     bool fScriptChecks = true;
 //	    CBlockUndo blockundo;
-    unsigned int flags = SCRIPT_VERIFY_NONE; // only verify pay to public key hash
+    unsigned int flags = SCRIPT_VERIFY_NONE | SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_WITNESS;
 
     /* Step 1: find all input UTXOs whose chainAffinity is our shard. Check if they are unspent.
      * We use INT_MAX as block height, so that we never fail coinbase maturity check. */
@@ -268,7 +268,7 @@ char UnlockToCommitReq::Execute(const int seq, CCoinsViewCache& view) const {
     const CTransaction& tx = *pTx;
     
     CValidationState state;
-    unsigned int flags = SCRIPT_VERIFY_NONE; // only verify pay to public key hash
+    unsigned int flags = SCRIPT_VERIFY_NONE;
 
     /* Step 1: check the total input UTXO value is greater than the total output value.
      * We must use the locked UTXO value in InputShardReplies b/c we do not know the
