@@ -199,6 +199,44 @@ static void printPlacementRes(const int nSingleShard, const int nCrossShard, con
     std::cout << maxTxCnt - minTxCnt << std::endl;
 }
 
+UniValue placetxHashing(const JSONRPCRequest& request) {
+
+    if (request.fHelp || request.params.size() != 2)
+        throw std::runtime_error(
+            "placetx\n"
+            "\nReturns number of cross-shard tx\n"
+            "\nExamples:\n"
+            + HelpExampleCli("placetx", "<start_block_height>, <end_block_height>")
+            + HelpExampleRpc("placetx", "<start_block_height>, <end_block_height>")
+        );
+    int startHeight = request.params[0].get_int();
+    int endHeight = request.params[1].get_int();
+    int nSingleShard = 0, nCrossShard = 0;
+    TxPlacer txPlacer;
+    std::cout<< __func__ << std::endl;
+    for (int i = startHeight; i < endHeight; i++) {
+        CBlockIndex* pblockindex = chainActive[i];
+        CBlock block;
+        if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
+            std::cerr << "Block not found on disk" << std::endl;
+        }
+        for(int j = 0; j < block.vtx.size(); j++) {
+            std::deque<std::vector<uint32_t>> vShardUtxoIdxToLock;
+            std::vector<int32_t> shards = txPlacer.hashingPlace(block.vtx[j], vShardUtxoIdxToLock);
+            if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
+                nSingleShard++;
+            } else {
+                nCrossShard++;
+            }
+        }
+        if ((i - startHeight + 1) % 50000 == 0) {
+            printPlacementRes(nSingleShard, nCrossShard, txPlacer, i - startHeight + 1);
+        }
+    }
+
+    return nCrossShard;
+}
+
 UniValue placetxOptchain(const JSONRPCRequest& request) {
 
     if (request.fHelp || request.params.size() != 2)
@@ -1934,6 +1972,7 @@ static const CRPCCommand commands[] =
     { "blockchain",         "preciousblock",          &preciousblock,          {"blockhash"} },
 
     { "blockchain",         "sendtxinblocks",         &sendtxinblocks,         {"startblockheight","endblockheight","sendrate","nthreads"} },
+    { "blockchain",         "placetxHashing",         &placetxHashing,         {"startblockheight","endblockheight"} },
     { "blockchain",         "placetxOptchain",        &placetxOptchain,        {"startblockheight","endblockheight"} },
     { "blockchain",         "placetxCount",           &placetxCount,           {"startblockheight","endblockheight"} },
     { "blockchain",         "placetxValue",           &placetxValue,           {"startblockheight","endblockheight"} },

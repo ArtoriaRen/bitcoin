@@ -53,6 +53,8 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "sendtxinblocks", 1, "endblockheight" },
     { "sendtxinblocks", 2, "sendrate" },
     { "sendtxinblocks", 3, "nthreads" },
+    { "placetxHashing", 0, "startblockheight" },
+    { "placetxHashing", 1, "endblockheight" },
     { "placetxOptchain", 0, "startblockheight" },
     { "placetxOptchain", 1, "endblockheight" },
     { "placetxCount", 0, "startblockheight" },
