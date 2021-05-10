@@ -114,13 +114,12 @@ public:
     void printPlaceResult();
 };
 
-void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thread_idx, const uint32_t num_threads, const int noop_count);
-//void sendRecordedTxOfThread(const int startBlock, const int endBlock, const uint32_t thread_idx, const uint32_t num_threads, const int noop_count);
+void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thread_idx, const uint32_t num_threads, const int noop_count, const uint placementMethod);
 
 uint32_t sendAllTailTx(int noop_count);
 
 /* return true if the tx is sent, false if the tx is queued. */
-bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height, std::vector<std::deque<std::shared_ptr<CClientReq>>>& batchBuffers, uint32_t& reqSentCnt, TxPlacer& txPlacer);
+bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height, std::vector<std::deque<std::shared_ptr<CClientReq>>>& batchBuffers, uint32_t& reqSentCnt, TxPlacer& txPlacer, const uint placementMethod);
 
 inline std::string getDependencyFilename() {
     return "dependency_file/dependency.out";

@@ -1653,7 +1653,7 @@ UniValue preciousblock(const JSONRPCRequest& request)
 
 UniValue sendtxinblocks(const JSONRPCRequest& request)
 {
-    if (request.fHelp || request.params.size() != 4)
+    if (request.fHelp || request.params.size() != 5)
         throw std::runtime_error(
             "sendtxinblocks \"startblockheight\" \"endblockheight\" \"sendrate\"\n"
             "\nSend all transactions in blocks from startblockheight to endblockheight.\n"
@@ -1672,6 +1672,7 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
     const int txEndBlock = request.params[1].get_int();
     int noopCount = request.params[2].get_int();
     const uint num_threads = request.params[3].get_int();
+    const uint placementMethod = request.params[4].get_int();
     g_pbft->loadBlocks(txStartBlock, txEndBlock);
     assert(num_threads >= 1);
     std::deque<std::thread> vThread;
@@ -1682,7 +1683,7 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
     vThread.emplace_back(sendAllBatch);
     /* creat threads to send tx.*/
     for (uint i = 0; i < num_threads; i++) {
-        vThread.emplace_back(sendTxOfThread, txStartBlock, txEndBlock, i, num_threads, noopCount);
+        vThread.emplace_back(sendTxOfThread, txStartBlock, txEndBlock, i, num_threads, noopCount, placementMethod);
         //vThread.emplace_back(sendRecordedTxOfThread, txStartBlock, txEndBlock, i, num_threads, noopCount);
     }
     gettimeofday(&startTime, NULL); 
@@ -1969,7 +1970,7 @@ static const CRPCCommand commands[] =
 
     { "blockchain",         "preciousblock",          &preciousblock,          {"blockhash"} },
 
-    { "blockchain",         "sendtxinblocks",         &sendtxinblocks,         {"startblockheight","endblockheight","sendrate","nthreads"} },
+    { "blockchain",         "sendtxinblocks",         &sendtxinblocks,         {"startblockheight","endblockheight","sendrate","nthreads","placementMethod"} },
     { "blockchain",         "placetxHashing",         &placetxHashing,         {"startblockheight","endblockheight"} },
     { "blockchain",         "placetxOptchain",        &placetxOptchain,        {"startblockheight","endblockheight"} },
     { "blockchain",         "placetxCount",           &placetxCount,           {"startblockheight","endblockheight"} },

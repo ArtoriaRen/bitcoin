@@ -390,7 +390,7 @@ static void delayByNoop(const int noop_count) {
     std::cerr << "loop noop for " << k << " times. oprand becomes " << oprand << std::endl;
 }
 
-static uint32_t sendTxChunk(const CBlock& block, const uint start_height, const uint block_height, const uint32_t start_tx, const int noop_count, std::vector<std::deque<std::shared_ptr<CClientReq>>>& batchBuffers, uint32_t& reqSentCnt, TxPlacer& txPlacer) {
+static uint32_t sendTxChunk(const CBlock& block, const uint start_height, const uint block_height, const uint32_t start_tx, const int noop_count, std::vector<std::deque<std::shared_ptr<CClientReq>>>& batchBuffers, uint32_t& reqSentCnt, TxPlacer& txPlacer, const uint placementMethod) {
     uint32_t cnt = 0;
     CPbft& pbft = *g_pbft;
     for (uint j = start_tx; j < start_tx + txChunkSize; j++) {
@@ -408,7 +408,7 @@ static uint32_t sendTxChunk(const CBlock& block, const uint start_height, const 
 
         if (preReqTxs.empty()) {
             /* has no pending parent tx, send this tx. */
-            sendTx(block.vtx[j], j, block_height, batchBuffers, reqSentCnt, txPlacer);
+            sendTx(block.vtx[j], j, block_height, batchBuffers, reqSentCnt, txPlacer, placementMethod);
             cnt++;
             /* delay by doing noop. */
             delayByNoop(noop_count);
@@ -431,7 +431,7 @@ static uint32_t sendTxChunk(const CBlock& block, const uint start_height, const 
     return cnt;
 }
 
-static uint32_t sendQueuedTx(const int startBlock, const int noop_count, std::vector<std::deque<std::shared_ptr<CClientReq>>>& batchBuffers, uint32_t& reqSentCnt, TxPlacer& txPlacer) {
+static uint32_t sendQueuedTx(const int startBlock, const int noop_count, std::vector<std::deque<std::shared_ptr<CClientReq>>>& batchBuffers, uint32_t& reqSentCnt, TxPlacer& txPlacer, const uint placementMethod) {
     int txSentCnt = 0;
     CPbft& pbft = *g_pbft;
     if (pbft.depTxReady2Send.empty())
@@ -443,7 +443,7 @@ static uint32_t sendQueuedTx(const int startBlock, const int noop_count, std::ve
             //txSentCnt += pbft.depTxReady2Send.size();
             for (const TxIndexOnChain& txIdx: pbft.depTxReady2Send) {
                 //std::cout << "found queued tx. addr =  " << &txIdx << ", tx = " << txIdx.ToString() << std::endl;
-                sendTx(pbft.blocks2Send[txIdx.block_height - startBlock].vtx[txIdx.offset_in_block], txIdx.offset_in_block, txIdx.block_height, batchBuffers, reqSentCnt, txPlacer);
+                sendTx(pbft.blocks2Send[txIdx.block_height - startBlock].vtx[txIdx.offset_in_block], txIdx.offset_in_block, txIdx.block_height, batchBuffers, reqSentCnt, txPlacer, placementMethod);
                 txSentCnt++;
                 /* delay by doing noop. */
                 delayByNoop(noop_count);
@@ -459,7 +459,7 @@ static uint32_t sendQueuedTx(const int startBlock, const int noop_count, std::ve
 }
 
 
-void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thread_idx, const uint32_t num_threads, const int noop_count) {
+void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thread_idx, const uint32_t num_threads, const int noop_count, const uint placementMethod) {
     RenameThread(("sendTx" + std::to_string(thread_idx)).c_str());
     uint32_t cnt = 0, reqSentCnt = 0;
     const uint32_t jump_length = num_threads * txChunkSize;
@@ -476,14 +476,14 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
         for (size_t i = thread_idx * txChunkSize; i < block.vtx.size(); i += jump_length){
             //std::cout << __func__ << ": thread " << thread_idx << " sending No." << i << " tx in block " << block_height << std::endl;
             gettimeofday(&start_time, NULL);
-            uint32_t actual_chunk_size = sendTxChunk(block, startBlock, block_height, i, noop_count, batchBuffers, reqSentCnt, txPlacer);
+            uint32_t actual_chunk_size = sendTxChunk(block, startBlock, block_height, i, noop_count, batchBuffers, reqSentCnt, txPlacer, placementMethod);
             gettimeofday(&end_time, NULL);
             cnt += actual_chunk_size;
             //std::cout << __func__ << ": thread " << thread_idx << " sent " << actual_chunk_size << " tx in block " << block_height << ". The sending takes " << (end_time.tv_sec - start_time.tv_sec)*1000000 + (end_time.tv_usec - start_time.tv_usec) << " us." << std::endl;
 
             /* check delay sending tx after sending a chunk.  */
             gettimeofday(&start_time, NULL);
-            uint32_t cnt_queued_tx_sent = sendQueuedTx(startBlock, noop_count, batchBuffers, reqSentCnt, txPlacer);
+            uint32_t cnt_queued_tx_sent = sendQueuedTx(startBlock, noop_count, batchBuffers, reqSentCnt, txPlacer, placementMethod);
             cnt += cnt_queued_tx_sent;
             gettimeofday(&end_time, NULL);
             //std::cout << "sent " <<  cnt_queued_tx_sent << " tx queued. The sending takes " << (end_time.tv_sec - start_time.tv_sec)*1000000 + (end_time.tv_usec - start_time.tv_usec) << " us." << std::endl;
@@ -498,7 +498,7 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
     while (cnt < nAllTx) {
         if (ShutdownRequested())
             break;
-        cnt += sendQueuedTx(startBlock, noop_count, batchBuffers, reqSentCnt, txPlacer);
+        cnt += sendQueuedTx(startBlock, noop_count, batchBuffers, reqSentCnt, txPlacer, placementMethod);
 
         /* add all req in our local batch buffer to the global batch buffer. */
         for (uint i = 0; i < batchBuffers.size(); i++) {
@@ -517,10 +517,30 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
     globalReqSentCnt += reqSentCnt;
 }
 
-bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height, std::vector<std::deque<std::shared_ptr<CClientReq>>>& batchBuffers, uint32_t& reqSentCnt, TxPlacer& txPlacer) {
+bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height, std::vector<std::deque<std::shared_ptr<CClientReq>>>& batchBuffers, uint32_t& reqSentCnt, TxPlacer& txPlacer, const uint placementMethod) {
 	/* get the input shards and output shards id*/
         std::deque<std::vector<uint32_t>> vShardUtxoIdxToLock;
-	std::vector<int32_t> shards = txPlacer.optchainPlace(tx, vShardUtxoIdxToLock);
+	std::vector<int32_t> shards;
+        switch (placementMethod) {
+            case 0: 
+                shards = txPlacer.optchainPlace(tx, vShardUtxoIdxToLock);
+                break;
+            case 1:
+                shards = txPlacer.mostInputUTXOPlace(tx, vShardUtxoIdxToLock);
+                break;
+            case 2:
+                shards = txPlacer.mostInputValuePlace(tx, vShardUtxoIdxToLock);
+                break;
+            case 3:
+                shards = txPlacer.firstUtxoPlace(tx, vShardUtxoIdxToLock);
+                break;
+            case 4:
+                shards = txPlacer.hashingPlace(tx, vShardUtxoIdxToLock);
+                break;
+            default:
+                std::cout << "invalid placement method." << std::endl;
+                return false;
+        }
 	const uint256& hashTx = tx->GetHash();
 
 	assert((tx->IsCoinBase() && shards.size() == 1) || (!tx->IsCoinBase() && shards.size() >= 2)); // there must be at least one output shard and one input shard for non-coinbase tx.
