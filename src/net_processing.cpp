@@ -1496,28 +1496,34 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, const std::ve
 }
 
 /* temporaraliy store tx when we did not hold the lock the insert them to the global deque.*/
-
 void static decrementPrereqCnt(const uint256& txid, std::deque<TxIndexOnChain>& bufferedDepTxReady2Send) {
-    const TxBlockInfo& txInfo = g_pbft->txInFly[txid];
-    TxIndexOnChain txIndex(txInfo.blockHeight, txInfo.n);
     CPbft& pbft = *g_pbft;
-    if (pbft.mapDependentTx.find(txIndex) != pbft.mapDependentTx.end()) {
-        /* there are some dependent tx. decrease the prereq counter for each of them.*/
-        for (const TxIndexOnChain& dependent : pbft.mapDependentTx[txIndex]) {
-            uint32_t old_val = pbft.mapRemainingPrereq[dependent].fetch_sub(1, std::memory_order_relaxed);
-            //std::cout << "parent tx = " << txIndex.ToString() << ", child tx " << dependent.ToString() << " has remaining prereq tx cnt = " << old_val - 1 << std::endl; 
-            if (old_val == 1) {
-                bufferedDepTxReady2Send.push_back(dependent);
-                pbft.mapRemainingPrereq.erase(dependent);
-            }
+    pbft.lock_tx_in_fly.lock();
+    const TxBlockInfo& txBlkInfo = pbft.txInFly[txid];
+    /* there is no dependent tx. */
+    if (txBlkInfo.childTxns.empty()) {
+        pbft.txInFly.erase(txid);
+        pbft.lock_tx_in_fly.unlock();
+        return;
+    }
+    /* there are some dependent tx. decrease the prereq counter for each of them.*/
+    for (const TxIndexOnChain& dependent : txBlkInfo.childTxns) {
+        //std::cout << "parent tx = " << txIndex.ToString() << ", child tx " << dependent.ToString() << " has remaining prereq tx cnt = " << old_val - 1 << std::endl; 
+        if (--pbft.mapRemainingPrereq[dependent] == 0) {
+            bufferedDepTxReady2Send.push_back(dependent);
+            pbft.mapRemainingPrereq.erase(dependent);
         }
-        if (!bufferedDepTxReady2Send.empty()) {
-            bool locked = pbft.depTxMutex.try_lock();
-            if (locked) {
-                pbft.depTxReady2Send.insert(pbft.depTxReady2Send.end(), bufferedDepTxReady2Send.begin(), bufferedDepTxReady2Send.end());
-                pbft.depTxMutex.unlock();
-                bufferedDepTxReady2Send.clear();
-            }
+    }
+    pbft.txInFly.erase(txid);
+    pbft.lock_tx_in_fly.unlock();
+
+    /* try to add ready-to-send dependent tx to global queue. */
+    if (!bufferedDepTxReady2Send.empty()) {
+        bool locked = pbft.depTxMutex.try_lock();
+        if (locked) {
+            pbft.depTxReady2Send.insert(pbft.depTxReady2Send.end(), bufferedDepTxReady2Send.begin(), bufferedDepTxReady2Send.end());
+            pbft.depTxMutex.unlock();
+            bufferedDepTxReady2Send.clear();
         }
     }
 }
@@ -1898,7 +1904,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 			g_pbft->nSucceed.fetch_add(1, std::memory_order_relaxed);
 			decrementPrereqCnt(reply.digest, bufferedDepTxReady2Send);
             //std::cout << "remove tx (" << g_pbft->txInFly[reply.digest].blockHeight << ", " << g_pbft->txInFly[reply.digest].n << "), " << reply.digest.ToString() << " from txInFly."<< std::endl;
-			g_pbft->txInFly.erase(reply.digest);
 			nLocalCompletedTxPerInterval++;
 		} else if (reply.reply == 'n') {
 			g_pbft->nFail.fetch_add(1, std::memory_order_relaxed);
@@ -1921,7 +1926,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 			 */
 			g_pbft->nCommitted.fetch_add(1, std::memory_order_relaxed);
 			decrementPrereqCnt(txid, bufferedDepTxReady2Send);
-			g_pbft->txInFly.erase(txid);
 			nLocalCompletedTxPerInterval++;
 		} else if (reply.reply == 'y' && inputShardRplMap[txid].decision.load(std::memory_order_relaxed) == 'a') {
 		        /* This info is printed only once for an aborted tx b/c  it is only 
@@ -1988,24 +1992,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		return true;
 	    }
 
-	    std::cout << "tx " << reply.digest.GetHex() << ", LOCK_NOT_OK, ";
-	    /* assemble a unlock_to_abort req including (2f + 1) replies from this shard */
-	    assert(g_pbft->txInFly.exist(reply.digest));
-	    UnlockToAbortReq abortReq(g_pbft->txInFly[reply.digest].tx, shardReplies);
-
-        assert(reply.vchSig.size() > 0);
-	    g_pbft->txUnlockReqMap.insert(std::make_pair(abortReq.GetDigest(), reply.digest));
-
-	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-	    TxPlacer txPlacer;
-	    CTransactionRef tx = g_pbft->txInFly[reply.digest].tx;
-	    std::vector<int32_t> shards = txPlacer.randomPlace(*tx);
-	    std::cout << "sending unlock_to_abort with req_hash = " << abortReq.GetDigest().GetHex().substr(0, 10) << " to shards: " << std::endl;
-	    for (uint i = 1; i < shards.size(); i++) {
-		std::cout << shards[i] << ", ";
-		connman->PushMessage(g_pbft->leaders[shards[i]], msgMaker.Make(NetMsgType::OMNI_UNLOCK_ABORT, abortReq));
-	    }
-        std::cout << std::endl;
+	    std::cout << "tx " << reply.digest.GetHex() << ", LOCK_NOT_OK. Should not happend!!!" << std::endl;
 	} else if (isLeastReplyShard && shardReplies.size() == reply_threshold && reply.reply == 'y') {
 	    /* mark the tx is final so that we do not need to process future replies for this req. 'c' stands for commit. */
 	    char freshDecision = g_pbft->inputShardReplyMap[reply.digest].decision.exchange('c', std::memory_order_relaxed); 
@@ -2029,16 +2016,16 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             }
         }
             
-	    assert(g_pbft->txInFly.exist(reply.digest));
-	    UnlockToCommitReq commitReq(g_pbft->txInFly[reply.digest].tx, vReply.size(), std::move(vReply));
-
+            CPbft& pbft = *g_pbft;
+            pbft.lock_tx_in_fly.lock();
+	    assert(pbft.txInFly.find(reply.digest) != pbft.txInFly.end());
+	    UnlockToCommitReq commitReq(pbft.txInFly[reply.digest].tx, vReply.size(), std::move(vReply));
+	    int32_t outputShard = g_pbft->txInFly[reply.digest].outputShard;
+            pbft.lock_tx_in_fly.unlock();
 	    g_pbft->txUnlockReqMap.insert(std::make_pair(commitReq.GetDigest(), reply.digest));
-
 	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-	    TxPlacer txPlacer;
-	    int32_t outputShard = txPlacer.randomPlaceUTXO(reply.digest);
 	    //std::cout << "sending unlock_to_commit with req_hash = " << commitReq.GetDigest().GetHex().substr(0, 10) << " to shard " << outputShard << std::endl;
-	    connman->PushMessage(g_pbft->leaders[outputShard], msgMaker.Make(NetMsgType::OMNI_UNLOCK_COMMIT, commitReq));
+	    connman->PushMessage(pbft.leaders[outputShard], msgMaker.Make(NetMsgType::OMNI_UNLOCK_COMMIT, commitReq));
 	    g_pbft->vLoad.add(outputShard, CPbft::LOAD_COMMIT);
 	} 
     }

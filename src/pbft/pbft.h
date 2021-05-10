@@ -78,9 +78,11 @@ public:
     CTransactionRef tx;
     uint32_t blockHeight;
     uint32_t n;  // n-th tx in the block body
+    int32_t outputShard; // Used for resolving to which shard a unlock_to_cmt req should be sent
+    std::deque<TxIndexOnChain> childTxns;
     
     TxBlockInfo();
-    TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn);
+    TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn, int32_t outputShardIn = -1);
     friend bool operator<(const TxBlockInfo& a, const TxBlockInfo& b);
     friend bool operator>(const TxBlockInfo& a, const TxBlockInfo& b);
 };
@@ -223,19 +225,19 @@ public:
      */
     ThreadSafeMap<uint256, uint256, BlockHasher> txUnlockReqMap; 
 
-    /* <txid, shard_ptr(tx)>
-     * Every time we send a cross-shard tx to its input shards, we add an element to this map. 
-     * This map enables us to figure out the tx given a txid. 
-     * We need the tx when we assemble a commit or abort req, or want to resend 
-     * the tx.
-     * This map only includes cross-shard tx.
+    /* <tx_hash, tx_info>
+     * A tx is added to this map when we send it and removed from map when we 
+     * receive f+1 replies from servers (i.e., no longer pending).
+     * Tx has been delayed sending due to pending parent tx are also added in
+     * this map.
      */
-    ThreadSafeMap<uint256, TxBlockInfo, BlockHasher> txInFly;
+    std::unordered_map<uint256, TxBlockInfo, BlockHasher> txInFly;
     
     ThreadSafeQueue txResendQueue;
 
-    std::map<TxIndexOnChain, std::set<TxIndexOnChain>> mapDependentTx; // <tx, all_dependent_tx>
-    std::map<TxIndexOnChain, std::atomic<uint32_t>> mapRemainingPrereq; // <tx, num_remaining_uncommitted_prereq_tx_cnt>
+    std::map<TxIndexOnChain, uint32_t> mapRemainingPrereq; // <tx, num_remaining_uncommitted_prereq_tx_cnt>
+    /* the lock protecting accessing txInFly and mapRemainingPrereq. */
+    std::mutex lock_tx_in_fly;
     std::deque<CBlock> blocks2Send;
     std::deque<std::deque<uint32_t>> indepTx2Send; /* tx without prereq tx*/
     std::deque<TxIndexOnChain> depTxReady2Send; /* tx with prereq tx but all prereq cleared. */
@@ -271,13 +273,10 @@ public:
     ~CPbft();
     bool checkReplySig(const CReply* pReply) const;
     void logThruput(struct timeval& endTime);
-    void loadDependencyGraph(uint32_t startBlock, uint32_t endBlock);
     void add2Batch(const uint32_t shardId, const ClientReqType type, const CTransactionRef txRef, std::deque<std::shared_ptr<CClientReq>>& threadLocalBatchBuffer, const std::vector<uint32_t>* utxoIdxToLock = nullptr);
     void add2BatchOnlyBuffered(const uint32_t shardId, std::deque<std::shared_ptr<CClientReq>>& threadLocalBatchBuffer);
     /* called by the rpc thread to load all blocks about to send. */
     void loadBlocks(uint32_t startBlock, uint32_t endBlock);
-    /* a queue of tx that have no prereq tx (independent tx). called by the rpc thread. */
-    void BuildIndepTxQueue(uint32_t startBlock, uint32_t endBlock); 
 
 private:
     // private ECDSA key used to sign messages

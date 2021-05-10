@@ -13,8 +13,8 @@
 int32_t pbftID;
 struct timeval thruInterval; // calculate throughput once every "thruInterval" seconds
 
-TxBlockInfo::TxBlockInfo(): blockHeight(0), n(0) { }
-TxBlockInfo::TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn): tx(txIn), blockHeight(blockHeightIn), n(nIn) { }
+TxBlockInfo::TxBlockInfo(): blockHeight(0), n(0), outputShard(-1), childTxns(0) { }
+TxBlockInfo::TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn, int32_t outputShardIn): tx(txIn), blockHeight(blockHeightIn), n(nIn), outputShard(outputShardIn), childTxns(0) { }
 
 ThreadSafeQueue::ThreadSafeQueue() { }
 
@@ -162,27 +162,6 @@ void CPbft::logThruput(struct timeval& endTime) {
     thruputFile << endTime.tv_sec << "." << endTime.tv_usec << "," << nCompletedTxCopy << "," << thruput << std::endl;
 }
 
-void CPbft::loadDependencyGraph(uint32_t startBlock, uint32_t endBlock) {
-    std::ifstream dependencyFileStream;
-    dependencyFileStream.open(getDependencyFilename());
-    assert(!dependencyFileStream.fail());
-    DependencyRecord dpRec;
-    /* key is dependent tx, value is a set of all prereqTx indices of this tx.*/
-    std::map<TxIndexOnChain, std::set<TxIndexOnChain>> mapRemainingPrereqTxIdx;
-    dpRec.Unserialize(dependencyFileStream);
-    while (!dependencyFileStream.eof()) {
-        if (dpRec.tx.block_height < endBlock) { 
-            mapRemainingPrereqTxIdx[dpRec.tx].insert(dpRec.prereq_tx);
-            mapDependentTx[dpRec.prereq_tx].insert(dpRec.tx);
-        }
-        dpRec.Unserialize(dependencyFileStream);
-    }
-    for (auto const& p: mapRemainingPrereqTxIdx) {
-            mapRemainingPrereq[p.first] = p.second.size();
-    }
-    dependencyFileStream.close();
-}
-
 void CPbft::add2Batch(const uint32_t shardId, const ClientReqType type, const CTransactionRef txRef, std::deque<std::shared_ptr<CClientReq>>& threadLocalBatchBuffer, const std::vector<uint32_t>* utxoIdxToLock) {
     const uint256& hashTx = txRef->GetHash();
     struct TxStat stat;
@@ -275,18 +254,6 @@ void CPbft::loadBlocks(uint32_t startBlock, uint32_t endBlock) {
         CBlockIndex* pblockindex = chainActive[block_height];
         if (!ReadBlockFromDisk(blocks2Send[block_height - startBlock], pblockindex, Params().GetConsensus())) {
             std::cerr << "Block not found on disk" << std::endl;
-        }
-    }
-}
-
-void CPbft::BuildIndepTxQueue(uint32_t startBlock, uint32_t endBlock) {
-    indepTx2Send.resize(endBlock - startBlock);
-    for (uint block_height = startBlock; block_height < endBlock; block_height++) {
-        for (uint i = 0; i < blocks2Send[block_height - startBlock].vtx.size(); i++) {
-            if (mapRemainingPrereq.find(TxIndexOnChain(block_height, i)) == mapRemainingPrereq.end()) {
-                /* this tx has no prereq tx*/
-                indepTx2Send[block_height - startBlock].push_back(i);
-            }
         }
     }
 }
