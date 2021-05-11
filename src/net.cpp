@@ -2005,7 +2005,7 @@ void CConnman::ThreadMessageHandler(uint threadIdx)
     struct timeval lastGlobalStateUpdateTime;
     gettimeofday(&lastGlobalStateUpdateTime, NULL);
     uint32_t nLocalCompletedTxPerInterval = 0, nLocalTotalFailedTxPerInterval = 0;
-    std::deque<TxIndexOnChain> bufferedDepTxReady2Send;
+    std::deque<CTransactionRef> bufferedDepTxReady2Send;
     while (!flagInterruptMsgProc)
     {
         std::vector<CNode*> vNodesCopy;

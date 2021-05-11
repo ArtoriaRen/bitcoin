@@ -1496,40 +1496,19 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, const std::ve
 }
 
 /* temporaraliy store tx when we did not hold the lock the insert them to the global deque.*/
-void static decrementPrereqCnt(const uint256& txid, std::deque<TxIndexOnChain>& bufferedDepTxReady2Send) {
+void static updateCommitSentTxQ(const CTransactionRef pTx, std::deque<CTransactionRef>& bufferedCommitSentTxns) {
     CPbft& pbft = *g_pbft;
-    pbft.lock_tx_in_fly.lock();
-    assert(pbft.txInFly.find(txid) != pbft.txInFly.end());
-    const TxBlockInfo& txBlkInfo = pbft.txInFly[txid];
-    /* there is no dependent tx. */
-    if (txBlkInfo.childTxns.empty()) {
-        pbft.txInFly.erase(txid);
-        pbft.lock_tx_in_fly.unlock();
-        return;
-    }
-    /* there are some dependent tx. decrease the prereq counter for each of them.*/
-    for (const TxIndexOnChain& dependent : txBlkInfo.childTxns) {
-        //std::cout << "parent tx = " << txIndex.ToString() << ", child tx " << dependent.ToString() << " has remaining prereq tx cnt = " << old_val - 1 << std::endl; 
-        if (--pbft.mapRemainingPrereq[dependent] == 0) {
-            bufferedDepTxReady2Send.push_back(dependent);
-            pbft.mapRemainingPrereq.erase(dependent);
-        }
-    }
-    pbft.txInFly.erase(txid);
-    pbft.lock_tx_in_fly.unlock();
+    bufferedCommitSentTxns.push_back(pTx);
 
     /* try to add ready-to-send dependent tx to global queue. */
-    if (!bufferedDepTxReady2Send.empty()) {
-        bool locked = pbft.depTxMutex.try_lock();
-        if (locked) {
-            pbft.depTxReady2Send.insert(pbft.depTxReady2Send.end(), bufferedDepTxReady2Send.begin(), bufferedDepTxReady2Send.end());
-            pbft.depTxMutex.unlock();
-            bufferedDepTxReady2Send.clear();
-        }
+    if (pbft.lock_commit_sent_txns.try_lock()) {
+        pbft.commitSentTxns.insert(pbft.commitSentTxns.end(), bufferedCommitSentTxns.begin(), bufferedCommitSentTxns.end());
+        pbft.lock_commit_sent_txns.unlock();
+        bufferedCommitSentTxns.clear();
     }
 }
 
-bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman* connman, const std::atomic<bool>& interruptMsgProc, uint32_t& nLocalCompletedTxPerInterval, uint32_t& nLocalTotalFailedTxPerInterval, const uint threadIdx, std::deque<TxIndexOnChain>& bufferedDepTxReady2Send)
+bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman* connman, const std::atomic<bool>& interruptMsgProc, uint32_t& nLocalCompletedTxPerInterval, uint32_t& nLocalTotalFailedTxPerInterval, const uint threadIdx, std::deque<CTransactionRef>& bufferedCommitSentTxns)
 {
     //std::cout << __func__ << ": " << strCommand << std::endl;
     LogPrint(BCLog::NET, "received: %s (%u bytes) peer=%d\n", SanitizeString(strCommand), vRecv.size(), pfrom->GetId());
@@ -1903,12 +1882,11 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 		//std::cout << "tx " << reply.digest.GetHex().substr(0,10);
 		if (reply.reply == 'y') {
 			g_pbft->nSucceed.fetch_add(1, std::memory_order_relaxed);
-			decrementPrereqCnt(reply.digest, bufferedDepTxReady2Send);
-            //std::cout << "remove tx (" << g_pbft->txInFly[reply.digest].blockHeight << ", " << g_pbft->txInFly[reply.digest].n << "), " << reply.digest.ToString() << " from txInFly."<< std::endl;
+            //std::cout << "remove tx (" << g_pbft->mapTxDelayed[reply.digest].blockHeight << ", " << g_pbft->mapTxDelayed[reply.digest].n << "), " << reply.digest.ToString() << " from mapTxDelayed."<< std::endl;
 			nLocalCompletedTxPerInterval++;
 		} else if (reply.reply == 'n') {
 			g_pbft->nFail.fetch_add(1, std::memory_order_relaxed);
-			g_pbft->txResendQueue.push_back(g_pbft->txInFly[reply.digest]);
+			g_pbft->txResendQueue.push_back(g_pbft->mapTxDelayed[reply.digest]);
 			nLocalTotalFailedTxPerInterval++;
 		} 
             std::string latency = std::to_string((endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000) + "\n";
@@ -1926,7 +1904,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 			 * printing info more than once for a tx. 
 			 */
 			g_pbft->nCommitted.fetch_add(1, std::memory_order_relaxed);
-			decrementPrereqCnt(txid, bufferedDepTxReady2Send);
 			nLocalCompletedTxPerInterval++;
 		} else if (reply.reply == 'y' && inputShardRplMap[txid].decision.load(std::memory_order_relaxed) == 'a') {
 		        /* This info is printed only once for an aborted tx b/c  it is only 
@@ -1936,7 +1913,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 			 * not count the latency of aborted tx in our statistics anyway.
 			 */
 			g_pbft->nAborted.fetch_add(1, std::memory_order_relaxed);
-			g_pbft->txResendQueue.push_back(g_pbft->txInFly[reply.digest]);
+			g_pbft->txResendQueue.push_back(g_pbft->mapTxDelayed[reply.digest]);
 			nLocalTotalFailedTxPerInterval++;
 		} else if (reply.reply == 'n') {
 			std::cout << "fail to commit or abort, ";
@@ -2018,16 +1995,18 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         }
             
             CPbft& pbft = *g_pbft;
-            pbft.lock_tx_in_fly.lock();
-	    assert(pbft.txInFly.find(reply.digest) != pbft.txInFly.end());
-	    UnlockToCommitReq commitReq(pbft.txInFly[reply.digest].tx, vReply.size(), std::move(vReply));
-	    int32_t outputShard = g_pbft->txInFly[reply.digest].outputShard;
-            pbft.lock_tx_in_fly.unlock();
-	    g_pbft->txUnlockReqMap.insert(std::make_pair(commitReq.GetDigest(), reply.digest));
+            pbft.lock_tx_delayed.lock();
+            CTransactionRef pTx = pbft.mapTxDelayed[reply.digest].tx;
+	    assert(pbft.mapTxDelayed.find(reply.digest) != pbft.mapTxDelayed.end());
+	    int32_t outputShard = pbft.mapTxDelayed[reply.digest].outputShard;
+            pbft.lock_tx_delayed.unlock();
+	    UnlockToCommitReq commitReq(pTx, vReply.size(), std::move(vReply));
+	    pbft.txUnlockReqMap.insert(std::make_pair(commitReq.GetDigest(), reply.digest));
 	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	    //std::cout << "sending unlock_to_commit with req_hash = " << commitReq.GetDigest().GetHex().substr(0, 10) << " to shard " << outputShard << std::endl;
 	    connman->PushMessage(pbft.leaders[outputShard], msgMaker.Make(NetMsgType::OMNI_UNLOCK_COMMIT, commitReq));
-	    g_pbft->vLoad.add(outputShard, CPbft::LOAD_COMMIT);
+	    pbft.vLoad.add(outputShard, CPbft::LOAD_COMMIT);
+            updateCommitSentTxQ(pTx, bufferedCommitSentTxns);
 	} 
     }
 
@@ -2680,7 +2659,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         } // cs_main
 
         if (fProcessBLOCKTXN)
-            return ProcessMessage(pfrom, NetMsgType::BLOCKTXN, blockTxnMsg, nTimeReceived, chainparams, connman, interruptMsgProc, nLocalCompletedTxPerInterval, nLocalTotalFailedTxPerInterval, threadIdx, bufferedDepTxReady2Send);
+            return ProcessMessage(pfrom, NetMsgType::BLOCKTXN, blockTxnMsg, nTimeReceived, chainparams, connman, interruptMsgProc, nLocalCompletedTxPerInterval, nLocalTotalFailedTxPerInterval, threadIdx, bufferedCommitSentTxns);
 
         if (fRevertToHeaderProcessing) {
             // Headers received from HB compact block peers are permitted to be
@@ -3097,7 +3076,7 @@ static bool SendRejectsAndCheckIfBanned(CNode* pnode, CConnman* connman)
     return false;
 }
 
-bool PeerLogicValidation::ProcessMessages(CNode* pfrom, std::atomic<bool>& interruptMsgProc, uint32_t& nLocalCompletedTxPerInterval, uint32_t& nLocalTotalFailedTxPerInterval, const uint threadIdx, std::deque<TxIndexOnChain>& bufferedDepTxReady2Send)
+bool PeerLogicValidation::ProcessMessages(CNode* pfrom, std::atomic<bool>& interruptMsgProc, uint32_t& nLocalCompletedTxPerInterval, uint32_t& nLocalTotalFailedTxPerInterval, const uint threadIdx, std::deque<CTransactionRef>& bufferedDepTxReady2Send)
 {
     const CChainParams& chainparams = Params();
     //

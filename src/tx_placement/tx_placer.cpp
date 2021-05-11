@@ -398,14 +398,14 @@ static uint32_t sendTxChunk(const CBlock& block, const uint start_height, const 
         const CTransaction& tx = *block.vtx[j]; 
         /* find all pending parent tx. */
         std::unordered_set<uint256, uint256Hasher> preReqTxs;
-        pbft.lock_tx_in_fly.lock();
+        pbft.lock_tx_delayed.lock();
         for (uint32_t i = 0; i < tx.vin.size(); i++) {
             const uint256& parentTxid = tx.vin[i].prevout.hash;
-            if (pbft.txInFly.find(parentTxid) != pbft.txInFly.end()) {
+            if (pbft.mapTxDelayed.find(parentTxid) != pbft.mapTxDelayed.end()) {
                 preReqTxs.emplace(parentTxid);
             }
         }
-        pbft.lock_tx_in_fly.unlock();
+        pbft.lock_tx_delayed.unlock();
 
         if (preReqTxs.empty()) {
             /* has no pending parent tx, send this tx. */
@@ -416,17 +416,17 @@ static uint32_t sendTxChunk(const CBlock& block, const uint start_height, const 
         } else {
             /* has pending parent tx, add the tx to dependency graph. */
             TxIndexOnChain txIdx(block_height, j);
-            pbft.lock_tx_in_fly.lock();
+            pbft.lock_tx_delayed.lock();
             /* add tx to dependency graph as a child tx. */
             for (const uint256& parent_tx : preReqTxs) {
-                if (pbft.txInFly.find(parent_tx) != pbft.txInFly.end()) {
-                    pbft.txInFly[parent_tx].childTxns.push_back(txIdx);
+                if (pbft.mapTxDelayed.find(parent_tx) != pbft.mapTxDelayed.end()) {
+                    pbft.mapTxDelayed[parent_tx].childTxns.push_back(txIdx);
                 }
             }
             pbft.mapRemainingPrereq[txIdx] = preReqTxs.size();
             /* add tx to dependency graph as a potential parent tx. */
-            pbft.txInFly.emplace(tx.GetHash(), TxBlockInfo(block.vtx[j], block_height, j));
-            pbft.lock_tx_in_fly.unlock();
+            pbft.mapTxDelayed.emplace(tx.GetHash(), TxBlockInfo(block.vtx[j], block_height, j));
+            pbft.lock_tx_delayed.unlock();
             // std::cout << "delay tx " << tx.GetHash().ToString() << ", pending parent tx number = " << preReqTxs.size() << std::endl;
         }
     }
@@ -436,24 +436,41 @@ static uint32_t sendTxChunk(const CBlock& block, const uint start_height, const 
 static uint32_t sendQueuedTx(const int startBlock, const int noop_count, std::vector<std::deque<std::shared_ptr<CClientReq>>>& batchBuffers, uint32_t& reqSentCnt, TxPlacer& txPlacer, const uint placementMethod) {
     int txSentCnt = 0;
     CPbft& pbft = *g_pbft;
-    if (pbft.depTxReady2Send.empty())
+    if (pbft.commitSentTxns.empty())
         return txSentCnt; 
     
-    /* only send all tx in the queue if we hold the lock. */
-    if (pbft.depTxMutex.try_lock()) {
-        if (!pbft.depTxReady2Send.empty()) {
-            //txSentCnt += pbft.depTxReady2Send.size();
-            for (const TxIndexOnChain& txIdx: pbft.depTxReady2Send) {
-                //std::cout << "found queued tx. addr =  " << &txIdx << ", tx = " << txIdx.ToString() << std::endl;
-                sendTx(pbft.blocks2Send[txIdx.block_height - startBlock].vtx[txIdx.offset_in_block], txIdx.offset_in_block, txIdx.block_height, batchBuffers, reqSentCnt, txPlacer, placementMethod);
-                txSentCnt++;
-                /* delay by doing noop. */
-                delayByNoop(noop_count);
+    /* add all child tx to a queue that will be used by BFS. */
+    std::queue<TxIndexOnChain> q;
+    if (pbft.lock_commit_sent_txns.try_lock()) {
+        
+        for(const CTransactionRef pTx: pbft.commitSentTxns)
+        /* add child tx to queue. */
+        for (const TxIndexOnChain& dependent: pbft.mapTxDelayed[pTx->GetHash()].childTxns) {
+            if (--pbft.mapRemainingPrereq[dependent] == 0) {
+                q.push(dependent);
+                pbft.mapRemainingPrereq.erase(dependent);
             }
-            //std::cout << "depTxReady2Send size = " << pbft.depTxReady2Send.size() << ", tx sent cnt = " << txSentCnt << std::endl;
-            pbft.depTxReady2Send.clear();
         }
-        pbft.depTxMutex.unlock();
+        pbft.commitSentTxns.clear();
+        pbft.lock_commit_sent_txns.unlock();
+    }
+    /* bfs. */
+    while (!q.empty()) {
+        const TxIndexOnChain& txIdx(q.front());
+        const uint256& txid = pbft.blocks2Send[txIdx.block_height - startBlock].vtx[txIdx.offset_in_block]->GetHash();
+        pbft.mapTxDelayed.erase(txid);
+        sendTx(pbft.blocks2Send[txIdx.block_height - startBlock].vtx[txIdx.offset_in_block], txIdx.offset_in_block, txIdx.block_height, batchBuffers, reqSentCnt, txPlacer, placementMethod);
+        txSentCnt++;
+        delayByNoop(noop_count);
+        /* add child tx to queue. */
+        const TxBlockInfo& txBlkInfo = pbft.mapTxDelayed[txid];
+        for (const TxIndexOnChain& dependent : txBlkInfo.childTxns) {
+            if (--pbft.mapRemainingPrereq[dependent] == 0) {
+                q.push(dependent);
+                pbft.mapRemainingPrereq.erase(dependent);
+            }
+        }
+        q.pop();
     }
     
     //std::cout << __func__ << " sent " <<  txSentCnt << " queued tx. queue size = "  << listDelaySendingTx.size() << std::endl;
@@ -560,9 +577,6 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 	 * the lastest_prereq_tx info is no longer need, so we can safely put a dummy
 	 * value. 
 	 */
-        g_pbft->lock_tx_in_fly.lock();
-        g_pbft->txInFly.insert(std::make_pair(hashTx, std::move(TxBlockInfo(tx, block_height, idx))));
-        g_pbft->lock_tx_in_fly.unlock();
 	if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
 	    /* this is a single shard tx */
 	    g_pbft->add2Batch(shards[0], ClientReqType::TX, tx, batchBuffers[shards[0]]);
@@ -581,6 +595,9 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
                 reqSentCnt++;
                 g_pbft->vLoad.add(shards[i], CPbft::LOAD_LOCK);
 	    }
+            g_pbft->lock_tx_delayed.lock();
+            g_pbft->mapTxDelayed.insert(std::make_pair(hashTx, std::move(TxBlockInfo(tx, block_height, idx))));
+            g_pbft->lock_tx_delayed.unlock();
 	}
 	return true;
 }

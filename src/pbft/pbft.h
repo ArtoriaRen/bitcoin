@@ -226,27 +226,27 @@ public:
     ThreadSafeMap<uint256, uint256, BlockHasher> txUnlockReqMap; 
 
     /* <tx_hash, tx_info>
-     * A tx is added to this map when we send it and removed from map when we 
-     * receive f+1 replies from servers (i.e., no longer pending).
-     * Tx has been delayed sending due to pending parent tx are also added in
+     * A cross-shard tx is added to this map when we send LOCK requests for it
+     * and removed from map when we send COMMIT requests for it.
+     * Tx has been delayed sending due to pending cross-shard parent tx are also added in
      * this map.
      */
-    std::unordered_map<uint256, TxBlockInfo, BlockHasher> txInFly;
+    std::unordered_map<uint256, TxBlockInfo, BlockHasher> mapTxDelayed;
     
     ThreadSafeQueue txResendQueue;
 
     std::map<TxIndexOnChain, uint32_t> mapRemainingPrereq; // <tx, num_remaining_uncommitted_prereq_tx_cnt>
-    /* the lock protecting accessing txInFly and mapRemainingPrereq. */
-    std::mutex lock_tx_in_fly;
+    /* the lock protecting accessing mapTxDelayed and mapRemainingPrereq. */
+    std::mutex lock_tx_delayed;
     std::deque<CBlock> blocks2Send;
     std::deque<std::deque<uint32_t>> indepTx2Send; /* tx without prereq tx*/
-    std::deque<TxIndexOnChain> depTxReady2Send; /* tx with prereq tx but all prereq cleared. */
+    std::deque<CTransactionRef> commitSentTxns; /* tx with prereq tx but all prereq cleared. */
     /* make sure the tx sending thread does not read the  depTxReady2Send when
      * a msghand thread is inserting into it. 
      * All threads should use trylock. In case that a trylock fails, a msghand thread
      * temporarily buffer the tx to insert and insert all of them the next time.
      */
-    std::mutex depTxMutex; 
+    std::mutex lock_commit_sent_txns; 
     
     std::ofstream latencySingleShardFile;
     std::ofstream latencyCrossShardFile;
