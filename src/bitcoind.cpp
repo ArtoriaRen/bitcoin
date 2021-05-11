@@ -82,7 +82,7 @@ void WaitForShutdown()
     std::cout << "unsent dependent tx cnt = " << pbft.mapRemainingPrereq.size() << ", ready to send dependent tx cnt = " <<  pbft.depTxReady2Send.size() << std::endl;
     if (!pbft.mapRemainingPrereq.empty()) {
         const TxIndexOnChain& tx_idx = pbft.mapRemainingPrereq.begin()->first;
-        const uint256& hash_first_tx = g_pbft->blocks2Send[tx_idx.block_height - 601000].vtx[tx_idx.offset_in_block]->GetHash();
+        const uint256& hash_first_tx = g_pbft->blocks2Send[tx_idx.block_height].vtx[tx_idx.offset_in_block]->GetHash();
         std::cout << "first dependent tx = " << tx_idx.ToString() << ": " << hash_first_tx.ToString() << ", remaining prereq tx cnt = " << pbft.mapRemainingPrereq.begin()->second << std::endl;
     }
     Interrupt();

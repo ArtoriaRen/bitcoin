@@ -1499,6 +1499,7 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, const std::ve
 void static decrementPrereqCnt(const uint256& txid, std::deque<TxIndexOnChain>& bufferedDepTxReady2Send) {
     CPbft& pbft = *g_pbft;
     pbft.lock_tx_in_fly.lock();
+    assert(pbft.txInFly.find(txid) != pbft.txInFly.end());
     const TxBlockInfo& txBlkInfo = pbft.txInFly[txid];
     /* there is no dependent tx. */
     if (txBlkInfo.childTxns.empty()) {

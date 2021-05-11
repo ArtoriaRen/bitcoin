@@ -393,7 +393,8 @@ static void delayByNoop(const int noop_count) {
 static uint32_t sendTxChunk(const CBlock& block, const uint start_height, const uint block_height, const uint32_t start_tx, const int noop_count, std::vector<std::deque<std::shared_ptr<CClientReq>>>& batchBuffers, uint32_t& reqSentCnt, TxPlacer& txPlacer, const uint placementMethod) {
     uint32_t cnt = 0;
     CPbft& pbft = *g_pbft;
-    for (uint j = start_tx; j < start_tx + txChunkSize; j++) {
+    uint end_tx = std::min(start_tx + txChunkSize, block.vtx.size());
+    for (uint j = start_tx; j < end_tx; j++) {
         const CTransaction& tx = *block.vtx[j]; 
         /* find all pending parent tx. */
         std::unordered_set<uint256, uint256Hasher> preReqTxs;
@@ -426,6 +427,7 @@ static uint32_t sendTxChunk(const CBlock& block, const uint start_height, const 
             /* add tx to dependency graph as a potential parent tx. */
             pbft.txInFly.emplace(tx.GetHash(), TxBlockInfo(block.vtx[j], block_height, j));
             pbft.lock_tx_in_fly.unlock();
+            // std::cout << "delay tx " << tx.GetHash().ToString() << ", pending parent tx number = " << preReqTxs.size() << std::endl;
         }
     }
     return cnt;
@@ -495,6 +497,7 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
     for (int block_height = startBlock; block_height < endBlock; block_height++) {
         nAllTx += g_pbft->blocks2Send[block_height - startBlock].vtx.size();
     }
+    std::cout << "remaining tx cnt to send = " << nAllTx - cnt << std::endl;
     while (cnt < nAllTx) {
         if (ShutdownRequested())
             break;
@@ -557,7 +560,9 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 	 * the lastest_prereq_tx info is no longer need, so we can safely put a dummy
 	 * value. 
 	 */
+        g_pbft->lock_tx_in_fly.lock();
         g_pbft->txInFly.insert(std::make_pair(hashTx, std::move(TxBlockInfo(tx, block_height, idx))));
+        g_pbft->lock_tx_in_fly.unlock();
 	if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
 	    /* this is a single shard tx */
 	    g_pbft->add2Batch(shards[0], ClientReqType::TX, tx, batchBuffers[shards[0]]);

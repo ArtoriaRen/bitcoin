@@ -229,6 +229,7 @@ void sendAllBatch() {
                     const uint256& hashTx =  pbft.batchBuffers[shardId].vPReq[i]->pTx->GetHash();
                     /* all req in the batch have the same start time. */
                     gettimeofday(&(pbft.mapTxStartTime[hashTx].startTime), NULL);
+                    //std::cout << __func__ << ": sending tx " << hashTx.ToString() << std::endl;
                 }
                 struct timeval start, end;
                 totalPushMessageCnt += pbft.batchBuffers[shardId].vPReq.size();
@@ -241,7 +242,7 @@ void sendAllBatch() {
             }
         }
         if (bufferEmpty) {
-            MilliSleep(50);
+            MilliSleep(1);
         }
         fShutdown = ShutdownRequested();
     }
