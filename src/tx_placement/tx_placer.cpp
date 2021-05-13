@@ -421,9 +421,11 @@ static uint32_t sendTxChunk(const CBlock& block, const uint start_height, const 
             for (const uint256& parent_tx : preReqTxs) {
                 if (pbft.mapTxDelayed.find(parent_tx) != pbft.mapTxDelayed.end()) {
                     pbft.mapTxDelayed[parent_tx].childTxns.push_back(txIdx);
+                    //std::cout << "added tx " << tx.GetHash().ToString() << " as a child tx of " << parent_tx.ToString() << std::endl;
                 }
             }
             pbft.mapRemainingPrereq[txIdx] = preReqTxs.size();
+            //std::cout << "tx " << tx.GetHash().ToString() << " has " << pbft.mapRemainingPrereq[txIdx] << " pending parent tx."  << std::endl;
             /* add tx to dependency graph as a potential parent tx. */
             pbft.mapTxDelayed.emplace(tx.GetHash(), TxBlockInfo(block.vtx[j], block_height, j));
             pbft.lock_tx_delayed.unlock();
@@ -443,13 +445,22 @@ static uint32_t sendQueuedTx(const int startBlock, const int noop_count, std::ve
     std::queue<TxIndexOnChain> q;
     if (pbft.lock_commit_sent_txns.try_lock()) {
         
-        for(const CTransactionRef pTx: pbft.commitSentTxns)
-        /* add child tx to queue. */
-        for (const TxIndexOnChain& dependent: pbft.mapTxDelayed[pTx->GetHash()].childTxns) {
-            if (--pbft.mapRemainingPrereq[dependent] == 0) {
-                q.push(dependent);
-                pbft.mapRemainingPrereq.erase(dependent);
+        for(const CTransactionRef pTx: pbft.commitSentTxns) {
+            /* add child tx to queue. */
+            assert(pbft.mapTxDelayed.find(pTx->GetHash()) != pbft.mapTxDelayed.end());
+            //std::cout << "removing tx " << pTx->GetHash().ToString() << " from delay map. It has child tx cnt = " << pbft.mapTxDelayed[pTx->GetHash()].childTxns.size() << std::endl;
+            for (const TxIndexOnChain& dependent: pbft.mapTxDelayed[pTx->GetHash()].childTxns) {
+
+                assert(pbft.mapRemainingPrereq.find(dependent) != pbft.mapRemainingPrereq.end());
+                //std::cout << "dependent tx " <<  dependent.ToString() << " has pending parenet tx cnt " << pbft.mapRemainingPrereq[dependent]  << std::endl;
+                if (--pbft.mapRemainingPrereq[dependent] == 0) {
+                    q.push(dependent);
+                    pbft.mapRemainingPrereq.erase(dependent);
+                }
             }
+            g_pbft->lock_tx_delayed.lock();
+            pbft.mapTxDelayed.erase(pTx->GetHash());
+            g_pbft->lock_tx_delayed.unlock();
         }
         pbft.commitSentTxns.clear();
         pbft.lock_commit_sent_txns.unlock();
@@ -458,17 +469,23 @@ static uint32_t sendQueuedTx(const int startBlock, const int noop_count, std::ve
     while (!q.empty()) {
         const TxIndexOnChain& txIdx(q.front());
         const uint256& txid = pbft.blocks2Send[txIdx.block_height - startBlock].vtx[txIdx.offset_in_block]->GetHash();
-        pbft.mapTxDelayed.erase(txid);
-        sendTx(pbft.blocks2Send[txIdx.block_height - startBlock].vtx[txIdx.offset_in_block], txIdx.offset_in_block, txIdx.block_height, batchBuffers, reqSentCnt, txPlacer, placementMethod);
+        bool isSingleShard = sendTx(pbft.blocks2Send[txIdx.block_height - startBlock].vtx[txIdx.offset_in_block], txIdx.offset_in_block, txIdx.block_height, batchBuffers, reqSentCnt, txPlacer, placementMethod);
         txSentCnt++;
         delayByNoop(noop_count);
-        /* add child tx to queue. */
-        const TxBlockInfo& txBlkInfo = pbft.mapTxDelayed[txid];
-        for (const TxIndexOnChain& dependent : txBlkInfo.childTxns) {
-            if (--pbft.mapRemainingPrereq[dependent] == 0) {
-                q.push(dependent);
-                pbft.mapRemainingPrereq.erase(dependent);
+        if (isSingleShard) {
+            /* add child tx to queue. Only child of single-shard tx can be sent b/c child of cross-shard tx will be sent after the parent tx's COMMIT req is sent. */
+            const TxBlockInfo& txBlkInfo = pbft.mapTxDelayed[txid];
+            for (const TxIndexOnChain& dependent : txBlkInfo.childTxns) {
+                assert(pbft.mapRemainingPrereq.find(dependent) != pbft.mapRemainingPrereq.end());
+                if (--pbft.mapRemainingPrereq[dependent] == 0) {
+                    q.push(dependent);
+                    pbft.mapRemainingPrereq.erase(dependent);
+                }
             }
+            std::cout << "erasing single shard tx from delay map, tx =  " << txid.ToString() << std::endl;
+            g_pbft->lock_tx_delayed.lock();
+            g_pbft->mapTxDelayed.erase(txid);
+            g_pbft->lock_tx_delayed.unlock();
         }
         q.pop();
     }
@@ -515,7 +532,7 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
         nAllTx += g_pbft->blocks2Send[block_height - startBlock].vtx.size();
     }
     std::cout << "remaining tx cnt to send = " << nAllTx - cnt << std::endl;
-    while (cnt < nAllTx) {
+    while (cnt < nAllTx || !g_pbft->mapTxDelayed.empty()) {
         if (ShutdownRequested())
             break;
         cnt += sendQueuedTx(startBlock, noop_count, batchBuffers, reqSentCnt, txPlacer, placementMethod);
@@ -537,10 +554,12 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
     globalReqSentCnt += reqSentCnt;
 }
 
+/* return true if the tx is single-shard, otherwise, return false. */
 bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_height, std::vector<std::deque<std::shared_ptr<CClientReq>>>& batchBuffers, uint32_t& reqSentCnt, TxPlacer& txPlacer, const uint placementMethod) {
 	/* get the input shards and output shards id*/
-        std::deque<std::vector<uint32_t>> vShardUtxoIdxToLock;
+    std::deque<std::vector<uint32_t>> vShardUtxoIdxToLock;
 	std::vector<int32_t> shards;
+    bool isSingleShard = false;
         switch (placementMethod) {
             case 0: 
                 shards = txPlacer.optchainPlace(tx, vShardUtxoIdxToLock);
@@ -569,16 +588,9 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 	//    std::cout << shard << ", ";
 	//std::cout << std::endl;
 
-	/* send tx and collect time info to calculate latency. 
-	 * We also remove all reply msg for this req for resending aborted tx. */
-	//g_pbft->replyMap[hashTx].clear();
-	//g_pbft->mapTxStartTime.erase(hashTx);
-	/* In closed loop test, for a tx has been send out, it will be committed and 
-	 * the lastest_prereq_tx info is no longer need, so we can safely put a dummy
-	 * value. 
-	 */
 	if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
 	    /* this is a single shard tx */
+        isSingleShard = true;
 	    g_pbft->add2Batch(shards[0], ClientReqType::TX, tx, batchBuffers[shards[0]]);
         reqSentCnt++;
 	    if (shards.size() != 1) {
@@ -588,6 +600,18 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 	    }
 	} else {
 	    /* this is a cross-shard tx */
+        /* add this tx to delayed sending map b/c its COMMIT req is delayed to when all input shards respond. */
+        if (g_pbft->mapTxDelayed.find(hashTx) == g_pbft->mapTxDelayed.end()) {
+            g_pbft->lock_tx_delayed.lock();
+            g_pbft->mapTxDelayed.insert(std::make_pair(hashTx, std::move(TxBlockInfo(tx, block_height, idx, shards[0]))));
+            g_pbft->lock_tx_delayed.unlock();
+            //std::cout << "add CROSS-SHARD tx " << hashTx.ToString() << " to delayed map" << std::endl;
+        } else {
+            /* This tx has been added to the delay map b/c has pending parent tx and has never been set a valid output shard, so we should update the output shard. */
+            g_pbft->mapTxDelayed[hashTx].outputShard = shards[0];
+            //std::cout << "updated CROSS-SHARD tx " << hashTx.ToString() << " in delayed map" << std::endl;
+        }
+        /* send LOCK req */
 	    for (uint i = 1; i < shards.size(); i++) {
                 g_pbft->inputShardReplyMap[hashTx].lockReply.insert(std::make_pair(shards[i], std::vector<CInputShardReply>()));
                 g_pbft->inputShardReplyMap[hashTx].decision.store('\0', std::memory_order_relaxed);
@@ -595,11 +619,8 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
                 reqSentCnt++;
                 g_pbft->vLoad.add(shards[i], CPbft::LOAD_LOCK);
 	    }
-            g_pbft->lock_tx_delayed.lock();
-            g_pbft->mapTxDelayed.insert(std::make_pair(hashTx, std::move(TxBlockInfo(tx, block_height, idx))));
-            g_pbft->lock_tx_delayed.unlock();
 	}
-	return true;
+	return isSingleShard;
 }
 
 TxIndexOnChain::TxIndexOnChain(): block_height(0), offset_in_block(0) { }

@@ -141,8 +141,8 @@ public:
 	return map_.size();
     }
     
-private:
     std::unordered_map<K, V, Hasher> map_;
+private:
     std::mutex mutex_;
     std::condition_variable cond_;
 };

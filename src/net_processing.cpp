@@ -1886,11 +1886,11 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 			nLocalCompletedTxPerInterval++;
 		} else if (reply.reply == 'n') {
 			g_pbft->nFail.fetch_add(1, std::memory_order_relaxed);
-			g_pbft->txResendQueue.push_back(g_pbft->mapTxDelayed[reply.digest]);
 			nLocalTotalFailedTxPerInterval++;
 		} 
             std::string latency = std::to_string((endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000) + "\n";
 		g_pbft->latencySingleShardFile << latency;
+        g_pbft->mapTxStartTime.erase(reply.digest);
 	    } else {
 		/* cross-shard tx */
 		auto& inputShardRplMap = g_pbft->inputShardReplyMap;
@@ -1913,7 +1913,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 			 * not count the latency of aborted tx in our statistics anyway.
 			 */
 			g_pbft->nAborted.fetch_add(1, std::memory_order_relaxed);
-			g_pbft->txResendQueue.push_back(g_pbft->mapTxDelayed[reply.digest]);
 			nLocalTotalFailedTxPerInterval++;
 		} else if (reply.reply == 'n') {
 			std::cout << "fail to commit or abort, ";
@@ -1931,7 +1930,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	if (g_pbft->inputShardReplyMap[reply.digest].decision.load(std::memory_order_relaxed) != '\0') {
 	    return true;
 	}
-	//std::cout << __func__ << ": received "  << strCommand << "for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
+	// std::cout << __func__ << ": received "  << strCommand << "for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
 	//if (!g_pbft->checkReplySig(&reply)) {
 	//    std::cout << strCommand << " from " << reply.peerID << " sig verification fail"  << std::endl;
 	//} else {
@@ -1994,16 +1993,20 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             }
         }
             
-            CPbft& pbft = *g_pbft;
-            pbft.lock_tx_delayed.lock();
-            CTransactionRef pTx = pbft.mapTxDelayed[reply.digest].tx;
+        CPbft& pbft = *g_pbft;
+        pbft.lock_tx_delayed.lock();
+        if (pbft.mapTxDelayed.find(reply.digest) == pbft.mapTxDelayed.end()) {
+            std::cout << "tx " << reply.digest.ToString() << " not in delayed map" << std::endl;
+        } 
 	    assert(pbft.mapTxDelayed.find(reply.digest) != pbft.mapTxDelayed.end());
+        CTransactionRef pTx = pbft.mapTxDelayed[reply.digest].tx;
 	    int32_t outputShard = pbft.mapTxDelayed[reply.digest].outputShard;
-            pbft.lock_tx_delayed.unlock();
+        pbft.lock_tx_delayed.unlock();
 	    UnlockToCommitReq commitReq(pTx, vReply.size(), std::move(vReply));
 	    pbft.txUnlockReqMap.insert(std::make_pair(commitReq.GetDigest(), reply.digest));
 	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
 	    //std::cout << "sending unlock_to_commit with req_hash = " << commitReq.GetDigest().GetHex().substr(0, 10) << " to shard " << outputShard << std::endl;
+        assert(outputShard >=0 && outputShard < num_committees);
 	    connman->PushMessage(pbft.leaders[outputShard], msgMaker.Make(NetMsgType::OMNI_UNLOCK_COMMIT, commitReq));
 	    pbft.vLoad.add(outputShard, CPbft::LOAD_COMMIT);
             updateCommitSentTxQ(pTx, bufferedCommitSentTxns);
