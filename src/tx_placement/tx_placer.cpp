@@ -32,7 +32,7 @@ size_t txChunkSize = 100;
 //uint32_t txStartBlock;
 //uint32_t txEndBlock;
 
-TxPlacer::TxPlacer():totalTxNum(0), alpha(0.5f), vecShardTxCount(num_committees, 0), loadScores(num_committees, 0), loadBalancingthld(10000) {}
+TxPlacer::TxPlacer():totalTxNum(0), alpha(0.5f), vecShardTxCount(num_committees, 0), loadScores(num_committees, 0), loadBalancingthld(1000000) {}
 
 
 /* all output UTXOs of a tx is stored in one shard. */
@@ -411,7 +411,7 @@ std::vector<int32_t> TxPlacer::mostInputUTXOPlace_LB(const CTransactionRef pTx, 
                 }
             }
         } else {
-            assert(lowestScoreShard <= 0 && lowestScoreShard < num_committees);
+            assert(lowestScoreShard >= 0 && lowestScoreShard < num_committees);
             outputShard = lowestScoreShard;
         }
 
@@ -475,7 +475,7 @@ std::vector<int32_t> TxPlacer::mostInputValuePlace_LB(const CTransactionRef pTx,
                 }
             }
         } else {
-            assert(lowestScoreShard <= 0 && lowestScoreShard < num_committees);
+            assert(lowestScoreShard >= 0 && lowestScoreShard < num_committees);
             outputShard = lowestScoreShard;
         }
 
@@ -533,7 +533,7 @@ std::vector<int32_t> TxPlacer::firstUtxoPlace_LB(const CTransactionRef pTx, std:
         /* Step 2: check load balancing */
         uint lowestScoreShard;
         if (getMaxDifference(loadScores, lowestScoreShard) >= loadBalancingthld) {
-            assert(lowestScoreShard <= 0 && lowestScoreShard < num_committees);
+            assert(lowestScoreShard >= 0 && lowestScoreShard < num_committees);
             outputShard = lowestScoreShard;
         }
 
@@ -701,7 +701,7 @@ static uint32_t sendQueuedTx(const int startBlock, const int noop_count, std::ve
                     pbft.mapRemainingPrereq.erase(dependent);
                 }
             }
-            std::cout << "erasing single shard tx from delay map, tx =  " << txid.ToString() << std::endl;
+            //std::cout << "erasing single shard tx from delay map, tx =  " << txid.ToString() << std::endl;
             g_pbft->lock_tx_delayed.lock();
             g_pbft->mapTxDelayed.erase(txid);
             g_pbft->lock_tx_delayed.unlock();
@@ -713,6 +713,34 @@ static uint32_t sendQueuedTx(const int startBlock, const int noop_count, std::ve
     return txSentCnt;
 }
 
+void TxPlacer::printTxSendRes() {
+    uint maxTxCnt = 0, minTxCnt = UINT_MAX; 
+    //std::cout << "tx cnt in each shard : ";
+    for (int i = 0; i < num_committees; i++) {
+        uint txCntInShard = vecShardTxCount[i];
+        //std::cout << i << " = " << txCntInShard << ", ";
+        if (txCntInShard > maxTxCnt) {
+            maxTxCnt = txCntInShard;
+        }
+        if (txCntInShard < minTxCnt) {
+            minTxCnt = txCntInShard;
+        }
+    }
+
+    uint maxScore = 0, minScore = UINT_MAX; 
+    //std::cout << "tx cnt in each shard : ";
+    for (int i = 0; i < num_committees; i++) {
+        uint load_score = loadScores[i];
+        //std::cout << i << " = " << txCntInShard << ", ";
+        if (load_score > maxScore) {
+            maxScore = load_score;
+        }
+        if (load_score < minScore) {
+            minScore = load_score;
+        }
+    }
+    std::cout << "shard MAX tx cnt = " << maxTxCnt << ", shard MIN tx cnt = " << minTxCnt << ", difference = " << maxTxCnt- minTxCnt << ", MAX load score = " << maxScore << ", MIN load score = " << minScore << ", score diff = " << maxScore - minScore << std::endl;
+}
 
 void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thread_idx, const uint32_t num_threads, const int noop_count, const uint placementMethod) {
     RenameThread(("sendTx" + std::to_string(thread_idx)).c_str());
@@ -769,6 +797,7 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
 
     gettimeofday(&end_time_all_block, NULL);
     std::cout << __func__ << ": thread " << thread_idx << " sent " << cnt << " tx in total. All tx of this thread takes " << (end_time_all_block.tv_sec - start_time_all_block.tv_sec)*1000000 + (end_time_all_block.tv_usec - start_time_all_block.tv_usec) << " us. Totally sentReqCnt = " << reqSentCnt << ". all tx in Bitcoin blocks = " << nAllTx << std::endl;
+    txPlacer.printTxSendRes();
     totalTxSent += cnt; 
     globalReqSentCnt += reqSentCnt;
 }

@@ -80,9 +80,9 @@ void WaitForShutdown()
     std::cout << std::endl;
 
     std::cout << "mapTxDelayed cnt = " << pbft.mapTxDelayed.size() << ", txns are :" << std::endl;
-    for (const auto& entry: pbft.mapTxDelayed) {
-        std::cout <<  entry.first.ToString() << std::endl;
-    }
+    //for (const auto& entry: pbft.mapTxDelayed) {
+    //    std::cout <<  entry.first.ToString() << std::endl;
+    //}
 
     std::cout << "unsent dependent tx cnt = " << pbft.mapRemainingPrereq.size() << ", ready to send dependent tx cnt = " <<  pbft.commitSentTxns.size() << std::endl;
     if (!pbft.mapRemainingPrereq.empty()) {

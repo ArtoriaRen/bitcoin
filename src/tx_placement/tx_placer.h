@@ -127,6 +127,7 @@ public:
 
     void updateLoadScore(uint shard_id, ClientReqType reqType, uint nSigs);
     void printPlaceResult();
+    void printTxSendRes();
 };
 
 void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thread_idx, const uint32_t num_threads, const int noop_count, const uint placementMethod);
