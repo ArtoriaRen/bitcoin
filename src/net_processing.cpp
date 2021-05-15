@@ -2008,7 +2008,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    //std::cout << "sending unlock_to_commit with req_hash = " << commitReq.GetDigest().GetHex().substr(0, 10) << " to shard " << outputShard << std::endl;
         assert(outputShard >=0 && outputShard < num_committees);
 	    connman->PushMessage(pbft.leaders[outputShard], msgMaker.Make(NetMsgType::OMNI_UNLOCK_COMMIT, commitReq));
-	    pbft.vLoad.add(outputShard, CPbft::LOAD_COMMIT);
             updateCommitSentTxQ(pTx, bufferedCommitSentTxns);
 	} 
     }

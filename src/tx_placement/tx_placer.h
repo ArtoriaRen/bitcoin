@@ -85,6 +85,12 @@ public:
     /* the number of tx assigned to each shard. */
     std::vector<uint> vecShardTxCount;
 
+    /* the load score of each shard. */
+    std::vector<uint> loadScores;
+    /* once the max load score difference grows greater than this threshold, assign tx
+     * to its lowest-load-score input shard. */
+    uint loadBalancingthld;
+
     /* return the number of shards that input UTXOs and output UTXOs span */
     TxPlacer();
 
@@ -111,6 +117,15 @@ public:
 
     std::vector<int32_t> firstUtxoPlace(const CTransactionRef pTx, std::deque<std::vector<uint32_t>>& vShardUtxoIdxToLock);
 
+//    std::vector<int32_t> optchainPlace_LB(const CTransactionRef pTx, std::deque<std::vector<uint32_t>>& vShardUtxoIdxToLock);
+
+    std::vector<int32_t> mostInputUTXOPlace_LB(const CTransactionRef pTx, std::deque<std::vector<uint32_t>>& vShardUtxoIdxToLock);
+
+    std::vector<int32_t> mostInputValuePlace_LB(const CTransactionRef pTx, std::deque<std::vector<uint32_t>>& vShardUtxoIdxToLock);
+
+    std::vector<int32_t> firstUtxoPlace_LB(const CTransactionRef pTx, std::deque<std::vector<uint32_t>>& vShardUtxoIdxToLock);
+
+    void updateLoadScore(uint shard_id, ClientReqType reqType, uint nSigs);
     void printPlaceResult();
 };
 

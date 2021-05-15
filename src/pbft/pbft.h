@@ -30,6 +30,7 @@ extern int32_t pbftID;
 extern struct timeval thruInterval;
 
 struct LockReply{
+    /* key is shard id, value is the CInputShardReply received from the shard. */
     std::map<int32_t, std::vector<CInputShardReply>> lockReply;
     std::atomic<char> decision;
 };
@@ -190,10 +191,6 @@ class CPbft{
 public:
     static const uint32_t nFaulty = 1;
     static const size_t groupSize = 4;
-
-    static const float LOAD_TX;
-    static const float LOAD_LOCK;
-    static const float LOAD_COMMIT;
 
     CPubKey myPubKey;
     std::vector<CNode*> leaders; // pbft leader
