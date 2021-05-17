@@ -48,6 +48,8 @@ const char *OMNI_LOCK_REPLY="lockrly"; // lock reply of OmniLedger
 const char *OMNI_UNLOCK_COMMIT="unlockcmt"; 
 const char *OMNI_UNLOCK_ABORT="unlockabt"; 
 const char *REQ_BATCH="reqbth"; 
+const char *LATENCY_PROBE="probe"; 
+const char *LATENCY_PROBE_RES="proberes"; 
 } // namespace NetMsgType
 
 /** All known message types. Keep this in the same order as the list of
@@ -88,7 +90,9 @@ const static std::string allNetMessageTypes[] = {
     NetMsgType::OMNI_LOCK_REPLY, // lock reply of OmniLedger
     NetMsgType::OMNI_UNLOCK_COMMIT, 
     NetMsgType::OMNI_UNLOCK_ABORT,
-    NetMsgType::REQ_BATCH 
+    NetMsgType::REQ_BATCH, 
+    NetMsgType::LATENCY_PROBE,
+    NetMsgType::LATENCY_PROBE_RES
 };
 
 const static std::vector<std::string> allNetMessageTypesVec(allNetMessageTypes, allNetMessageTypes+ARRAYLEN(allNetMessageTypes));

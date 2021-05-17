@@ -147,7 +147,7 @@ std::vector<int32_t> TxPlacer::optchainPlace(const CTransactionRef pTx, std::deq
             mapInputShardUTXO[mapNotFullySpentTx[parentTxid].placementRes].push_back(i);
         }
 
-        /* Step 2: calculate p'(u) */
+        /* Step 2: calculate p'(u) and the output shard. */
         std::vector<float> sumScore(num_committees, 0.0f);
         for (const uint256& txid: preReqTxs) {
             /* increment the number of out tx of this parent tx. */
@@ -164,9 +164,11 @@ std::vector<int32_t> TxPlacer::optchainPlace(const CTransactionRef pTx, std::deq
         }
         float maxScore = 0;
         for (uint32_t i = 0; i < num_committees; i++) {
-            placementStatus.fitnessScore[i] = (1 - alpha) * sumScore[i];
-            if (placementStatus.fitnessScore[i] > maxScore) {
-               maxScore = placementStatus.fitnessScore[i];
+            float p_u_prime = (1 - alpha) * sumScore[i];
+            placementStatus.fitnessScore[i] = p_u_prime;
+            float p_u = p_u_prime / vecShardTxCount[i];
+            if (p_u > maxScore) {
+               maxScore = p_u;
                outputShard = i; 
             }
         }
@@ -379,6 +381,77 @@ static uint getMaxDifference(std::vector<uint>& vec, uint& min_val_index) {
         }
     }
     return max_val - min_val;
+}
+
+std::vector<int32_t> TxPlacer::optchainPlace_LB(const CTransactionRef pTx, std::deque<std::vector<uint32_t>>& vShardUtxoIdxToLock) {
+    int32_t outputShard = -1;
+    /* key is shard id, value is a vector of input utxos in this shard. */
+    std::map<int32_t, std::vector<uint32_t>> mapInputShardUTXO;
+    CPlacementStatus placementStatus(pTx->vout.size());
+    if (pTx->IsCoinBase()) {
+        outputShard = randomPlaceUTXO(pTx->GetHash());
+    } else {
+        /* --------Compute T2S score -----*/
+        /* Step 1: find all parent tx. */
+        std::unordered_set<uint256, uint256Hasher> preReqTxs;
+        for (uint32_t i = 0; i < pTx->vin.size(); i++) {
+            const uint256& parentTxid = pTx->vin[i].prevout.hash;
+            /* decrement the remaining coin count of the parent tx */
+            assert(mapNotFullySpentTx.find(parentTxid) != mapNotFullySpentTx.end());
+            mapNotFullySpentTx[parentTxid].numUnspentCoin--;
+            preReqTxs.emplace(parentTxid);
+            mapInputShardUTXO[mapNotFullySpentTx[parentTxid].placementRes].push_back(i);
+        }
+
+        /* Step 2: calculate p'(u) and the output shard. */
+        std::vector<float> sumScore(num_committees, 0.0f);
+        for (const uint256& txid: preReqTxs) {
+            /* increment the number of out tx of this parent tx. */
+            mapNotFullySpentTx[txid].numOutTx++;
+            /* calculate the weighted fitness score sum */
+            for (uint32_t i = 0; i < num_committees; i++) {
+                const CPlacementStatus& parentStatus = mapNotFullySpentTx[txid];
+                sumScore[i] += parentStatus.fitnessScore[i]/parentStatus.numOutTx;
+            }
+            if (mapNotFullySpentTx[txid].numUnspentCoin == 0) {
+                /* remove a tx b/c all its UTXOs has been spent. */
+                mapNotFullySpentTx.erase(txid);
+            }
+        }
+
+        float maxScore = 0;
+        for (uint32_t i = 0; i < num_committees; i++) {
+            float p_u_prime = (1 - alpha) * sumScore[i];
+            placementStatus.fitnessScore[i] = p_u_prime;
+            float p_u = p_u_prime / vecShardTxCount[i];
+            /* calculate p(u) - 0.01 epsilon */
+            float overallScore = p_u - 0.01 * g_pbft->expected_tx_latency[i].latency;
+            if (overallScore > maxScore) {
+               maxScore = overallScore;
+               outputShard = i; 
+            }
+        }
+    }
+
+    auto iter_bool_pair = mapNotFullySpentTx.emplace(pTx->GetHash(), std::move(placementStatus));
+    /* update p'(u)  after placement. */
+    iter_bool_pair.first->second.fitnessScore[outputShard] += alpha;
+    iter_bool_pair.first->second.placementRes = outputShard;
+
+    /* increment tx count of the chosen shard. */
+    vecShardTxCount[outputShard]++;
+    
+    placementStatus.placementRes = outputShard;
+    /* prepare a resultant vector for return */
+    std::vector<int32_t> ret;
+    ret.reserve(mapInputShardUTXO.size() + 1);
+    ret.push_back(outputShard); // put the outShardId as the first element
+    for (auto it = mapInputShardUTXO.begin(); it != mapInputShardUTXO.end(); it++) {
+        ret.push_back(it->first);
+        vShardUtxoIdxToLock.push_back(it->second);
+    }
+    assert(vShardUtxoIdxToLock.size() + 1 == ret.size());
+    return ret;
 }
 
 std::vector<int32_t> TxPlacer::mostInputUTXOPlace_LB(const CTransactionRef pTx, std::deque<std::vector<uint32_t>>& vShardUtxoIdxToLock) {
@@ -742,6 +815,14 @@ void TxPlacer::printTxSendRes() {
     std::cout << "shard MAX tx cnt = " << maxTxCnt << ", shard MIN tx cnt = " << minTxCnt << ", difference = " << maxTxCnt- minTxCnt << ", MAX load score = " << maxScore << ", MIN load score = " << minScore << ", score diff = " << maxScore - minScore << std::endl;
 }
 
+static void probeShardLatency() {
+    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+    for (uint i = 0; i < num_committees; i++) {
+        gettimeofday(&(g_pbft->expected_tx_latency[i].probe_send_time), NULL);
+        g_connman->PushMessage(g_pbft->leaders[i], msgMaker.Make(NetMsgType::LATENCY_PROBE));
+    }
+}
+
 void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thread_idx, const uint32_t num_threads, const int noop_count, const uint placementMethod) {
     RenameThread(("sendTx" + std::to_string(thread_idx)).c_str());
     uint32_t cnt = 0, reqSentCnt = 0;
@@ -758,6 +839,10 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
         CBlock& block = g_pbft->blocks2Send[block_height - startBlock];
         for (size_t i = thread_idx * txChunkSize; i < block.vtx.size(); i += jump_length){
             //std::cout << __func__ << ": thread " << thread_idx << " sending No." << i << " tx in block " << block_height << std::endl;
+            if (placementMethod == 5) {
+            /* probe shard leaders to get communication latency and verification latency */
+                probeShardLatency();
+            }
             gettimeofday(&start_time, NULL);
             uint32_t actual_chunk_size = sendTxChunk(block, startBlock, block_height, i, noop_count, batchBuffers, reqSentCnt, txPlacer, placementMethod);
             gettimeofday(&end_time, NULL);
@@ -825,7 +910,7 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
                 shards = txPlacer.hashingPlace(tx, vShardUtxoIdxToLock);
                 break;
             case 5: 
-                //shards = txPlacer.optchainPlace_LB(tx, vShardUtxoIdxToLock);
+                shards = txPlacer.optchainPlace_LB(tx, vShardUtxoIdxToLock);
                 break;
             case 6:
                 shards = txPlacer.mostInputUTXOPlace_LB(tx, vShardUtxoIdxToLock);

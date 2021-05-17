@@ -106,3 +106,7 @@ TxReq::TxReq(const CTransactionRef pTxIn): CClientReq(ClientReqType::TX, pTxIn) 
 
 LockReq::LockReq(): CClientReq(ClientReqType::LOCK) { }
 LockReq::LockReq(const CTransactionRef pTxIn, const std::vector<uint32_t>& vInputUTXOInShard): CClientReq(ClientReqType::LOCK, pTxIn), vInputUtxoIdxToLock(vInputUTXOInShard) { }
+
+CProbeRes::CProbeRes(): shardId(0), lastBlockVrfTimePerTx(0), outstandingTxCnt(0) { }
+
+CProbeRes::CProbeRes(uint32_t shardIdIn, uint32_t avgTxVrfTime, uint32_t nQueuedTx): shardId(shardIdIn), lastBlockVrfTimePerTx(avgTxVrfTime), outstandingTxCnt(nQueuedTx) { }

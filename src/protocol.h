@@ -246,6 +246,8 @@ extern const char *OMNI_LOCK_REPLY; // lock reply of OmniLedger
 extern const char *OMNI_UNLOCK_COMMIT; 
 extern const char *OMNI_UNLOCK_ABORT; 
 extern const char *REQ_BATCH;
+extern const char *LATENCY_PROBE; 
+extern const char *LATENCY_PROBE_RES; 
 };
 
 /* Get a vector of all valid message types (see above) */

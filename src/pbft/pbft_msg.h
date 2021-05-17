@@ -285,5 +285,28 @@ public:
     }
 };
 
+class CProbeRes {
+public:
+    uint32_t shardId;
+    uint32_t lastBlockVrfTimePerTx;
+    uint32_t outstandingTxCnt; //tx in outstanding blocks and client req queue.
+
+    CProbeRes();
+    CProbeRes(uint32_t shardIdIn, uint32_t avgTxVrfTime, uint32_t nQueuedTx);
+
+    template<typename Stream>
+    void Serialize(Stream& s) const {
+        s.write((char*)&shardId, sizeof(shardId));
+        s.write((char*)&lastBlockVrfTimePerTx, sizeof(lastBlockVrfTimePerTx));
+        s.write((char*)&outstandingTxCnt, sizeof(outstandingTxCnt));
+    }
+    
+    template<typename Stream>
+    void Unserialize(Stream& s) {
+        s.read((char*)&shardId, sizeof(shardId));
+        s.read((char*)&lastBlockVrfTimePerTx, sizeof(lastBlockVrfTimePerTx));
+        s.read((char*)&outstandingTxCnt, sizeof(outstandingTxCnt));
+    }
+};
 
 #endif

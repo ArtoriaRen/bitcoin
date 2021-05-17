@@ -1859,6 +1859,20 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	}
     }
 
+    else if (strCommand == NetMsgType::LATENCY_PROBE_RES)
+    {
+        struct timeval probRecvTime;
+        gettimeofday(&probRecvTime, NULL);
+        CProbeRes probRes;
+        vRecv >> probRes;
+        /* TODO: calculate the expected latency and update pbft.expected_tx_latency*/
+        assert(probRes.shardId < num_committees);
+        struct timeval comm_latency =  probRecvTime - g_pbft->expected_tx_latency[probRes.shardId].probe_send_time;      
+        uint comm_latency_us = comm_latency.tv_sec * 1000000 + comm_latency.tv_usec;  
+        g_pbft->expected_tx_latency[probRes.shardId].latency = comm_latency_us
+                + probRes.lastBlockVrfTimePerTx *  probRes.outstandingTxCnt;
+    }
+
     else if (strCommand == NetMsgType::PBFT_REPLY)
     {
 	CReply reply;

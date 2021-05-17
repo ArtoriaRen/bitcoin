@@ -106,7 +106,7 @@ void ThreadSafeVector::print() {
         std::cout << " shard " << i << " = " << vector_[i];
 }
 
-CPbft::CPbft() : leaders(num_committees), pubKeys(num_committees * groupSize), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nSucceed(0), nFail(0), nCommitted(0), nAborted(0), vLoad(num_committees, 0), batchBuffers(num_committees), vBatchBufferMutex(num_committees), privateKey(CKey()) {
+CPbft::CPbft() : leaders(num_committees), pubKeys(num_committees * groupSize), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nSucceed(0), nFail(0), nCommitted(0), nAborted(0), vLoad(num_committees, 0), batchBuffers(num_committees), vBatchBufferMutex(num_committees), expected_tx_latency(num_committees), privateKey(CKey()) {
     testStartTime = {0, 0};
     nextLogTime = {0, 0};
     privateKey.MakeNewKey(false);
@@ -254,5 +254,7 @@ void CPbft::loadBlocks(uint32_t startBlock, uint32_t endBlock) {
         }
     }
 }
+
+CShardLatency::CShardLatency(): latency(0){ }
 
 std::unique_ptr<CPbft> g_pbft;

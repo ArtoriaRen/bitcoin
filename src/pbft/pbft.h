@@ -187,6 +187,14 @@ private:
     std::mutex mutex_;
 };
 
+class CShardLatency {
+public:
+    struct timeval probe_send_time;
+    /* the sum of communication latency and tx verification latency. */
+    std::atomic<uint> latency; // in us 
+    CShardLatency();
+};
+
 class CPbft{
 public:
     static const uint32_t nFaulty = 1;
@@ -265,6 +273,7 @@ public:
     ThreadSafeVector vLoad; // the load of all shards.
     std::vector<CReqBatch> batchBuffers;
     std::vector<std::mutex> vBatchBufferMutex; /* guard access to batchBuffers by tx_sending threads and the msg_pushing thread. */
+    std::vector<CShardLatency> expected_tx_latency;
 
     CPbft();
     ~CPbft();
