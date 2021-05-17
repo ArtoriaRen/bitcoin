@@ -509,3 +509,11 @@ TxReq::TxReq(const CTransactionRef pTxIn): CClientReq(ClientReqType::TX, pTxIn) 
 LockReq::LockReq(): CClientReq(ClientReqType::LOCK) { } 
 LockReq::LockReq(const CTransactionRef pTxIn, const std::vector<uint32_t>& vInputUTXOInShard) : CClientReq(ClientReqType::LOCK, pTxIn), nOutpointToLock(vInputUTXOInShard.size()), vInputUtxoIdxToLock(vInputUTXOInShard) { }
 
+CProbeRes::CProbeRes(): shardId(0), lastBlockVrfTimePerTx(0), outstandingTxCnt(0) { }
+
+CProbeRes::CProbeRes(uint32_t shardIdIn, uint32_t avgTxVrfTime, uint32_t nQueuedTx): shardId(shardIdIn), lastBlockVrfTimePerTx(avgTxVrfTime), outstandingTxCnt(nQueuedTx) { }
+
+std::string CProbeRes::ToString() const {
+    return " shard id = " + std::to_string(shardId) + ", avg tx verify time = " + std::to_string(lastBlockVrfTimePerTx) + ", queue length = " + std::to_string(outstandingTxCnt);
+}
+

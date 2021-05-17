@@ -109,6 +109,9 @@ public:
     unsigned long detailTime[STEP::NUM_STEPS];
     unsigned long inputCount[INPUT_CNT::NUM_INPUT_CNTS];
     int lastReplySentSeq; // the highest block we have sent reply to the client. Used only by the main thread.
+    /* The latest block whose Pre-prepare msg has been sent to followers. Only the PBFT leader maintain this variable. */
+    int lastPPSentHeight; 
+    uint32_t avgTxVrfTimeLastBlock;
         
     
     CPbft();

@@ -1898,6 +1898,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	}
     }
 
+
     else if (strCommand == NetMsgType::PBFT_PP) {
         CPre_prepare ppMsg;
         vRecv >> ppMsg;
@@ -2983,6 +2984,7 @@ bool PeerLogicValidation::SendPPMessages(){
 	    for (uint32_t i = start_peerID; i < end_peerID; i++) {
 		connman->PushMessage(pbft->peers[i], msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
 	    }
+        pbft->lastPPSentHeight = ppMsg.seq;
 	   
 	} else if (pbft->reqQueue.size() > 0) {
 	    pbft->setReqWaitTimer();
@@ -3462,6 +3464,23 @@ bool static ProcessClientMessage(CNode* pfrom, const std::string& strCommand, CD
 	if (idPubkey.first == CPbft::clientID) {
 	    pbft->client = pfrom;
 	}
+    }
+
+    /* probe msg for tx placement */
+    else if (strCommand == NetMsgType::LATENCY_PROBE)
+    {
+        if (!pbft->isLeader()) {
+            std::cout << "follower nodes should not receive LATENCY_PROBE msg." << std::endl;
+        }
+        uint nTxInUnexeBlocks = 0;
+        for (uint i = pbft->lastExecutedSeq + 1; i < pbft->lastPPSentHeight + 1; i++) {
+            nTxInUnexeBlocks += pbft->log[i].ppMsg.pbft_block.vPReq.size();
+        }
+        
+        CProbeRes probe_res(pbftID/pbft->groupSize, pbft->avgTxVrfTimeLastBlock, nTxInUnexeBlocks + pbft->reqQueue.size());
+
+        //std::cout << "received probe msg. reply with " << probe_res.ToString() << std::endl; 
+        connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::LATENCY_PROBE_RES, std::move(probe_res)));
     }
 
     /* received a tx, put it in queue . */

@@ -115,7 +115,7 @@ bool ThreadSafeQueue::empty() {
     return queue_.empty();
 }
 
-CPbft::CPbft() : localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize * num_committees)), nReqInFly(0), clientConnMan(nullptr), notEnoughReqStartTime(std::chrono::milliseconds::zero()), startBlkHeight(0), lastReplySentSeq(-1), privateKey(CKey()) {
+CPbft::CPbft() : localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize * num_committees)), nReqInFly(0), clientConnMan(nullptr), notEnoughReqStartTime(std::chrono::milliseconds::zero()), startBlkHeight(0), lastReplySentSeq(-1), lastPPSentHeight(-1), avgTxVrfTimeLastBlock(0), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
@@ -343,8 +343,12 @@ int CPbft::executeLog() {
      * their seqs are greater than the seq passed in. If we only execute up to
      * the seq passed in, a slot missing a pbftc msg might permanently block
      * log slots after it to be executed. */
+    struct timeval start, end;
     for (uint i = lastExecutedSeq + 1; i < logSize && log[i].phase == PbftPhase::reply; i++) {
+        gettimeofday(&start, NULL);
+
         log[i].txCnt = log[i].ppMsg.pbft_block.Execute(i, g_connman.get(), *pcoinsTip);
+        gettimeofday(&end, NULL);
         lastExecutedSeq = i;
         std::cout << "Executed block " << i  << ", block size = " 
             << log[i].ppMsg.pbft_block.vPReq.size()  
@@ -352,6 +356,8 @@ int CPbft::executeLog() {
             << ", Total LOCK cnt = " << totalExeCount[1]
             << ", Total COMMIT cnt = " << totalExeCount[2]
             << std::endl;
+        uint exe_time_us = (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec);
+        avgTxVrfTimeLastBlock = exe_time_us / log[i].ppMsg.pbft_block.vPReq.size(); 
     }
     return lastExecutedSeq;
 }
@@ -413,7 +419,7 @@ void ThreadConsensusLogExe() {
     RenameThread("log-exe");
     while (!ShutdownRequested()) {
         g_pbft->executeLog();
-        MilliSleep(50);
+        MilliSleep(1);
     }
 }
 
