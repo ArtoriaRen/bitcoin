@@ -115,7 +115,7 @@ bool ThreadSafeQueue::empty() {
     return queue_.empty();
 }
 
-CPbft::CPbft() : localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize * num_committees)), nReqInFly(0), clientConnMan(nullptr), notEnoughReqStartTime(std::chrono::milliseconds::zero()), startBlkHeight(0), lastReplySentSeq(-1), lastPPSentHeight(-1), avgTxVrfTimeLastBlock(0), privateKey(CKey()) {
+CPbft::CPbft() : localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastExecutedSeq(-1), client(nullptr), peers(std::vector<CNode*>(groupSize * num_committees)), nReqInFly(0), clientConnMan(nullptr), notEnoughReqStartTime(std::chrono::milliseconds::zero()), startBlkHeight(0), nInputShardSigs(0), lastReplySentSeq(-1), lastPPSentHeight(-1), avgTxVrfTimeLastBlock(0), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));

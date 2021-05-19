@@ -286,7 +286,7 @@ char UnlockToCommitReq::Execute(const int seq, CCoinsViewCache& view) const {
      * We use INT_MAX as block height, so that we never fail coinbase maturity check.
      */
     gettimeofday(&start_time, NULL);
-    uint sigsPerInputShard = 2 * CPbft::nFaulty + 1;
+    uint sigsPerInputShard = CPbft::nFaulty + 1;
     CAmount totalInputValue = 0;
     for (uint i = 0; i < vInputShardReply.size(); i += sigsPerInputShard) {
 	totalInputValue += vInputShardReply[i].totalValueInOfShard;
@@ -331,6 +331,7 @@ char UnlockToCommitReq::Execute(const int seq, CCoinsViewCache& view) const {
 
 bool checkInputShardReplySigs(const std::vector<CInputShardReply>& vReplies) {
     // verify signature and return false if at least one sig is wrong
+    g_pbft->nInputShardSigs = vReplies.size();
     for (auto reply: vReplies) {
 	auto it = g_pbft->pubKeyMap.find(reply.peerID);
 	if (it == g_pbft->pubKeyMap.end()) {
@@ -436,6 +437,7 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& 
         uint64_t timeElapsed = 0;
         gettimeofday(&start_time, NULL);
         char exe_res = vPReq[i]->Execute(seq, view);
+        assert(exe_res == 'y');
         if (vPReq[i]->type == ClientReqType::LOCK) {
             gettimeofday(&detail_start_time, NULL);
             CInputShardReply reply = pbft.assembleInputShardReply(seq, i, exe_res, ((LockReq*)vPReq[i].get())->totalValueInOfShard);
