@@ -1865,12 +1865,15 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         gettimeofday(&probRecvTime, NULL);
         CProbeRes probRes;
         vRecv >> probRes;
-        /* TODO: calculate the expected latency and update pbft.expected_tx_latency*/
+        //std::cout << "received PROBE_RES msg: " << probRes.ToString() << std::endl;
+        /* calculate the expected latency and update pbft.expected_tx_latency*/
         assert(probRes.shardId < num_committees);
         struct timeval comm_latency =  probRecvTime - g_pbft->expected_tx_latency[probRes.shardId].probe_send_time;      
         uint comm_latency_us = comm_latency.tv_sec * 1000000 + comm_latency.tv_usec;  
+        //std::cout << "comm_latency_us  = " << comm_latency_us << std::endl;
         g_pbft->expected_tx_latency[probRes.shardId].latency = comm_latency_us
                 + probRes.lastBlockVrfTimePerTx *  probRes.outstandingTxCnt;
+        //std::cout << " expected latency of shard " << probRes.shardId << ": " << g_pbft->expected_tx_latency[probRes.shardId].latency << std::endl;
     }
 
     else if (strCommand == NetMsgType::PBFT_REPLY)
@@ -1944,7 +1947,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	if (g_pbft->inputShardReplyMap[reply.digest].decision.load(std::memory_order_relaxed) != '\0') {
 	    return true;
 	}
-	// std::cout << __func__ << ": received "  << strCommand << "for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
+	//std::cout << __func__ << ": received "  << strCommand << "for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << ", locked value = " << reply.totalValueInOfShard << std::endl;
 	//if (!g_pbft->checkReplySig(&reply)) {
 	//    std::cout << strCommand << " from " << reply.peerID << " sig verification fail"  << std::endl;
 	//} else {
@@ -1989,16 +1992,18 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    char freshDecision = g_pbft->inputShardReplyMap[reply.digest].decision.exchange('c', std::memory_order_relaxed); 
 	    assert(freshDecision != 'a');
 	    if(freshDecision == 'c') {
-		/* other msghand threads has set the decision to commit and send commit req to all input shards. We do not need to do anything. */
-		return true;
+            /* other msghand threads has set the decision to commit and send commit req to all input shards. We do not need to do anything. */
+            return true;
 	    }
-	    //std::cout << "tx " << reply.digest.GetHex().substr(0,10) << ", LOCK_OK, ";
+	    //std::cout << "tx " << reply.digest.GetHex().substr(0,10) << ", LOCK_OK" << std::endl;
 	    /* assemble a vector including (f + 1) replies for every shard */
 	    std::vector<CInputShardReply> vReply;
 	    vReply.reserve(reply_threshold * g_pbft->inputShardReplyMap[reply.digest].lockReply.size());
 	    for (auto& p : g_pbft->inputShardReplyMap[reply.digest].lockReply) {
-		/* add the first (f+1) replies of the current shard to the vector */
-		vReply.insert(vReply.end(), p.second.begin(), p.second.begin() + reply_threshold);
+
+            /* add the first (f+1) replies of the current shard to the vector */
+            vReply.insert(vReply.end(), p.second.begin(), p.second.begin() + reply_threshold);
+            //std::cout << "shard " << p.first << " locked value " << p.second.begin()->totalValueInOfShard << std::endl;
 	    }
 
         for (auto& r: vReply) {
@@ -2019,7 +2024,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	    UnlockToCommitReq commitReq(pTx, vReply.size(), std::move(vReply));
 	    pbft.txUnlockReqMap.insert(std::make_pair(commitReq.GetDigest(), reply.digest));
 	    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-	    //std::cout << "sending unlock_to_commit with req_hash = " << commitReq.GetDigest().GetHex().substr(0, 10) << " to shard " << outputShard << std::endl;
+	    //std::cout << "sending unlock_to_commit for tx = " << reply.digest.GetHex() << " to shard " << outputShard << std::endl;
         assert(outputShard >=0 && outputShard < num_committees);
 	    connman->PushMessage(pbft.leaders[outputShard], msgMaker.Make(NetMsgType::OMNI_UNLOCK_COMMIT, commitReq));
             updateCommitSentTxQ(pTx, bufferedCommitSentTxns);

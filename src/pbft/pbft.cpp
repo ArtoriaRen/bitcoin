@@ -248,6 +248,8 @@ void sendAllBatch() {
 void CPbft::loadBlocks(uint32_t startBlock, uint32_t endBlock) {
     blocks2Send.resize(endBlock - startBlock);
     for (int block_height = startBlock; block_height < endBlock; block_height++) {
+        if (ShutdownRequested())
+            break;
         CBlockIndex* pblockindex = chainActive[block_height];
         if (!ReadBlockFromDisk(blocks2Send[block_height - startBlock], pblockindex, Params().GetConsensus())) {
             std::cerr << "Block not found on disk" << std::endl;

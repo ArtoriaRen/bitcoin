@@ -307,6 +307,8 @@ public:
         s.read((char*)&lastBlockVrfTimePerTx, sizeof(lastBlockVrfTimePerTx));
         s.read((char*)&outstandingTxCnt, sizeof(outstandingTxCnt));
     }
+
+    std::string ToString() const;
 };
 
 #endif

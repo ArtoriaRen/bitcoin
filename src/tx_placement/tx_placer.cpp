@@ -16,6 +16,7 @@
 #include <time.h>
 #include "txdb.h"
 #include "init.h"
+#include <float.h>
 
 std::atomic<uint32_t> totalTxSent(0);
 std::atomic<uint32_t> globalReqSentCnt(0);
@@ -162,11 +163,13 @@ std::vector<int32_t> TxPlacer::optchainPlace(const CTransactionRef pTx, std::deq
                 mapNotFullySpentTx.erase(txid);
             }
         }
+        //std::cout << "p(u) of the cur tx" << std::endl;
         float maxScore = 0;
         for (uint32_t i = 0; i < num_committees; i++) {
             float p_u_prime = (1 - alpha) * sumScore[i];
             placementStatus.fitnessScore[i] = p_u_prime;
             float p_u = p_u_prime / vecShardTxCount[i];
+            //std::cout << __func__ << ": p(u) = " << p_u << std::endl;
             if (p_u > maxScore) {
                maxScore = p_u;
                outputShard = i; 
@@ -419,19 +422,28 @@ std::vector<int32_t> TxPlacer::optchainPlace_LB(const CTransactionRef pTx, std::
             }
         }
 
-        float maxScore = 0;
+        //std::cout << "p(u) of the cur tx" << std::endl;
+        float maxScore = -FLT_MAX;
+        uint latencySum = 0;
+        for (uint32_t i = 0; i < num_committees; i++) {
+            latencySum += g_pbft->expected_tx_latency[i].latency;
+        }
         for (uint32_t i = 0; i < num_committees; i++) {
             float p_u_prime = (1 - alpha) * sumScore[i];
             placementStatus.fitnessScore[i] = p_u_prime;
             float p_u = p_u_prime / vecShardTxCount[i];
             /* calculate p(u) - 0.01 epsilon */
-            float overallScore = p_u - 0.01 * g_pbft->expected_tx_latency[i].latency;
+            //std::cout << __func__ << ": p(u) = " << p_u << ", expected latency = " << g_pbft->expected_tx_latency[i].latency << std::endl;
+            /* normalize expected latency using num_committees and latencySum so that the latency score stays between 0~1 regradless of how long the expected latency is. */
+            float overallScore = p_u - 0.01 * num_committees * g_pbft->expected_tx_latency[i].latency / latencySum;
             if (overallScore > maxScore) {
                maxScore = overallScore;
                outputShard = i; 
             }
         }
     }
+
+    assert(outputShard >=0 && outputShard < num_committees);
 
     auto iter_bool_pair = mapNotFullySpentTx.emplace(pTx->GetHash(), std::move(placementStatus));
     /* update p'(u)  after placement. */
@@ -717,7 +729,7 @@ static uint32_t sendTxChunk(const CBlock& block, const uint start_height, const 
             /* add tx to dependency graph as a potential parent tx. */
             pbft.mapTxDelayed.emplace(tx.GetHash(), TxBlockInfo(block.vtx[j], block_height, j));
             pbft.lock_tx_delayed.unlock();
-            // std::cout << "delay tx " << tx.GetHash().ToString() << ", pending parent tx number = " << preReqTxs.size() << std::endl;
+             //std::cout << "delay tx " << tx.GetHash().ToString() << ", pending parent tx number = " << preReqTxs.size() << std::endl;
         }
     }
     return cnt;
@@ -820,6 +832,7 @@ static void probeShardLatency() {
     for (uint i = 0; i < num_committees; i++) {
         gettimeofday(&(g_pbft->expected_tx_latency[i].probe_send_time), NULL);
         g_connman->PushMessage(g_pbft->leaders[i], msgMaker.Make(NetMsgType::LATENCY_PROBE));
+        //std::cout << "send probe to shard " << i << std::endl;
     }
 }
 
@@ -836,13 +849,13 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
     for (int block_height = startBlock; block_height < endBlock; block_height++) {
         if (ShutdownRequested())
             break;
+        if (placementMethod == 5) {
+        /* probe shard leaders to get communication latency and verification latency */
+            probeShardLatency();
+        }
         CBlock& block = g_pbft->blocks2Send[block_height - startBlock];
         for (size_t i = thread_idx * txChunkSize; i < block.vtx.size(); i += jump_length){
             //std::cout << __func__ << ": thread " << thread_idx << " sending No." << i << " tx in block " << block_height << std::endl;
-            if (placementMethod == 5) {
-            /* probe shard leaders to get communication latency and verification latency */
-                probeShardLatency();
-            }
             gettimeofday(&start_time, NULL);
             uint32_t actual_chunk_size = sendTxChunk(block, startBlock, block_height, i, noop_count, batchBuffers, reqSentCnt, txPlacer, placementMethod);
             gettimeofday(&end_time, NULL);
@@ -881,7 +894,7 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
     }
 
     gettimeofday(&end_time_all_block, NULL);
-    std::cout << __func__ << ": thread " << thread_idx << " sent " << cnt << " tx in total. All tx of this thread takes " << (end_time_all_block.tv_sec - start_time_all_block.tv_sec)*1000000 + (end_time_all_block.tv_usec - start_time_all_block.tv_usec) << " us. Totally sentReqCnt = " << reqSentCnt << ". all tx in Bitcoin blocks = " << nAllTx << std::endl;
+    std::cout << __func__ << ": thread " << thread_idx << " sent " << cnt << " tx in total. All tx of this thread takes " << (end_time_all_block.tv_sec - start_time_all_block.tv_sec)*1000000 + (end_time_all_block.tv_usec - start_time_all_block.tv_usec) << " us. Totally sentReqCnt = " << reqSentCnt << ". Block " << startBlock << "~" << endBlock << " have tx cnt = " << nAllTx << ", noop cnt = " << noop_count << std::endl;
     txPlacer.printTxSendRes();
     totalTxSent += cnt; 
     globalReqSentCnt += reqSentCnt;
@@ -944,6 +957,7 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
                  * have the time-consuming sig verification step. */
                 txPlacer.updateLoadScore(shards[0], ClientReqType::TX, tx->vin.size());
 	    }
+        //std::cout << "send TX req for tx " << hashTx.ToString() << " to shard " << shards[0] << std::endl;
 	} else {
 	    /* this is a cross-shard tx */
         /* add this tx to delayed sending map b/c its COMMIT req is delayed to when all input shards respond. */
@@ -964,6 +978,7 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
                 g_pbft->add2Batch(shards[i], ClientReqType::LOCK, tx, batchBuffers[shards[i]], &vShardUtxoIdxToLock[i - 1]);
                 reqSentCnt++;
                 txPlacer.updateLoadScore(shards[i], ClientReqType::LOCK, vShardUtxoIdxToLock[i - 1].size());
+                //std::cout << "send LOCK req for tx " << hashTx.ToString() << " to shard " << shards[i] << std::endl;
 	    }
 	}
 	return isSingleShard;
