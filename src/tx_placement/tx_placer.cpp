@@ -33,7 +33,7 @@ size_t txChunkSize = 100;
 //uint32_t txStartBlock;
 //uint32_t txEndBlock;
 
-TxPlacer::TxPlacer():totalTxNum(0), alpha(0.5f), vecShardTxCount(num_committees, 0), loadScores(num_committees, 0), loadBalancingthld(1000000) {}
+TxPlacer::TxPlacer():totalTxNum(0), alpha(0.5f), vecShardTxCount(num_committees, 0), loadScores(num_committees, 0), loadBalancingthld(50000000) {}
 
 
 /* all output UTXOs of a tx is stored in one shard. */
@@ -871,27 +871,29 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
         }
     }
 
-    /* send remaing tx. For time measurement only */
+    std::cout << end_time.tv_sec << "." << end_time.tv_usec << ", chunky sending ends.\n";
+    /* calculate the total number of tx in all the blocks*/
     uint32_t nAllTx = 0;
     for (int block_height = startBlock; block_height < endBlock; block_height++) {
         nAllTx += g_pbft->blocks2Send[block_height - startBlock].vtx.size();
     }
-    std::cout << "remaining tx cnt to send = " << nAllTx - cnt << std::endl;
-    while (cnt < nAllTx || !g_pbft->mapTxDelayed.empty()) {
-        if (ShutdownRequested())
-            break;
-        cnt += sendQueuedTx(startBlock, noop_count, batchBuffers, reqSentCnt, txPlacer, placementMethod);
+    /* send remaing tx. For time measurement only */
+    //std::cout << "remaining tx cnt to send = " << nAllTx - cnt << std::endl;
+    //while (cnt < nAllTx || !g_pbft->mapTxDelayed.empty()) {
+    //    if (ShutdownRequested())
+    //        break;
+    //    cnt += sendQueuedTx(startBlock, noop_count, batchBuffers, reqSentCnt, txPlacer, placementMethod);
 
-        /* add all req in our local batch buffer to the global batch buffer. */
-        for (uint i = 0; i < batchBuffers.size(); i++) {
-            std::deque<std::shared_ptr<CClientReq>>& shardBatchBuffer = batchBuffers[i];
-            if (!shardBatchBuffer.empty()) {
-                pbft.add2BatchOnlyBuffered(i, shardBatchBuffer);
-            }
-        }
+    //    /* add all req in our local batch buffer to the global batch buffer. */
+    //    for (uint i = 0; i < batchBuffers.size(); i++) {
+    //        std::deque<std::shared_ptr<CClientReq>>& shardBatchBuffer = batchBuffers[i];
+    //        if (!shardBatchBuffer.empty()) {
+    //            pbft.add2BatchOnlyBuffered(i, shardBatchBuffer);
+    //        }
+    //    }
 
-        usleep(200);
-    }
+    //    usleep(200);
+    //}
 
     gettimeofday(&end_time_all_block, NULL);
     std::cout << __func__ << ": thread " << thread_idx << " sent " << cnt << " tx in total. All tx of this thread takes " << (end_time_all_block.tv_sec - start_time_all_block.tv_sec)*1000000 + (end_time_all_block.tv_usec - start_time_all_block.tv_usec) << " us. Totally sentReqCnt = " << reqSentCnt << ". Block " << startBlock << "~" << endBlock << " have tx cnt = " << nAllTx << ", noop cnt = " << noop_count << std::endl;
