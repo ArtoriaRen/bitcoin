@@ -1157,3 +1157,13 @@ std::string TxIndexOnChain::ToString() const {
 
 DependencyRecord::DependencyRecord(): tx(), prereq_tx() { }
 DependencyRecord::DependencyRecord(const uint32_t block_height, const uint32_t offset_in_block, const TxIndexOnChain& latest_prereq_tx_in): tx(block_height, offset_in_block), prereq_tx(latest_prereq_tx_in) { }
+
+uint TxPlacer::countInputTx(const CTransactionRef pTx) {
+        /* find all parent tx. */
+        std::unordered_set<uint256, uint256Hasher> preReqTxs;
+        for (uint32_t i = 0; i < pTx->vin.size(); i++) {
+            const uint256& parentTxid = pTx->vin[i].prevout.hash;
+            preReqTxs.emplace(parentTxid);
+        }
+        return preReqTxs.size();
+}

@@ -199,6 +199,34 @@ static void printPlacementRes(const int nSingleShard, const int nCrossShard, con
     std::cout << maxTxCnt - minTxCnt << std::endl;
 }
 
+UniValue countInputTx(const JSONRPCRequest& request) {
+
+    if (request.fHelp || request.params.size() != 2)
+        throw std::runtime_error(
+            "countInputTx\n"
+            "\nReturns number of tx with 1 input tx. \n"
+            "\nExamples:\n"
+            + HelpExampleCli("countInputTx", "<start_block_height>, <end_block_height>")
+            + HelpExampleRpc("countInputTx", "<start_block_height>, <end_block_height>")
+        );
+    int startHeight = request.params[0].get_int();
+    int endHeight = request.params[1].get_int();
+    TxPlacer txPlacer;
+    std::map<uint, uint> mapInputTxCnt; // < input_utxo_count, tx_count>
+    for (int i = startHeight; i < endHeight; i++) {
+        CBlockIndex* pblockindex = chainActive[i];
+        CBlock block;
+        if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
+            std::cerr << "Block not found on disk" << std::endl;
+        }
+        for(int j = 0; j < block.vtx.size(); j++) {
+             mapInputTxCnt[txPlacer.countInputTx(block.vtx[j])]++;
+        }
+    }
+
+    return countInputTx[1];
+}
+
 UniValue placetxHashing(const JSONRPCRequest& request) {
 
     if (request.fHelp || request.params.size() != 2)
@@ -1971,6 +1999,7 @@ static const CRPCCommand commands[] =
     { "blockchain",         "preciousblock",          &preciousblock,          {"blockhash"} },
 
     { "blockchain",         "sendtxinblocks",         &sendtxinblocks,         {"startblockheight","endblockheight","sendrate","nthreads","placementMethod"} },
+    { "blockchain",         "countInputTx",           &countInputTx,           {"startblockheight","endblockheight"} },
     { "blockchain",         "placetxHashing",         &placetxHashing,         {"startblockheight","endblockheight"} },
     { "blockchain",         "placetxOptchain",        &placetxOptchain,        {"startblockheight","endblockheight"} },
     { "blockchain",         "placetxCount",           &placetxCount,           {"startblockheight","endblockheight"} },

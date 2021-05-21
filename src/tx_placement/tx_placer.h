@@ -129,6 +129,8 @@ public:
 
     std::vector<int32_t> firstUtxoPlace_LB(const CTransactionRef pTx, std::deque<std::vector<uint32_t>>& vShardUtxoIdxToLock);
 
+    uint countInputTx(const CTransactionRef pTx);
+
     void updateLoadScore(uint shard_id, ClientReqType reqType, uint nSigs);
     void printPlaceResult();
     void printTxSendRes();
