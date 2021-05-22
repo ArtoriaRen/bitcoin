@@ -1021,36 +1021,47 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
     bool isSingleShard = false;
         switch (placementMethod) {
             case 0: 
+                std::cout << "optchainPlace" << std::endl;
                 shards = txPlacer.optchainPlace(tx, vShardUtxoIdxToLock);
                 break;
             case 1:
+                std::cout << "mostInputUTXOPlace" << std::endl;
                 shards = txPlacer.mostInputUTXOPlace(tx, vShardUtxoIdxToLock);
                 break;
             case 2:
+                std::cout << "mostInputValuePlace" << std::endl;
                 shards = txPlacer.mostInputValuePlace(tx, vShardUtxoIdxToLock);
                 break;
             case 3:
+                std::cout << "firstUtxoPlace" << std::endl;
                 shards = txPlacer.firstUtxoPlace(tx, vShardUtxoIdxToLock);
                 break;
             case 4:
+                std::cout << "HPtoInputShard" << std::endl;
                 shards = txPlacer.HPtoInputShard(tx, vShardUtxoIdxToLock);
                 break;
             case 5:
+                std::cout << "HPOnlyCrossShardTx" << std::endl;
                 shards = txPlacer.HPOnlyCrossShardTx(tx, vShardUtxoIdxToLock);
                 break;
             case 6:
+                std::cout << "hashingPlace" << std::endl;
                 shards = txPlacer.hashingPlace(tx, vShardUtxoIdxToLock);
                 break;
             case 7: 
+                std::cout << "optchainPlace_LB" << std::endl;
                 shards = txPlacer.optchainPlace_LB(tx, vShardUtxoIdxToLock);
                 break;
             case 8:
+                std::cout << "mostInputUTXOPlace_LB" << std::endl;
                 shards = txPlacer.mostInputUTXOPlace_LB(tx, vShardUtxoIdxToLock);
                 break;
             case 9:
+                std::cout << "mostInputValuePlace_LB" << std::endl;
                 shards = txPlacer.mostInputValuePlace_LB(tx, vShardUtxoIdxToLock);
                 break;
             case 10:
+                std::cout << "firstUtxoPlace_LB" << std::endl;
                 shards = txPlacer.firstUtxoPlace_LB(tx, vShardUtxoIdxToLock);
                 break;
             default:
@@ -1159,6 +1170,9 @@ DependencyRecord::DependencyRecord(): tx(), prereq_tx() { }
 DependencyRecord::DependencyRecord(const uint32_t block_height, const uint32_t offset_in_block, const TxIndexOnChain& latest_prereq_tx_in): tx(block_height, offset_in_block), prereq_tx(latest_prereq_tx_in) { }
 
 uint TxPlacer::countInputTx(const CTransactionRef pTx) {
+        if (pTx->IsCoinBase()) {
+            return 0;
+        }
         /* find all parent tx. */
         std::unordered_set<uint256, uint256Hasher> preReqTxs;
         for (uint32_t i = 0; i < pTx->vin.size(); i++) {

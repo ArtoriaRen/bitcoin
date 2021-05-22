@@ -224,7 +224,55 @@ UniValue countInputTx(const JSONRPCRequest& request) {
         }
     }
 
-    return countInputTx[1];
+    /* print the input tx count of all tx */
+    for (const auto& entry: mapInputTxCnt) {
+        std::cout << entry.first << ", " << entry.second << std::endl;
+    }
+
+    return NullUniValue;
+}
+
+UniValue cnt1ParentCrossShardTx(const JSONRPCRequest& request) {
+
+    if (request.fHelp || request.params.size() != 2)
+        throw std::runtime_error(
+            "placetx\n"
+            "\nReturns number of cross-shard tx\n"
+            "\nExamples:\n"
+            + HelpExampleCli("placetx", "<start_block_height>, <end_block_height>")
+            + HelpExampleRpc("placetx", "<start_block_height>, <end_block_height>")
+        );
+    int startHeight = request.params[0].get_int();
+    int endHeight = request.params[1].get_int();
+    int nSingleShard = 0, nCrossShard = 0, n1ParentCrossShard = 0, n1ParenTx = 0;
+    TxPlacer txPlacer;
+    std::cout<< __func__ << std::endl;
+    for (int i = startHeight; i < endHeight; i++) {
+        CBlockIndex* pblockindex = chainActive[i];
+        CBlock block;
+        if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
+            std::cerr << "Block not found on disk" << std::endl;
+        }
+        for(int j = 0; j < block.vtx.size(); j++) {
+            std::deque<std::vector<uint32_t>> vShardUtxoIdxToLock;
+            std::vector<int32_t> shards = txPlacer.hashingPlace(block.vtx[j], vShardUtxoIdxToLock);
+            if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
+                nSingleShard++;
+                if (txPlacer.countInputTx(block.vtx[j]) == 1) {
+                    n1ParenTx++;
+                }
+            } else {
+                nCrossShard++;
+                if (txPlacer.countInputTx(block.vtx[j]) == 1) {
+                    n1ParentCrossShard++;
+                    n1ParenTx++;
+                }
+            }
+        }
+    }
+    /* the number of single-shard tx also count coinbase tx, so we output the number of blocks as the last item, which equals the number of coinbase tx. */
+    std::cout << nSingleShard << "," <<  nCrossShard << "," << n1ParentCrossShard << "," << endHeight - startHeight << "," << n1ParenTx << std::endl;
+    return nCrossShard;
 }
 
 UniValue placetxHashing(const JSONRPCRequest& request) {
@@ -1999,6 +2047,7 @@ static const CRPCCommand commands[] =
     { "blockchain",         "preciousblock",          &preciousblock,          {"blockhash"} },
 
     { "blockchain",         "sendtxinblocks",         &sendtxinblocks,         {"startblockheight","endblockheight","sendrate","nthreads","placementMethod"} },
+    { "blockchain",         "cnt1ParentCrossShardTx", &cnt1ParentCrossShardTx, {"startblockheight","endblockheight"} },
     { "blockchain",         "countInputTx",           &countInputTx,           {"startblockheight","endblockheight"} },
     { "blockchain",         "placetxHashing",         &placetxHashing,         {"startblockheight","endblockheight"} },
     { "blockchain",         "placetxOptchain",        &placetxOptchain,        {"startblockheight","endblockheight"} },
