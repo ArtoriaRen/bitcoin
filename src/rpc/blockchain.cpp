@@ -275,7 +275,7 @@ UniValue cnt1ParentCrossShardTx(const JSONRPCRequest& request) {
     return nCrossShard;
 }
 
-static std::vector<int32_t> placeTXwithMethod (TxPlacer txPlacer, CTransactionRef pTx, uint placementMethod) {
+static std::vector<int32_t> placeTXwithMethod (TxPlacer& txPlacer, CTransactionRef pTx, uint placementMethod) {
     std::deque<std::vector<uint32_t>> vShardUtxoIdxToLock;
     switch (placementMethod) {
         case 0: 
@@ -317,7 +317,6 @@ UniValue placetx(const JSONRPCRequest& request) {
     std::deque<std::string>();
     int nSingleShard = 0, nCrossShard = 0;
     TxPlacer txPlacer;
-    std::cout<< __func__ << std::endl;
     for (int i = startHeight; i < endHeight; i++) {
         CBlockIndex* pblockindex = chainActive[i];
         CBlock block;
@@ -1630,6 +1629,12 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
     g_pbft->loadBlocks(txStartBlock, txEndBlock);
     assert(num_threads >= 1);
     std::deque<std::thread> vThread;
+
+    std::string methods[11] = {"optchainPlace", "mostInputUTXOPlace", "mostInputValuePlace", 
+                                "firstUtxoPlace", "HPtoInputShard", "HPOnlyCrossShardTx", 
+                                "hashingPlace", "optchainPlace_LB", "mostInputUTXOPlace_LB",
+                                "mostInputValuePlace_LB", "firstUtxoPlace_LB"};
+    std::cout << methods[placementMethod] << std::endl;
 
     struct timeval startTime, endTime;
 
