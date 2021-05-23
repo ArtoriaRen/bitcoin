@@ -70,6 +70,10 @@ void WaitForShutdown()
 		pbft.vLoad.print();
                 std::cout << std::endl;
 	    }
+            if (pbft.placementMethod == 5) {
+            /* probe shard leaders to get communication latency and verification latency */
+                pbft.probeShardLatency();
+            }
 	}
         testFinished = testFinishedNew;
         fShutdown = ShutdownRequested();

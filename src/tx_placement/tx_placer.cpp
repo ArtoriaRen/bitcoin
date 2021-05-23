@@ -938,14 +938,6 @@ void TxPlacer::printTxSendRes() {
     std::cout << "shard MAX tx cnt = " << maxTxCnt << ", shard MIN tx cnt = " << minTxCnt << ", difference = " << maxTxCnt- minTxCnt << ", MAX load score = " << maxScore << ", MIN load score = " << minScore << ", score diff = " << maxScore - minScore << std::endl;
 }
 
-static void probeShardLatency() {
-    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-    for (uint i = 0; i < num_committees; i++) {
-        gettimeofday(&(g_pbft->expected_tx_latency[i].probe_send_time), NULL);
-        g_connman->PushMessage(g_pbft->leaders[i], msgMaker.Make(NetMsgType::LATENCY_PROBE));
-        //std::cout << "send probe to shard " << i << std::endl;
-    }
-}
 
 void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thread_idx, const uint32_t num_threads, const int noop_count, const uint placementMethod) {
     RenameThread(("sendTx" + std::to_string(thread_idx)).c_str());
@@ -954,16 +946,13 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
     std::vector<std::deque<std::shared_ptr<CClientReq>>> batchBuffers(num_committees);
     TxPlacer txPlacer;
     CPbft& pbft = *g_pbft;
+    pbft.placementMethod = placementMethod;
     struct timeval start_time, end_time;
     struct timeval start_time_all_block, end_time_all_block;
     gettimeofday(&start_time_all_block, NULL);
     for (int block_height = startBlock; block_height < endBlock; block_height++) {
         if (ShutdownRequested())
             break;
-        if (placementMethod == 5) {
-        /* probe shard leaders to get communication latency and verification latency */
-            probeShardLatency();
-        }
         CBlock& block = g_pbft->blocks2Send[block_height - startBlock];
         for (size_t i = thread_idx * txChunkSize; i < block.vtx.size(); i += jump_length){
             //std::cout << __func__ << ": thread " << thread_idx << " sending No." << i << " tx in block " << block_height << std::endl;

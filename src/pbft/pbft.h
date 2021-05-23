@@ -274,6 +274,7 @@ public:
     std::vector<CReqBatch> batchBuffers;
     std::vector<std::mutex> vBatchBufferMutex; /* guard access to batchBuffers by tx_sending threads and the msg_pushing thread. */
     std::vector<CShardLatency> expected_tx_latency;
+    uint placementMethod;
 
     CPbft();
     ~CPbft();
@@ -283,6 +284,7 @@ public:
     void add2BatchOnlyBuffered(const uint32_t shardId, std::deque<std::shared_ptr<CClientReq>>& threadLocalBatchBuffer);
     /* called by the rpc thread to load all blocks about to send. */
     void loadBlocks(uint32_t startBlock, uint32_t endBlock);
+    void probeShardLatency();
 
 private:
     // private ECDSA key used to sign messages

@@ -259,4 +259,13 @@ void CPbft::loadBlocks(uint32_t startBlock, uint32_t endBlock) {
 
 CShardLatency::CShardLatency(): latency(0){ }
 
+void CPbft::probeShardLatency() {
+    const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
+    for (uint i = 0; i < num_committees; i++) {
+        gettimeofday(&(expected_tx_latency[i].probe_send_time), NULL);
+        g_connman->PushMessage(leaders[i], msgMaker.Make(NetMsgType::LATENCY_PROBE));
+        //std::cout << "send probe to shard " << i << std::endl;
+    }
+}
+
 std::unique_ptr<CPbft> g_pbft;
