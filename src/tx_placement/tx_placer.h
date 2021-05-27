@@ -24,6 +24,11 @@ extern std::atomic<uint32_t> totalTxSent;
 extern std::atomic<uint32_t> globalReqSentCnt;
 extern bool sendingDone;
 extern uint32_t num_committees;
+extern float optchain_LB_weight;
+/* once the max load score difference/ average load score grows greater 
+ * than this threshold, assign tx to its lowest-load-score input shard. 
+ */
+extern float mostUTXO_LB_thld;
 extern int lastAssignedAffinity;
 //extern uint32_t txStartBlock;
 //extern uint32_t txEndBlock;
@@ -87,9 +92,6 @@ public:
 
     /* the load score of each shard. */
     std::vector<uint> loadScores;
-    /* once the max load score difference grows greater than this threshold, assign tx
-     * to its lowest-load-score input shard. */
-    uint loadBalancingthld;
 
     /* return the number of shards that input UTXOs and output UTXOs span */
     TxPlacer();

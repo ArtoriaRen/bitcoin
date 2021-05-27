@@ -143,7 +143,7 @@ bool CPbft::checkReplySig(const CReply* pReply) const {
 void CPbft::logThruput(struct timeval& endTime) {
     if (testStartTime.tv_sec == 0) {
 	/* test just started. log the start time */
-        thruputFile << endTime.tv_sec << "." << endTime.tv_usec << ", sending tx starts.\n";
+        thruputFile << endTime.tv_sec << "." << endTime.tv_usec << ",0,0 \n";
 	testStartTime = endTime;
 	/* log when thruInterval has passed by  */
 	nextLogTime = endTime + thruInterval;
@@ -174,17 +174,29 @@ void CPbft::add2Batch(const uint32_t shardId, const ClientReqType type, const CT
     if (vBatchBufferMutex[shardId].try_lock()) {
         uint batchBufferSize = batchBuffers[shardId].vPReq.size();
         if (batchBufferSize < MAX_BATCH_SIZE) {
-            uint32_t appendSize = (MAX_BATCH_SIZE - batchBufferSize) > threadLocalBatchBuffer.size() ? threadLocalBatchBuffer.size() : (MAX_BATCH_SIZE - batchBufferSize);
-            batchBuffers[shardId].vPReq.insert(batchBuffers[shardId].vPReq.end(), threadLocalBatchBuffer.begin(), threadLocalBatchBuffer.begin() + appendSize);
-            batchBuffers[shardId].vPReq.push_back(req);
-            vBatchBufferMutex[shardId].unlock();
-            threadLocalBatchBuffer.erase(threadLocalBatchBuffer.begin(), threadLocalBatchBuffer.begin() + appendSize);
+            if ((MAX_BATCH_SIZE - batchBufferSize) >= threadLocalBatchBuffer.size()) {
+                /* we can add all thread locally buffered item to the global buffer,
+                 * and then add this req. 
+                 */
+                batchBuffers[shardId].vPReq.insert(batchBuffers[shardId].vPReq.end(), threadLocalBatchBuffer.begin(), threadLocalBatchBuffer.end());
+                batchBuffers[shardId].vPReq.push_back(req);
+                vBatchBufferMutex[shardId].unlock();
+                threadLocalBatchBuffer.clear();
+            } else {
+                uint appendSize = MAX_BATCH_SIZE - batchBufferSize;
+                batchBuffers[shardId].vPReq.insert(batchBuffers[shardId].vPReq.end(), threadLocalBatchBuffer.begin(), threadLocalBatchBuffer.begin() + appendSize);
+                vBatchBufferMutex[shardId].unlock();
+                threadLocalBatchBuffer.erase(threadLocalBatchBuffer.begin(), threadLocalBatchBuffer.begin() + appendSize);
+                threadLocalBatchBuffer.push_back(req);
+            }
         } else {
             vBatchBufferMutex[shardId].unlock();
             threadLocalBatchBuffer.push_back(req);
+            //std::cout << __func__ << " add to thread local buffer tx = " << req->pTx->GetHash().ToString() << std::endl;
         }
     } else {
         threadLocalBatchBuffer.push_back(req);
+        //std::cout << __func__ << " add to thread local buffer tx = " << req->pTx->GetHash().ToString() << std::endl;
     }
 }
 
@@ -225,7 +237,7 @@ void sendAllBatch() {
                     const uint256& hashTx =  pbft.batchBuffers[shardId].vPReq[i]->pTx->GetHash();
                     /* all req in the batch have the same start time. */
                     gettimeofday(&(pbft.mapTxStartTime[hashTx].startTime), NULL);
-                    //std::cout << __func__ << ": sending tx " << hashTx.ToString() << std::endl;
+                    //std::cout << __func__ << ": sending tx " << hashTx.ToString() << " to shard " << shardId << std::endl;
                 }
                 struct timeval start, end;
                 totalPushMessageCnt += pbft.batchBuffers[shardId].vPReq.size();

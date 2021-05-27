@@ -24,6 +24,8 @@ bool sendingDone = false;
 static const uint32_t SEC = 1000000; // 1 sec = 10^6 microsecond
 
 uint32_t num_committees;
+float optchain_LB_weight;
+float mostUTXO_LB_thld;
 int lastAssignedAffinity = -1;
 /* txChunkSize * numThreads should be less than block size. Otherwise, some thread
  * has nothing to do. We should consertively set the num of threads less than 20 
@@ -33,7 +35,7 @@ size_t txChunkSize = 100;
 //uint32_t txStartBlock;
 //uint32_t txEndBlock;
 
-TxPlacer::TxPlacer():totalTxNum(0), alpha(0.5f), vecShardTxCount(num_committees, 0), loadScores(num_committees, 0), loadBalancingthld(50000000) {}
+TxPlacer::TxPlacer():totalTxNum(0), alpha(0.5f), vecShardTxCount(num_committees, 0), loadScores(num_committees, 0) {}
 
 
 /* all output UTXOs of a tx is stored in one shard. */
@@ -483,9 +485,11 @@ std::vector<int32_t> TxPlacer::HPOnlyCrossShardTx(const CTransactionRef pTx, std
     return ret;
 }
 
-static uint getMaxDifference(std::vector<uint>& vec, uint& min_val_index) {
-    uint max_val = 0, min_val = UINT_MAX;
+/* return the max_difference / average_load_score */
+static float getMaxDifference(std::vector<uint>& vec, uint& min_val_index) {
+    uint max_val = 0, min_val = UINT_MAX, sum = 0;
     for(uint i = 0; i < vec.size(); i++) {
+        sum += vec[i];
         if (vec[i] > max_val) {
             max_val = vec[i]; 
         }
@@ -494,7 +498,15 @@ static uint getMaxDifference(std::vector<uint>& vec, uint& min_val_index) {
             min_val_index = i;
         }
     }
-    return max_val - min_val;
+    if (sum > 0) {
+        //std::cout << "range/avg = " << (max_val - min_val) * vec.size() / (float)sum << std::endl;
+        return (max_val - min_val) * vec.size() / (float)sum;
+    }
+    else {
+        /* if sum == 0, then every element must be 0. */
+        //std::cout << "sum is 0" << std::endl;
+        return 0;
+    }
 }
 
 std::vector<int32_t> TxPlacer::optchainPlace_LB(const CTransactionRef pTx, std::deque<std::vector<uint32_t>>& vShardUtxoIdxToLock) {
@@ -544,9 +556,12 @@ std::vector<int32_t> TxPlacer::optchainPlace_LB(const CTransactionRef pTx, std::
             placementStatus.fitnessScore[i] = p_u_prime;
             float p_u = p_u_prime / vecShardTxCount[i];
             /* calculate p(u) - 0.01 epsilon */
-            //std::cout << __func__ << ": p(u) = " << p_u << ", expected latency = " << g_pbft->expected_tx_latency[i].latency << std::endl;
-            /* normalize expected latency using num_committees and latencySum so that the latency score stays between 0~1 regradless of how long the expected latency is. */
-            float overallScore = p_u - 0.01 * num_committees * g_pbft->expected_tx_latency[i].latency / latencySum;
+            /* normalize expected latency by dividing it with average latency so that the latency score stays between 0~1 regradless of how long the expected latency is. */
+            float overallScore = p_u;
+            if (latencySum > 0) {
+                overallScore -= optchain_LB_weight * num_committees * g_pbft->expected_tx_latency[i].latency / latencySum;
+                //std::cout << __func__ << ": p(u) = " << p_u << ", expected latency = " << g_pbft->expected_tx_latency[i].latency  << ", average latency = " << latencySum / num_committees << ", overall score = " << overallScore << std::endl;
+            }
             if (overallScore > maxScore) {
                maxScore = overallScore;
                outputShard = i; 
@@ -598,7 +613,8 @@ std::vector<int32_t> TxPlacer::mostInputUTXOPlace_LB(const CTransactionRef pTx, 
 
         /* assign tx to the shard with the most number of input UTXO. */
         uint lowestScoreShard;
-        if (getMaxDifference(loadScores, lowestScoreShard) < loadBalancingthld) {
+        if (getMaxDifference(loadScores, lowestScoreShard) < mostUTXO_LB_thld) {
+            //std::cout << "low-cost path" << std::endl;
             int mostInputUtxoInAShard = 0;
             for (auto const& p: mapInputShardUTXO) {
                 if (p.second.size() > mostInputUtxoInAShard) {
@@ -607,6 +623,7 @@ std::vector<int32_t> TxPlacer::mostInputUTXOPlace_LB(const CTransactionRef pTx, 
                 }
             }
         } else {
+            //std::cout << "load-balancing path" << std::endl;
             assert(lowestScoreShard >= 0 && lowestScoreShard < num_committees);
             outputShard = lowestScoreShard;
         }
@@ -662,7 +679,7 @@ std::vector<int32_t> TxPlacer::mostInputValuePlace_LB(const CTransactionRef pTx,
 
         /* assign tx to the shard with the most input value. */
         uint lowestScoreShard;
-        if (getMaxDifference(loadScores, lowestScoreShard) < loadBalancingthld) {
+        if (getMaxDifference(loadScores, lowestScoreShard) < mostUTXO_LB_thld) {
             CAmount maxValue = -1;
             for (auto const& p: mapInputShardUTXO) {
                 if (p.second.totalValue > maxValue) {
@@ -728,7 +745,7 @@ std::vector<int32_t> TxPlacer::firstUtxoPlace_LB(const CTransactionRef pTx, std:
 
         /* Step 2: check load balancing */
         uint lowestScoreShard;
-        if (getMaxDifference(loadScores, lowestScoreShard) >= loadBalancingthld) {
+        if (getMaxDifference(loadScores, lowestScoreShard) >= mostUTXO_LB_thld) {
             assert(lowestScoreShard >= 0 && lowestScoreShard < num_committees);
             outputShard = lowestScoreShard;
         }

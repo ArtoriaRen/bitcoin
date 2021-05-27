@@ -70,7 +70,7 @@ void WaitForShutdown()
 		pbft.vLoad.print();
                 std::cout << std::endl;
 	    }
-            if (pbft.placementMethod == 5) {
+            if (pbft.placementMethod == 7) {
             /* probe shard leaders to get communication latency and verification latency */
                 pbft.probeShardLatency();
             }
@@ -83,17 +83,17 @@ void WaitForShutdown()
     pbft.vLoad.print();
     std::cout << std::endl;
 
-    std::cout << "mapTxDelayed cnt = " << pbft.mapTxDelayed.size() << ", txns are :" << std::endl;
+    //std::cout << "mapTxDelayed cnt = " << pbft.mapTxDelayed.size() << ", txns are :" << std::endl;
     //for (const auto& entry: pbft.mapTxDelayed) {
     //    std::cout <<  entry.first.ToString() << std::endl;
     //}
 
-    std::cout << "unsent dependent tx cnt = " << pbft.mapRemainingPrereq.size() << ", ready to send dependent tx cnt = " <<  pbft.commitSentTxns.size() << std::endl;
-    if (!pbft.mapRemainingPrereq.empty()) {
-        const TxIndexOnChain& tx_idx = pbft.mapRemainingPrereq.begin()->first;
-        const uint256& hash_first_tx = g_pbft->blocks2Send[tx_idx.block_height].vtx[tx_idx.offset_in_block]->GetHash();
-        std::cout << "first dependent tx = " << tx_idx.ToString() << ": " << hash_first_tx.ToString() << ", remaining prereq tx cnt = " << pbft.mapRemainingPrereq.begin()->second << std::endl;
-    }
+    //std::cout << "unsent dependent tx cnt = " << pbft.mapRemainingPrereq.size() << ", ready to send dependent tx cnt = " <<  pbft.commitSentTxns.size() << std::endl;
+    //if (!pbft.mapRemainingPrereq.empty()) {
+    //    const TxIndexOnChain& tx_idx = pbft.mapRemainingPrereq.begin()->first;
+    //    const uint256& hash_first_tx = g_pbft->blocks2Send[tx_idx.block_height].vtx[tx_idx.offset_in_block]->GetHash();
+    //    std::cout << "first dependent tx = " << tx_idx.ToString() << ": " << hash_first_tx.ToString() << ", remaining prereq tx cnt = " << pbft.mapRemainingPrereq.begin()->second << std::endl;
+    //}
     Interrupt();
 }
 

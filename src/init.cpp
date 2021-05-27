@@ -809,6 +809,14 @@ void InitParameterInteraction()
     if (gArgs.IsArgSet("-numcommittees")) {
         num_committees = gArgs.GetArg("-numcommittees", 2);
     }
+    if (gArgs.IsArgSet("-optchainweight")) {
+        optchain_LB_weight = std::stof(gArgs.GetArg("-optchainweight", "0"));
+        std::cout << "optchain_LB_weight = " << optchain_LB_weight << std::endl;
+    }
+    if (gArgs.IsArgSet("-mostUTXOthld")) {
+        mostUTXO_LB_thld = std::stof(gArgs.GetArg("-mostUTXOthld", "10"));
+        std::cout << "mostUTXO_LB_thld = " << mostUTXO_LB_thld << std::endl;
+    }
     if (gArgs.IsArgSet("-pbftid")) {
         pbftID = gArgs.GetArg("-pbftid", -1);
     }
