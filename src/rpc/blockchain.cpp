@@ -245,7 +245,8 @@ UniValue count1ParentTxAndAllTx(const JSONRPCRequest& request) {
     int endHeight = request.params[1].get_int();
     TxPlacer txPlacer;
     uint cntOneParentTx = 0, cntAllTx = 0;
-    int printStep = 10000, cntBlk = 0; // print and clear cnt result per 10k blocks
+    int printStep = 20000, cntBlk = 0; // print and clear cnt result per 10k blocks
+    std::cout << "block_height,one_parent_tx,all_tx" << std::endl;
     for (int i = startHeight; i < endHeight; i++) {
         CBlockIndex* pblockindex = chainActive[i];
         CBlock block;
@@ -281,7 +282,7 @@ UniValue count1ParentTxAndAllTx(const JSONRPCRequest& request) {
         }
 
         if (++cntBlk == printStep) {
-            std::cout << cntOneParentTx << ", " << cntAllTx << std::endl;
+            std::cout << i << "," << cntOneParentTx << "," << cntAllTx << std::endl;
             cntBlk = 0;
             cntOneParentTx = 0; 
             cntAllTx = 0;
