@@ -232,6 +232,65 @@ UniValue countInputTx(const JSONRPCRequest& request) {
     return NullUniValue;
 }
 
+UniValue count1ParentTxAndAllTx(const JSONRPCRequest& request) {
+    if (request.fHelp || request.params.size() != 2)
+        throw std::runtime_error(
+            "countInputTx\n"
+            "\nReturns number of tx with 1 input tx. \n"
+            "\nExamples:\n"
+            + HelpExampleCli("countInputTx", "<start_block_height>, <end_block_height>")
+            + HelpExampleRpc("countInputTx", "<start_block_height>, <end_block_height>")
+        );
+    int startHeight = request.params[0].get_int();
+    int endHeight = request.params[1].get_int();
+    TxPlacer txPlacer;
+    uint cntOneParentTx = 0, cntAllTx = 0;
+    int printStep = 10000, cntBlk = 0; // print and clear cnt result per 10k blocks
+    for (int i = startHeight; i < endHeight; i++) {
+        CBlockIndex* pblockindex = chainActive[i];
+        CBlock block;
+        if (!ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) {
+            std::cerr << "Block not found on disk" << std::endl;
+        }
+        for(int j = 0; j < block.vtx.size(); j++) {
+            CTransactionRef pTx = block.vtx[j];
+            if (pTx->IsCoinBase()) {
+                continue;
+            }
+            /* since most tx has only one input UTXO, this condition check should
+             * speed up the counting.
+             */
+            if (pTx->vin.size() == 1){
+                cntOneParentTx++;
+                cntAllTx++;
+                continue;
+            }
+            const uint256& firstParent = pTx->vin[0].prevout.hash;
+            bool metSecondParent = false;
+            for (uint32_t i = 1; i < pTx->vin.size(); i++) {
+                const uint256& parentTxid = pTx->vin[i].prevout.hash;
+                if (pTx->vin[i].prevout.hash != firstParent) {
+                    metSecondParent = true;
+                    break;
+                }
+            }
+            if (!metSecondParent) {
+                cntOneParentTx++;
+            }
+            cntAllTx++;
+        }
+
+        if (++cntBlk == printStep) {
+            std::cout << cntOneParentTx << ", " << cntAllTx << std::endl;
+            cntBlk = 0;
+            cntOneParentTx = 0; 
+            cntAllTx = 0;
+        }
+    }
+
+    return NullUniValue;
+}
+
 UniValue cnt1ParentCrossShardTx(const JSONRPCRequest& request) {
 
     if (request.fHelp || request.params.size() != 2)
@@ -1932,6 +1991,7 @@ static const CRPCCommand commands[] =
     { "blockchain",         "sendtxinblocks",         &sendtxinblocks,         {"startblockheight","endblockheight","sendrate","nthreads","placementMethod"} },
     { "blockchain",         "cnt1ParentCrossShardTx", &cnt1ParentCrossShardTx, {"startblockheight","endblockheight"} },
     { "blockchain",         "countInputTx",           &countInputTx,           {"startblockheight","endblockheight"} },
+    { "blockchain",         "count1ParentTxAndAllTx", &count1ParentTxAndAllTx, {"startblockheight","endblockheight"} },
     { "blockchain",         "placetx",                &placetx,                {"startblockheight","endblockheight", "place_method"} },
     { "blockchain",         "gendependgraph",         &gendependgraph,         {"endblockheight"} },
     { "blockchain",         "printdependgraph",       &printdependgraph,       {} },

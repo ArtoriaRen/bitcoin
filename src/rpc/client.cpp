@@ -58,6 +58,8 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "cnt1ParentCrossShardTx", 1, "endblockheight" },
     { "countInputTx", 0, "startblockheight" },
     { "countInputTx", 1, "endblockheight" },
+    { "count1ParentTxAndAllTx", 0, "startblockheight" },
+    { "count1ParentTxAndAllTx", 1, "endblockheight" },
     { "placetx", 0, "startblockheight" },
     { "placetx", 1, "endblockheight" },
     { "placetx", 2, "place_method" },
