@@ -106,14 +106,16 @@ void ThreadSafeVector::print() {
         std::cout << " shard " << i << " = " << vector_[i];
 }
 
-CPbft::CPbft() : leaders(num_committees), pubKeys(num_committees * groupSize), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nSucceed(0), nFail(0), nCommitted(0), nAborted(0), vLoad(num_committees, 0), batchBuffers(num_committees), vBatchBufferMutex(num_committees), expected_tx_latency(num_committees), privateKey(CKey()) {
+CPbft::CPbft() : leaders(num_committees), pubKeys(num_committees * groupSize), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nSucceed(0), nFail(0), nCommitted(0), nAborted(0), vLoad(num_committees, 0), batchBuffers(num_committees), vBatchBufferMutex(num_committees), expected_tx_latency(num_committees), vecShardTxCount(num_committees, 0), privateKey(CKey()) {
     testStartTime = {0, 0};
     nextLogTime = {0, 0};
+    nextShardLoadPrintTime = {0, 0};
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     latencySingleShardFile.open("/hdd2/davina/tx_placement/latencySingleShard.out");
     latencyCrossShardFile.open("/hdd2/davina/tx_placement/latencyCrossShard.out");
     thruputFile.open("/hdd2/davina/tx_placement/thruput.out");
+    shardLoadFile.open("/hdd2/davina/tx_placement/shardLoads.out");
     recordedSentTx.open("/hdd2/davina/tx_placement/recordedSentTx.out");
 }
 
@@ -121,6 +123,7 @@ CPbft::~CPbft() {
     latencySingleShardFile.close();
     latencyCrossShardFile.close();
     thruputFile.close();
+    shardLoadFile.close();
     recordedSentTx.close();
 }
 
@@ -156,6 +159,29 @@ void CPbft::logThruput(struct timeval& endTime) {
     nextLogTime = endTime + thruInterval;
     nLastCompletedTx = nCompletedTxCopy;
     thruputFile << endTime.tv_sec << "." << endTime.tv_usec << "," << nCompletedTxCopy << "," << thruput << std::endl;
+}
+
+void CPbft::logShardLoads(struct timeval& endTime) {
+    if (testStartTime.tv_sec == 0) {
+	/* test just started. log the start time */
+        shardLoadFile << endTime.tv_sec << "." << endTime.tv_usec;
+        for (uint i = 0; i < num_committees; i++) {
+            shardLoadFile << ",0";
+        }
+        shardLoadFile << "\n";
+	/* log every 10 seconds. */
+	nextShardLoadPrintTime.tv_sec = endTime.tv_sec + 10;
+	nextShardLoadPrintTime.tv_usec = endTime.tv_usec;
+	return;
+    }
+    shardLoadFile << endTime.tv_sec << "." << endTime.tv_usec;
+    for (uint i = 0; i < num_committees; i++) {
+        shardLoadFile << "," << vecShardTxCount[i];
+    }
+    shardLoadFile << "\n";
+    /* log every 10 seconds. */
+    nextShardLoadPrintTime.tv_sec = endTime.tv_sec + 10;
+    nextShardLoadPrintTime.tv_usec = endTime.tv_usec;
 }
 
 void CPbft::add2Batch(const uint32_t shardId, const ClientReqType type, const CTransactionRef txRef, std::deque<std::shared_ptr<CClientReq>>& threadLocalBatchBuffer, const std::vector<uint32_t>* utxoIdxToLock) {

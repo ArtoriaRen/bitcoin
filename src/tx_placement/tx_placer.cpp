@@ -35,7 +35,7 @@ size_t txChunkSize = 100;
 //uint32_t txStartBlock;
 //uint32_t txEndBlock;
 
-TxPlacer::TxPlacer():totalTxNum(0), alpha(0.5f), vecShardTxCount(num_committees, 0), loadScores(num_committees, 0) {}
+TxPlacer::TxPlacer():totalTxNum(0), alpha(0.5f), loadScores(num_committees, 0) {}
 
 
 /* all output UTXOs of a tx is stored in one shard. */
@@ -116,7 +116,7 @@ std::vector<int32_t> TxPlacer::hashingPlace(const CTransactionRef pTx, std::dequ
     iter_bool_pair.first->second.placementRes = outputShard;
 
     /* increment tx count of the chosen shard. */
-    vecShardTxCount[outputShard]++;
+    g_pbft->vecShardTxCount[outputShard]++;
     
     /* prepare a resultant vector for return */
     std::vector<int32_t> ret;
@@ -170,7 +170,7 @@ std::vector<int32_t> TxPlacer::optchainPlace(const CTransactionRef pTx, std::deq
         for (uint32_t i = 0; i < num_committees; i++) {
             float p_u_prime = (1 - alpha) * sumScore[i];
             placementStatus.fitnessScore[i] = p_u_prime;
-            float p_u = p_u_prime / vecShardTxCount[i];
+            float p_u = p_u_prime / g_pbft->vecShardTxCount[i];
             //std::cout << __func__ << ": p(u) = " << p_u << std::endl;
             if (p_u > maxScore) {
                maxScore = p_u;
@@ -185,7 +185,7 @@ std::vector<int32_t> TxPlacer::optchainPlace(const CTransactionRef pTx, std::deq
     iter_bool_pair.first->second.placementRes = outputShard;
 
     /* increment tx count of the chosen shard. */
-    vecShardTxCount[outputShard]++;
+    g_pbft->vecShardTxCount[outputShard]++;
     
     placementStatus.placementRes = outputShard;
     /* prepare a resultant vector for return */
@@ -242,7 +242,7 @@ std::vector<int32_t> TxPlacer::mostInputUTXOPlace(const CTransactionRef pTx, std
     iter_bool_pair.first->second.placementRes = outputShard;
 
     /* increment tx count of the chosen shard. */
-    vecShardTxCount[outputShard]++;
+    g_pbft->vecShardTxCount[outputShard]++;
     
     /* prepare a resultant vector for return */
     std::vector<int32_t> ret;
@@ -308,7 +308,7 @@ std::vector<int32_t> TxPlacer::mostInputValuePlace(const CTransactionRef pTx, st
     iter_bool_pair.first->second.txRef = pTx;
 
     /* increment tx count of the chosen shard. */
-    vecShardTxCount[outputShard]++;
+    g_pbft->vecShardTxCount[outputShard]++;
     
     /* prepare a resultant vector for return */
     std::vector<int32_t> ret;
@@ -360,7 +360,7 @@ std::vector<int32_t> TxPlacer::firstUtxoPlace(const CTransactionRef pTx, std::de
     iter_bool_pair.first->second.txRef = pTx;
 
     /* increment tx count of the chosen shard. */
-    vecShardTxCount[outputShard]++;
+    g_pbft->vecShardTxCount[outputShard]++;
     
     /* prepare a resultant vector for return */
     std::vector<int32_t> ret;
@@ -416,7 +416,7 @@ std::vector<int32_t> TxPlacer::HPtoInputShard(const CTransactionRef pTx, std::de
     iter_bool_pair.first->second.txRef = pTx;
 
     /* increment tx count of the chosen shard. */
-    vecShardTxCount[outputShard]++;
+    g_pbft->vecShardTxCount[outputShard]++;
     
     /* prepare a resultant vector for return */
     std::vector<int32_t> ret;
@@ -471,7 +471,7 @@ std::vector<int32_t> TxPlacer::HPOnlyCrossShardTx(const CTransactionRef pTx, std
     iter_bool_pair.first->second.txRef = pTx;
 
     /* increment tx count of the chosen shard. */
-    vecShardTxCount[outputShard]++;
+    g_pbft->vecShardTxCount[outputShard]++;
     
     /* prepare a resultant vector for return */
     std::vector<int32_t> ret;
@@ -554,7 +554,7 @@ std::vector<int32_t> TxPlacer::optchainPlace_LB(const CTransactionRef pTx, std::
         for (uint32_t i = 0; i < num_committees; i++) {
             float p_u_prime = (1 - alpha) * sumScore[i];
             placementStatus.fitnessScore[i] = p_u_prime;
-            float p_u = p_u_prime / vecShardTxCount[i];
+            float p_u = p_u_prime / g_pbft->vecShardTxCount[i];
             /* calculate p(u) - 0.01 epsilon */
             /* normalize expected latency by dividing it with average latency so that the latency score stays between 0~1 regradless of how long the expected latency is. */
             float overallScore = p_u;
@@ -577,7 +577,7 @@ std::vector<int32_t> TxPlacer::optchainPlace_LB(const CTransactionRef pTx, std::
     iter_bool_pair.first->second.placementRes = outputShard;
 
     /* increment tx count of the chosen shard. */
-    vecShardTxCount[outputShard]++;
+    g_pbft->vecShardTxCount[outputShard]++;
     
     placementStatus.placementRes = outputShard;
     /* prepare a resultant vector for return */
@@ -642,7 +642,7 @@ std::vector<int32_t> TxPlacer::mostInputUTXOPlace_LB(const CTransactionRef pTx, 
     iter_bool_pair.first->second.placementRes = outputShard;
 
     /* increment tx count of the chosen shard. */
-    vecShardTxCount[outputShard]++;
+    g_pbft->vecShardTxCount[outputShard]++;
     
     /* prepare a resultant vector for return */
     std::vector<int32_t> ret;
@@ -707,7 +707,7 @@ std::vector<int32_t> TxPlacer::mostInputValuePlace_LB(const CTransactionRef pTx,
     iter_bool_pair.first->second.txRef = pTx;
 
     /* increment tx count of the chosen shard. */
-    vecShardTxCount[outputShard]++;
+    g_pbft->vecShardTxCount[outputShard]++;
     
     /* prepare a resultant vector for return */
     std::vector<int32_t> ret;
@@ -765,7 +765,7 @@ std::vector<int32_t> TxPlacer::firstUtxoPlace_LB(const CTransactionRef pTx, std:
     iter_bool_pair.first->second.txRef = pTx;
 
     /* increment tx count of the chosen shard. */
-    vecShardTxCount[outputShard]++;
+    g_pbft->vecShardTxCount[outputShard]++;
     
     /* prepare a resultant vector for return */
     std::vector<int32_t> ret;
@@ -930,7 +930,7 @@ void TxPlacer::printTxSendRes() {
     uint maxTxCnt = 0, minTxCnt = UINT_MAX; 
     //std::cout << "tx cnt in each shard : ";
     for (int i = 0; i < num_committees; i++) {
-        uint txCntInShard = vecShardTxCount[i];
+        uint txCntInShard = g_pbft->vecShardTxCount[i];
         //std::cout << i << " = " << txCntInShard << ", ";
         if (txCntInShard > maxTxCnt) {
             maxTxCnt = txCntInShard;

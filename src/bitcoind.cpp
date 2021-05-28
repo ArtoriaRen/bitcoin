@@ -61,8 +61,12 @@ void WaitForShutdown()
 	    testFinishedNew = pbft.nCompletedTx.load(std::memory_order_relaxed) + pbft.nTotalFailedTx.load(std::memory_order_relaxed) >= totalTxSent; // test has finished
 	}
 
-	/* log throughput if enough long time has elapsed. */
 	gettimeofday(&currentTime, NULL);
+        /* log shard loads*/
+	if (testStarted && !testFinished && currentTime >= pbft.nextShardLoadPrintTime) {
+	    pbft.logShardLoads(currentTime);
+	}
+	/* log throughput if enough long time has elapsed. */
 	if (testStarted && !testFinished && (currentTime >= pbft.nextLogTime || testFinishedNew)) {
 	    pbft.logThruput(currentTime);
 	    if (testFinishedNew) {

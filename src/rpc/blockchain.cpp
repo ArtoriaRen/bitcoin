@@ -187,7 +187,7 @@ static void printPlacementRes(const int nSingleShard, const int nCrossShard, con
     uint maxTxCnt = 0, minTxCnt = UINT_MAX; 
     //std::cout << "tx cnt in each shard : ";
     for (int i = 0; i < num_committees; i++) {
-        uint txCntInShard = txPlacer.vecShardTxCount[i];
+        uint txCntInShard = g_pbft->vecShardTxCount[i];
         //std::cout << i << " = " << txCntInShard << ", ";
         if (txCntInShard > maxTxCnt) {
             maxTxCnt = txCntInShard;

@@ -256,6 +256,7 @@ public:
     std::ofstream latencySingleShardFile;
     std::ofstream latencyCrossShardFile;
     std::ofstream thruputFile;
+    std::ofstream shardLoadFile;
     std::ofstream recordedSentTx;
     /* <txid, tx_start_time>
      * This map includes both single-shard and cross-shard tx.
@@ -266,6 +267,7 @@ public:
     std::atomic<uint32_t> nTotalFailedTx;
     struct timeval testStartTime;
     struct timeval nextLogTime;
+    struct timeval nextShardLoadPrintTime;
     std::atomic<uint32_t> nSucceed; /* number of single-shard committed tx */
     std::atomic<uint32_t> nFail; /* number of single-shard aborted tx */
     std::atomic<uint32_t> nCommitted; /* number of cross-shard committed tx */
@@ -275,6 +277,8 @@ public:
     std::vector<std::mutex> vBatchBufferMutex; /* guard access to batchBuffers by tx_sending threads and the msg_pushing thread. */
     std::vector<CShardLatency> expected_tx_latency;
     uint placementMethod;
+    /* the number of tx assigned to each shard. */
+    std::vector<uint> vecShardTxCount;
 
     CPbft();
     ~CPbft();
@@ -285,6 +289,7 @@ public:
     /* called by the rpc thread to load all blocks about to send. */
     void loadBlocks(uint32_t startBlock, uint32_t endBlock);
     void probeShardLatency();
+    void logShardLoads(struct timeval& endTime);
 
 private:
     // private ECDSA key used to sign messages

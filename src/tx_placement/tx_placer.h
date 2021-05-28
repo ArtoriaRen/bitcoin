@@ -87,8 +87,6 @@ public:
      * anymore. 
      */
     std::unordered_map<uint256, CPlacementStatus, uint256Hasher> mapNotFullySpentTx;
-    /* the number of tx assigned to each shard. */
-    std::vector<uint> vecShardTxCount;
 
     /* the load score of each shard. */
     std::vector<uint> loadScores;
