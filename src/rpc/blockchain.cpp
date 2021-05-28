@@ -1706,6 +1706,7 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
         //vThread.emplace_back(sendRecordedTxOfThread, txStartBlock, txEndBlock, i, num_threads, noopCount);
     }
     gettimeofday(&startTime, NULL); 
+    g_pbft->logShardLoads(startTime);
     g_pbft->logThruput(startTime);
     for (uint i = 1; i < vThread.size(); i++) {
         if (vThread[i].joinable())

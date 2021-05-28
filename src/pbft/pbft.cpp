@@ -164,11 +164,16 @@ void CPbft::logThruput(struct timeval& endTime) {
 void CPbft::logShardLoads(struct timeval& endTime) {
     if (testStartTime.tv_sec == 0) {
 	/* test just started. log the start time */
-        shardLoadFile << endTime.tv_sec << "." << endTime.tv_usec;
-        for (uint i = 0; i < num_committees; i++) {
-            shardLoadFile << ",0";
-        }
-        shardLoadFile << "\n";
+    shardLoadFile << "time";
+    for (uint i = 0; i < num_committees; i++) {
+        shardLoadFile << ",shard"<< i;
+    }
+    shardLoadFile << "\n";
+    shardLoadFile << endTime.tv_sec << "." << endTime.tv_usec;
+    for (uint i = 0; i < num_committees; i++) {
+        shardLoadFile << ",0";
+    }
+    shardLoadFile << "\n";
 	/* log every 10 seconds. */
 	nextShardLoadPrintTime.tv_sec = endTime.tv_sec + 10;
 	nextShardLoadPrintTime.tv_usec = endTime.tv_usec;
