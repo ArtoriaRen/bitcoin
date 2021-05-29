@@ -6,6 +6,7 @@
 
 #include <consensus/consensus.h>
 #include <random.h>
+#include <iostream>
 
 bool CCoinsView::GetCoin(const COutPoint &outpoint, Coin &coin) const { return false; }
 uint256 CCoinsView::GetBestBlock() const { return uint256(); }
@@ -237,6 +238,7 @@ bool CCoinsViewCache::HaveInputs(const CTransaction& tx) const
     if (!tx.IsCoinBase()) {
         for (unsigned int i = 0; i < tx.vin.size(); i++) {
             if (!HaveCoin(tx.vin[i].prevout)) {
+                std::cout << "missing input. parent tx = " << tx.vin[i].prevout.hash.ToString() << std::endl;
                 return false;
             }
         }

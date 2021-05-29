@@ -79,12 +79,14 @@ char TxReq::Execute(const int seq, CCoinsViewCache& view) const {
     gettimeofday(&start_time, NULL);
     CValidationState state;
     bool fScriptChecks = true;
-    unsigned int flags = SCRIPT_VERIFY_NONE | SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_WITNESS;
+    /* only for req processing time measure with high-height blocks. */
+    //unsigned int flags = SCRIPT_VERIFY_NONE | SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_WITNESS;
+    unsigned int flags = SCRIPT_VERIFY_NONE;
     CAmount txfee = 0;
     /* We use  INT_MAX as block height, so that we never fail coinbase 
      * maturity check. */
     if (!Consensus::CheckTxInputs(tx, state, view, INT_MAX, txfee)) {
-        std::cerr << __func__ << ": Consensus::CheckTxInputs: " << tx.GetHash().ToString() << ", " << FormatStateMessage(state) << std::endl;
+        std::cerr << __func__ << ": TxReq Consensus::CheckTxInputs: " << tx.GetHash().ToString() << ", " << FormatStateMessage(state) << std::endl;
         return 'n';
     }
     gettimeofday(&end_time, NULL);
@@ -153,7 +155,9 @@ char LockReq::Execute(const int seq, CCoinsViewCache& view) const {
     CValidationState state;
     bool fScriptChecks = true;
 //	    CBlockUndo blockundo;
-    unsigned int flags = SCRIPT_VERIFY_NONE | SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_WITNESS;
+    /* only for req processing time measure with high-height blocks. */
+    //unsigned int flags = SCRIPT_VERIFY_NONE | SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_WITNESS;
+    unsigned int flags = SCRIPT_VERIFY_NONE;
 
     /* Step 1: Check if input UTXOs to be locked are unspent.
      * We use INT_MAX as block height, so that we never fail coinbase maturity check. */
@@ -451,6 +455,7 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& 
             timeElapsed = (detail_end_time.tv_sec - detail_start_time.tv_sec) * 1000000 + (detail_end_time.tv_usec - detail_start_time.tv_usec);
             pbft.detailTime[STEP::LOCK_RES_SEND] = timeElapsed;
         } else {
+            //std::cout << "executed TX or COMMIT req of tx " << vPReq[i]->pTx->GetHash().ToString() << std::endl;
             gettimeofday(&end_time, NULL);
             /* only count TX and UNLOCK_TO_COMMIT requests */
             txCnt++;

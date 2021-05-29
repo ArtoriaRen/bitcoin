@@ -11,6 +11,7 @@
 #include <pubkey.h>
 #include <script/script.h>
 #include <uint256.h>
+#include <iostream>
 
 typedef std::vector<unsigned char> valtype;
 
@@ -306,6 +307,7 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                 opcode == OP_RSHIFT)
                 return set_error(serror, SCRIPT_ERR_DISABLED_OPCODE); // Disabled opcodes.
 
+            //std::cout << "opcode = " << opcode << std::endl;
             if (fExec && 0 <= opcode && opcode <= OP_PUSHDATA4) {
                 if (fRequireMinimal && !CheckMinimalPush(vchPushValue, opcode)) {
                     return set_error(serror, SCRIPT_ERR_MINIMALDATA);
@@ -711,8 +713,10 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                 //case OP_NOTEQUAL: // use OP_NUMNOTEQUAL
                 {
                     // (x1 x2 - bool)
-                    if (stack.size() < 2)
+                    if (stack.size() < 2) {
+                        //std::cout << "OP_EQUAL error" << std::endl;
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
+                    }
                     valtype& vch1 = stacktop(-2);
                     valtype& vch2 = stacktop(-1);
                     bool fEqual = (vch1 == vch2);
@@ -848,8 +852,10 @@ bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& 
                 case OP_HASH256:
                 {
                     // (in -- hash)
-                    if (stack.size() < 1)
+                    if (stack.size() < 1) {
+                        //std::cout << "OP_HASH160 error" << std::endl;
                         return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
+                        }
                     valtype& vch = stacktop(-1);
                     valtype vchHash((opcode == OP_RIPEMD160 || opcode == OP_SHA1 || opcode == OP_HASH160) ? 20 : 32);
                     if (opcode == OP_RIPEMD160)
@@ -1421,14 +1427,18 @@ bool VerifyScript(const CScript& scriptSig, const CScript& scriptPubKey, const C
     }
 
     std::vector<std::vector<unsigned char> > stack, stackCopy;
-    if (!EvalScript(stack, scriptSig, flags, checker, SIGVERSION_BASE, serror))
+    //std::cout << " pushing scriptSig to stack "<< std::endl;
+    if (!EvalScript(stack, scriptSig, flags, checker, SIGVERSION_BASE, serror)) {
         // serror is set
         return false;
+    }
     if (flags & SCRIPT_VERIFY_P2SH)
         stackCopy = stack;
-    if (!EvalScript(stack, scriptPubKey, flags, checker, SIGVERSION_BASE, serror))
+    //std::cout << " pushing scriptPubKey to stack "<< std::endl;
+    if (!EvalScript(stack, scriptPubKey, flags, checker, SIGVERSION_BASE, serror)) {
         // serror is set
         return false;
+    }
     if (stack.empty())
         return set_error(serror, SCRIPT_ERR_EVAL_FALSE);
     if (CastToBool(stack.back()) == false)
@@ -1472,9 +1482,12 @@ bool VerifyScript(const CScript& scriptSig, const CScript& scriptPubKey, const C
         CScript pubKey2(pubKeySerialized.begin(), pubKeySerialized.end());
         popstack(stack);
 
-        if (!EvalScript(stack, pubKey2, flags, checker, SIGVERSION_BASE, serror))
+        //std::cout << " spend-to-script-hash check "<< std::endl;
+        if (!EvalScript(stack, pubKey2, flags, checker, SIGVERSION_BASE, serror)) {
+            std::cout << " spend-to-script-hash check fail "<< std::endl;
             // serror is set
             return false;
+        }
         if (stack.empty())
             return set_error(serror, SCRIPT_ERR_EVAL_FALSE);
         if (!CastToBool(stack.back()))
