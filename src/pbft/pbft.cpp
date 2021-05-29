@@ -191,17 +191,13 @@ void CPbft::logShardLoads(struct timeval& endTime) {
 
 void CPbft::add2Batch(const uint32_t shardId, const ClientReqType type, const CTransactionRef txRef, std::deque<std::shared_ptr<CClientReq>>& threadLocalBatchBuffer, const std::vector<uint32_t>* utxoIdxToLock) {
     const uint256& hashTx = txRef->GetHash();
-    struct TxStat stat;
     std::shared_ptr<CClientReq> req;
     if (type == ClientReqType::TX) { 
-        stat.type = TxType::SINGLE_SHARD;
         req = std::make_shared<TxReq>(txRef);
     }
     else {
-        stat.type = TxType::CROSS_SHARD;
         req = std::make_shared<LockReq>(txRef, *utxoIdxToLock);
     }
-    mapTxStartTime.insert(std::make_pair(hashTx, stat));
     if (vBatchBufferMutex[shardId].try_lock()) {
         uint batchBufferSize = batchBuffers[shardId].vPReq.size();
         if (batchBufferSize < MAX_BATCH_SIZE) {
@@ -272,12 +268,12 @@ void sendAllBatch() {
                 }
                 struct timeval start, end;
                 totalPushMessageCnt += pbft.batchBuffers[shardId].vPReq.size();
-                gettimeofday(&start, NULL);
+                //gettimeofday(&start, NULL);
                 g_connman->PushMessage(pbft.leaders[shardId], msgMaker.Make(NetMsgType::REQ_BATCH, pbft.batchBuffers[shardId]));
                 pbft.batchBuffers[shardId].vPReq.clear();
                 pbft.vBatchBufferMutex[shardId].unlock();
-                gettimeofday(&end, NULL);
-                totalPushMessageTime += (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec);
+                //gettimeofday(&end, NULL);
+                //totalPushMessageTime += (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec);
             }
         }
         if (bufferEmpty) {
@@ -285,7 +281,7 @@ void sendAllBatch() {
         }
         fShutdown = ShutdownRequested();
     }
-    std::cout << "Batch-sending thread: average push message time = " << totalPushMessageTime/totalPushMessageCnt << " usec/tx. totally pushed msg cnt =  " << totalPushMessageCnt << std::endl;
+    //std::cout << "Batch-sending thread: average push message time = " << totalPushMessageTime/totalPushMessageCnt << " usec/tx. totally pushed msg cnt =  " << totalPushMessageCnt << std::endl;
 }
 
 void CPbft::loadBlocks(uint32_t startBlock, uint32_t endBlock) {

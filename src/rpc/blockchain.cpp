@@ -281,7 +281,7 @@ UniValue count1ParentTxAndAllTx(const JSONRPCRequest& request) {
             cntAllTx++;
         }
 
-        if (++cntBlk == printStep) {
+        if (++cntBlk == printStep || i == endHeight - 1) {
             std::cout << i << "," << cntOneParentTx << "," << cntAllTx << std::endl;
             cntBlk = 0;
             cntOneParentTx = 0; 
@@ -1696,7 +1696,6 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
                                 "mostInputValuePlace_LB", "firstUtxoPlace_LB"};
     std::cout << methods[placementMethod] << std::endl;
 
-    struct timeval startTime, endTime;
 
     /* a thread dedicated to pushing messages */
     vThread.emplace_back(sendAllBatch);
@@ -1705,6 +1704,7 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
         vThread.emplace_back(sendTxOfThread, txStartBlock, txEndBlock, i, num_threads, noopCount, placementMethod);
         //vThread.emplace_back(sendRecordedTxOfThread, txStartBlock, txEndBlock, i, num_threads, noopCount);
     }
+    struct timeval startTime;
     gettimeofday(&startTime, NULL); 
     g_pbft->logShardLoads(startTime);
     g_pbft->logThruput(startTime);
@@ -1714,10 +1714,6 @@ UniValue sendtxinblocks(const JSONRPCRequest& request)
     }
     sendingDone = true;
     vThread[0].join(); /* wait for the msg-pushing thread to finish. */
-    gettimeofday(&endTime, NULL);
-    long sendDuration = (endTime.tv_sec - startTime.tv_sec) * 1000000 + (endTime.tv_usec - startTime.tv_usec);
-    std::string rateStr = "sendtxinblocks: totally sent " + std::to_string(totalTxSent) +  " tx in " + std::to_string(sendDuration) + " us, sending rate = " + std::to_string((double)totalTxSent * 1000000 / sendDuration) + " tx/sec\n";
-    std::cout << rateStr;
     return NullUniValue;
 }
 

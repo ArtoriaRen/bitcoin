@@ -1885,29 +1885,34 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	//} 
 	//std::cout << __func__ << ": received PBFT_REPLY for req " << reply.digest.ToString().substr(0,10) << " from " << pfrom->GetAddrName() << std::endl;
 	g_pbft->replyMap[reply.digest]++;
-	if (g_pbft->replyMap[reply.digest] == CPbft::nFaulty + 1) {
+    if (g_pbft->replyMap[reply.digest] == CPbft::groupSize) {
+        g_pbft->replyMap.erase(reply.digest);
+    }
+	else if (g_pbft->replyMap[reply.digest] == CPbft::nFaulty + 1) {
 	    struct timeval endTime;
 	    gettimeofday(&endTime, NULL);
 	    /* ---- calculate latency ---- */
 	    if (!g_pbft->txUnlockReqMap.exist(reply.digest)) {
-		/* single-shard tx */
-		//std::cout << "txid = " << reply.digest.GetHex().substr(0, 10) << ", single-shard, mapTxStartTime.size = " << g_pbft->mapTxStartTime.size() << std::endl;
-		assert(g_pbft->mapTxStartTime.exist(reply.digest));
-		TxStat& stat = g_pbft->mapTxStartTime[reply.digest]; 
-		    
-		assert (stat.type == TxType::SINGLE_SHARD); 
-		//std::cout << "tx " << reply.digest.GetHex().substr(0,10);
-		if (reply.reply == 'y') {
-			g_pbft->nSucceed.fetch_add(1, std::memory_order_relaxed);
-            //std::cout << "remove tx (" << g_pbft->mapTxDelayed[reply.digest].blockHeight << ", " << g_pbft->mapTxDelayed[reply.digest].n << "), " << reply.digest.ToString() << " from mapTxDelayed."<< std::endl;
-			nLocalCompletedTxPerInterval++;
-		} else if (reply.reply == 'n') {
-			g_pbft->nFail.fetch_add(1, std::memory_order_relaxed);
-			nLocalTotalFailedTxPerInterval++;
-		} 
-            std::string latency = std::to_string((endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000) + "\n";
-		g_pbft->latencySingleShardFile << latency;
-        g_pbft->mapTxStartTime.erase(reply.digest);
+            /* single-shard tx */
+            //std::cout << "txid = " << reply.digest.GetHex().substr(0, 10) << ", single-shard, mapTxStartTime.size = " << g_pbft->mapTxStartTime.size() << std::endl;
+            assert(g_pbft->mapTxStartTime.exist(reply.digest));
+            TxStat& stat = g_pbft->mapTxStartTime[reply.digest]; 
+                
+            assert (stat.type == TxType::SINGLE_SHARD); 
+            //std::cout << "tx " << reply.digest.GetHex().substr(0,10);
+            if (reply.reply == 'y') {
+                g_pbft->nSucceed.fetch_add(1, std::memory_order_relaxed);
+                //std::cout << "remove tx (" << g_pbft->mapTxDelayed[reply.digest].blockHeight << ", " << g_pbft->mapTxDelayed[reply.digest].n << "), " << reply.digest.ToString() << " from mapTxDelayed."<< std::endl;
+                nLocalCompletedTxPerInterval++;
+            } else if (reply.reply == 'n') {
+                g_pbft->nFail.fetch_add(1, std::memory_order_relaxed);
+                nLocalTotalFailedTxPerInterval++;
+            } 
+                std::string latency = std::to_string((endTime.tv_sec - stat.startTime.tv_sec) * 1000 + (endTime.tv_usec - stat.startTime.tv_usec) / 1000) + "\n";
+            g_pbft->latencySingleShardFile << latency;
+            if (reply.digest.ToString() != "d5d27987d2a3dfc724e359870c6644b40e497bdc0589a033220fe15429d88599" && reply.digest.ToString() != "e3bf3d07d4b0375638d5f1db5255fe07ba2c4cb067cd81b84ee974b6585fb468") {
+                g_pbft->mapTxStartTime.erase(reply.digest);
+            }
 	    } else {
 		/* cross-shard tx */
 		auto& inputShardRplMap = g_pbft->inputShardReplyMap;

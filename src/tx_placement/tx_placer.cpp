@@ -964,7 +964,7 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
     TxPlacer txPlacer;
     CPbft& pbft = *g_pbft;
     pbft.placementMethod = placementMethod;
-    struct timeval start_time, end_time;
+    struct timeval end_time;
     struct timeval start_time_all_block, end_time_all_block;
     gettimeofday(&start_time_all_block, NULL);
     for (int block_height = startBlock; block_height < endBlock; block_height++) {
@@ -973,48 +973,45 @@ void sendTxOfThread(const int startBlock, const int endBlock, const uint32_t thr
         CBlock& block = g_pbft->blocks2Send[block_height - startBlock];
         for (size_t i = thread_idx * txChunkSize; i < block.vtx.size(); i += jump_length){
             //std::cout << __func__ << ": thread " << thread_idx << " sending No." << i << " tx in block " << block_height << std::endl;
-            gettimeofday(&start_time, NULL);
             uint32_t actual_chunk_size = sendTxChunk(block, startBlock, block_height, i, noop_count, batchBuffers, reqSentCnt, txPlacer, placementMethod);
-            gettimeofday(&end_time, NULL);
             cnt += actual_chunk_size;
-            //std::cout << __func__ << ": thread " << thread_idx << " sent " << actual_chunk_size << " tx in block " << block_height << ". The sending takes " << (end_time.tv_sec - start_time.tv_sec)*1000000 + (end_time.tv_usec - start_time.tv_usec) << " us." << std::endl;
 
             /* check delay sending tx after sending a chunk.  */
-            gettimeofday(&start_time, NULL);
             uint32_t cnt_queued_tx_sent = sendQueuedTx(startBlock, noop_count, batchBuffers, reqSentCnt, txPlacer, placementMethod);
             cnt += cnt_queued_tx_sent;
-            gettimeofday(&end_time, NULL);
-            //std::cout << "sent " <<  cnt_queued_tx_sent << " tx queued. The sending takes " << (end_time.tv_sec - start_time.tv_sec)*1000000 + (end_time.tv_usec - start_time.tv_usec) << " us." << std::endl;
         }
     }
+    gettimeofday(&end_time, NULL);
+    long sendDuration = (end_time.tv_sec - start_time_all_block.tv_sec) * 1000000 + (end_time.tv_usec - start_time_all_block.tv_usec);
+    std::string rateStr = "chunky sending ends at " + std::to_string(end_time.tv_sec) + " s. Sent " + std::to_string(cnt) +  " tx in " + std::to_string(sendDuration) + " us, sending rate = " + std::to_string((double)cnt * 1000000 / sendDuration) + " tx/sec\n";
+    std::cout << rateStr;
 
-    std::cout << end_time.tv_sec << "." << end_time.tv_usec << ", chunky sending ends.\n";
     /* calculate the total number of tx in all the blocks*/
     uint32_t nAllTx = 0;
     for (int block_height = startBlock; block_height < endBlock; block_height++) {
         nAllTx += g_pbft->blocks2Send[block_height - startBlock].vtx.size();
     }
     /* send remaing tx. For time measurement only */
-    //std::cout << "remaining tx cnt to send = " << nAllTx - cnt << std::endl;
-    //while (cnt < nAllTx || !g_pbft->mapTxDelayed.empty()) {
-    //    if (ShutdownRequested())
-    //        break;
-    //    cnt += sendQueuedTx(startBlock, noop_count, batchBuffers, reqSentCnt, txPlacer, placementMethod);
+    std::cout << "remaining tx cnt to send = " << nAllTx - cnt << std::endl;
+    while (cnt < nAllTx || !g_pbft->mapTxDelayed.empty()) {
+        if (ShutdownRequested())
+            break;
+        cnt += sendQueuedTx(startBlock, noop_count, batchBuffers, reqSentCnt, txPlacer, placementMethod);
 
-    //    /* add all req in our local batch buffer to the global batch buffer. */
-    //    for (uint i = 0; i < batchBuffers.size(); i++) {
-    //        std::deque<std::shared_ptr<CClientReq>>& shardBatchBuffer = batchBuffers[i];
-    //        if (!shardBatchBuffer.empty()) {
-    //            pbft.add2BatchOnlyBuffered(i, shardBatchBuffer);
-    //        }
-    //    }
+        /* add all req in our local batch buffer to the global batch buffer. */
+        for (uint i = 0; i < batchBuffers.size(); i++) {
+            std::deque<std::shared_ptr<CClientReq>>& shardBatchBuffer = batchBuffers[i];
+            if (!shardBatchBuffer.empty()) {
+                pbft.add2BatchOnlyBuffered(i, shardBatchBuffer);
+            }
+        }
 
-    //    usleep(200);
-    //}
+        usleep(200);
+    }
 
     gettimeofday(&end_time_all_block, NULL);
     std::cout << __func__ << ": thread " << thread_idx << " sent " << cnt << " tx in total. All tx of this thread takes " << (end_time_all_block.tv_sec - start_time_all_block.tv_sec)*1000000 + (end_time_all_block.tv_usec - start_time_all_block.tv_usec) << " us. Totally sentReqCnt = " << reqSentCnt << ". Block " << startBlock << "~" << endBlock << " have tx cnt = " << nAllTx << ", noop cnt = " << noop_count << std::endl;
-    txPlacer.printTxSendRes();
+    //txPlacer.printTxSendRes();
     totalTxSent += cnt; 
     globalReqSentCnt += reqSentCnt;
 }
@@ -1074,6 +1071,12 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 	if ((shards.size() == 2 && shards[0] == shards[1]) || shards.size() == 1) {
 	    /* this is a single shard tx */
         isSingleShard = true;
+        //if (hashTx.ToString() == "d5d27987d2a3dfc724e359870c6644b40e497bdc0589a033220fe15429d88599" || hashTx.ToString() == "e3bf3d07d4b0375638d5f1db5255fe07ba2c4cb067cd81b84ee974b6585fb468") {
+        //        std::cout << "duplicate tx (" <<  block_height << ", " << idx << ")"<< std::endl;
+        //}
+        struct TxStat stat;
+        stat.type = TxType::SINGLE_SHARD;
+        g_pbft->mapTxStartTime.insert(std::make_pair(hashTx, stat));
 	    g_pbft->add2Batch(shards[0], ClientReqType::TX, tx, batchBuffers[shards[0]]);
         reqSentCnt++;
 	    if (shards.size() != 1) {
@@ -1084,6 +1087,9 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
         //std::cout << "send TX req for tx " << hashTx.ToString() << " to shard " << shards[0] << std::endl;
 	} else {
 	    /* this is a cross-shard tx */
+        struct TxStat stat;
+        stat.type = TxType::CROSS_SHARD;
+        g_pbft->mapTxStartTime.insert(std::make_pair(hashTx, stat));
         /* add this tx to delayed sending map b/c its COMMIT req is delayed to when all input shards respond. */
         if (g_pbft->mapTxDelayed.find(hashTx) == g_pbft->mapTxDelayed.end()) {
             g_pbft->lock_tx_delayed.lock();
