@@ -37,11 +37,6 @@ struct LockReply{
 
 enum TxType {SINGLE_SHARD, CROSS_SHARD};
 
-struct TxStat{
-    TxType type;
-    struct timeval startTime;
-};
-
 class TxIndexOnChain {
 public:
     uint32_t block_height;
@@ -74,38 +69,15 @@ public:
     std::string ToString() const;
 };
 
-class TxBlockInfo{
+class TxStat {
 public:
     CTransactionRef tx;
-    uint32_t blockHeight;
-    uint32_t n;  // n-th tx in the block body
-    int32_t outputShard; // Used for resolving to which shard a unlock_to_cmt req should be sent
-    std::deque<TxIndexOnChain> childTxns;
+    /* Used for resolving to which shard a unlock_to_cmt req should be sent */
+    int32_t outputShard; 
+    struct timeval startTime;
     
-    TxBlockInfo();
-    TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn, int32_t outputShardIn = -1);
-    friend bool operator<(const TxBlockInfo& a, const TxBlockInfo& b);
-    friend bool operator>(const TxBlockInfo& a, const TxBlockInfo& b);
-};
-
-class ThreadSafeQueue {
-public:
-    ThreadSafeQueue();
-    ~ThreadSafeQueue();
-
-    TxBlockInfo& front();
-    void pop_front();
-
-    void push_back(const TxBlockInfo& item);
-    void push_back(TxBlockInfo&& item);
-
-    int size();
-    bool empty();
-
-private:
-    std::deque<TxBlockInfo> queue_;
-    std::mutex mutex_;
-    std::condition_variable cond_;
+    TxStat();
+    TxStat(CTransactionRef txIn, int32_t outputShardIn = -1);
 };
 
 template <typename K, typename V, typename Hasher>
@@ -132,6 +104,11 @@ public:
 	map_.insert(kvPair);
     }
 
+    void emplace(const K key, const V value) {
+	std::unique_lock<std::mutex> mlock(mutex_);
+	map_.emplace(key, value);
+    }
+
     void erase(const K& key) {
 	std::unique_lock<std::mutex> mlock(mutex_);
 	map_.erase(key);
@@ -146,45 +123,6 @@ public:
 private:
     std::mutex mutex_;
     std::condition_variable cond_;
-};
-
-
-/*Thread-safe min heap*/
-class ThreadSafeTxIndexSet{
-public:
-
-    /* this method does not requir the lock b/c it is only called by the init 
-     * thread before tx-sending threads are created.
-     */
-    void lock_free_insert(const TxIndexOnChain& txIdx);
-
-    /* remove an element. Called by msghand thread. */
-    void erase(const TxIndexOnChain& txIdx);
-
-    /* check if an element exist in the underlining set. 
-     * Called by tx-sending thread. 
-     */
-    bool haveTx(const TxIndexOnChain& txIdx);
-
-    size_t size();
-    bool empty();
-
-private:
-    std::set<TxIndexOnChain> set_;
-    std::mutex mutex_;
-    std::condition_variable cond_;
-};
-
-class ThreadSafeVector {
-public:
-    ThreadSafeVector(uint32_t size, double initial_val);
-
-    void add(uint32_t index, double value);
-    void print();
-
-private:
-    std::vector<double> vector_;
-    std::mutex mutex_;
 };
 
 class CShardLatency {
@@ -230,28 +168,7 @@ public:
      */
     ThreadSafeMap<uint256, uint256, BlockHasher> txUnlockReqMap; 
 
-    /* <tx_hash, tx_info>
-     * A cross-shard tx is added to this map when we send LOCK requests for it
-     * and removed from map when we send COMMIT requests for it.
-     * Tx has been delayed sending due to pending cross-shard parent tx are also added in
-     * this map.
-     */
-    std::unordered_map<uint256, TxBlockInfo, BlockHasher> mapTxDelayed;
-    
-    ThreadSafeQueue txResendQueue;
-
-    std::map<TxIndexOnChain, uint32_t> mapRemainingPrereq; // <tx, num_remaining_uncommitted_prereq_tx_cnt>
-    /* the lock protecting accessing mapTxDelayed and mapRemainingPrereq. */
-    std::mutex lock_tx_delayed;
     std::deque<CBlock> blocks2Send;
-    std::deque<std::deque<uint32_t>> indepTx2Send; /* tx without prereq tx*/
-    std::deque<CTransactionRef> commitSentTxns; /* tx with prereq tx but all prereq cleared. */
-    /* make sure the tx sending thread does not read the  depTxReady2Send when
-     * a msghand thread is inserting into it. 
-     * All threads should use trylock. In case that a trylock fails, a msghand thread
-     * temporarily buffer the tx to insert and insert all of them the next time.
-     */
-    std::mutex lock_commit_sent_txns; 
     
     std::ofstream latencySingleShardFile;
     std::ofstream latencyCrossShardFile;
@@ -261,7 +178,7 @@ public:
     /* <txid, tx_start_time>
      * This map includes both single-shard and cross-shard tx.
      */
-    ThreadSafeMap<uint256, TxStat, BlockHasher> mapTxStartTime;
+    ThreadSafeMap<uint256, TxStat, BlockHasher> mapTxStat;
     uint32_t nLastCompletedTx;
     std::atomic<uint32_t> nCompletedTx;
     std::atomic<uint32_t> nTotalFailedTx;
@@ -272,7 +189,6 @@ public:
     std::atomic<uint32_t> nFail; /* number of single-shard aborted tx */
     std::atomic<uint32_t> nCommitted; /* number of cross-shard committed tx */
     std::atomic<uint32_t> nAborted; /* number of cross-shard aborte tx */
-    ThreadSafeVector vLoad; // the load of all shards.
     std::vector<CReqBatch> batchBuffers;
     std::vector<std::mutex> vBatchBufferMutex; /* guard access to batchBuffers by tx_sending threads and the msg_pushing thread. */
     std::vector<CShardLatency> expected_tx_latency;

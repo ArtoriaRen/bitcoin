@@ -82,20 +82,8 @@ void WaitForShutdown()
     }
     /* log stats at shutdown */
     std::cout << "SUCCEED: " << pbft.nSucceed << ", FAIL: " << pbft.nFail << ", COMMITT: " << pbft.nCommitted << ", ABORT: " << pbft.nAborted << ". Single-shard tx : " << pbft.nSucceed + pbft.nFail << ", cross-shard tx: " << pbft.nCommitted + pbft.nAborted << ". total succeed = " << pbft.nSucceed + pbft.nCommitted << ", total fail = " << pbft.nFail + pbft.nAborted << ". Load score:";
-    pbft.vLoad.print();
     std::cout << std::endl;
 
-    std::cout << "mapTxDelayed cnt = " << pbft.mapTxDelayed.size() << ", txns are :" << std::endl;
-    for (const auto& entry: pbft.mapTxDelayed) {
-        std::cout <<  entry.first.ToString() << std::endl;
-    }
-
-    std::cout << "unsent dependent tx cnt = " << pbft.mapRemainingPrereq.size() << ", ready to send dependent tx cnt = " <<  pbft.commitSentTxns.size() << std::endl;
-    if (!pbft.mapRemainingPrereq.empty()) {
-        const TxIndexOnChain& tx_idx = pbft.mapRemainingPrereq.begin()->first;
-        const uint256& hash_first_tx = g_pbft->blocks2Send[tx_idx.block_height].vtx[tx_idx.offset_in_block]->GetHash();
-        std::cout << "first dependent tx = " << tx_idx.ToString() << ": " << hash_first_tx.ToString() << ", remaining prereq tx cnt = " << pbft.mapRemainingPrereq.begin()->second << std::endl;
-    }
     Interrupt();
 }
 

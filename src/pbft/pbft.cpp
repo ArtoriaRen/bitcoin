@@ -13,100 +13,10 @@
 int32_t pbftID;
 struct timeval thruInterval; // calculate throughput once every "thruInterval" seconds
 
-TxBlockInfo::TxBlockInfo(): blockHeight(0), n(0), outputShard(-1), childTxns(0) { }
-TxBlockInfo::TxBlockInfo(CTransactionRef txIn, uint32_t blockHeightIn, uint32_t nIn, int32_t outputShardIn): tx(txIn), blockHeight(blockHeightIn), n(nIn), outputShard(outputShardIn), childTxns(0) { }
+TxStat::TxStat(): outputShard(-1) { }
+TxStat::TxStat(CTransactionRef txIn, int32_t outputShardIn): tx(txIn),outputShard(outputShardIn) { }
 
-ThreadSafeQueue::ThreadSafeQueue() { }
-
-ThreadSafeQueue::~ThreadSafeQueue() { }
-
-TxBlockInfo& ThreadSafeQueue::front() {
-    std::unique_lock<std::mutex> mlock(mutex_);
-    while (queue_.empty()) {
-        cond_.wait(mlock);
-    }
-    return queue_.front();
-}
-
-void ThreadSafeQueue::pop_front() {
-    std::unique_lock<std::mutex> mlock(mutex_);
-    while (queue_.empty()) {
-        cond_.wait(mlock);
-    }
-    queue_.pop_front();
-}
-
-void ThreadSafeQueue::push_back(const TxBlockInfo& item) {
-    std::unique_lock<std::mutex> mlock(mutex_);
-    queue_.push_back(item);
-    mlock.unlock(); // unlock before notificiation to minimize mutex con
-    cond_.notify_one(); // notify one waiting thread
-
-}
-
-void ThreadSafeQueue::push_back(TxBlockInfo&& item) {
-    std::unique_lock<std::mutex> mlock(mutex_);
-    queue_.push_back(std::move(item));
-    mlock.unlock(); // unlock before notificiation to minimize mutex con
-    cond_.notify_one(); // notify one waiting thread
-
-}
-
-int ThreadSafeQueue::size() {
-    std::unique_lock<std::mutex> mlock(mutex_);
-    int size = queue_.size();
-    mlock.unlock();
-    return size;
-}
-
-bool ThreadSafeQueue::empty() {
-    std::unique_lock<std::mutex> mlock(mutex_);
-    return queue_.empty();
-}
-
-void ThreadSafeTxIndexSet::lock_free_insert(const TxIndexOnChain& txIdx) {
-    set_.insert(txIdx);
-} 
-
-void ThreadSafeTxIndexSet::erase(const TxIndexOnChain& txIdx) {
-    std::unique_lock<std::mutex> mlock(mutex_);
-    set_.erase(txIdx);
-}
-
-bool ThreadSafeTxIndexSet::haveTx(const TxIndexOnChain& txIdx) {
-    std::unique_lock<std::mutex> mlock(mutex_);
-    if (set_.find(txIdx) != set_.end()) 
-        return true;
-    else
-        return false;
-}
-
-size_t ThreadSafeTxIndexSet::size() {
-    std::unique_lock<std::mutex> mlock(mutex_);
-    const size_t size = set_.size();
-    mlock.unlock();
-    return size;
-}
-
-bool ThreadSafeTxIndexSet::empty() {
-    std::unique_lock<std::mutex> mlock(mutex_);
-    return set_.empty();
-}
-
-ThreadSafeVector::ThreadSafeVector(uint32_t size, double initial_val): vector_(size, initial_val) { }
-
-void ThreadSafeVector::add(uint32_t index, double value) {
-    std::unique_lock<std::mutex> mlock(mutex_);
-    vector_[index] += value;
-}
-
-void ThreadSafeVector::print() {
-    std::unique_lock<std::mutex> mlock(mutex_);
-    for (uint32_t i = 0; i < vector_.size(); i++)
-        std::cout << " shard " << i << " = " << vector_[i];
-}
-
-CPbft::CPbft() : leaders(num_committees), pubKeys(num_committees * groupSize), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nSucceed(0), nFail(0), nCommitted(0), nAborted(0), vLoad(num_committees, 0), batchBuffers(num_committees), vBatchBufferMutex(num_committees), expected_tx_latency(num_committees), vecShardTxCount(num_committees, 0), privateKey(CKey()) {
+CPbft::CPbft() : leaders(num_committees), pubKeys(num_committees * groupSize), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nSucceed(0), nFail(0), nCommitted(0), nAborted(0), batchBuffers(num_committees), vBatchBufferMutex(num_committees), expected_tx_latency(num_committees), vecShardTxCount(num_committees, 0), privateKey(CKey()) {
     testStartTime = {0, 0};
     nextLogTime = {0, 0};
     nextShardLoadPrintTime = {0, 0};
@@ -263,7 +173,7 @@ void sendAllBatch() {
                 for (uint i = 0; i < pbft.batchBuffers[shardId].vPReq.size(); i++) { 
                     const uint256& hashTx =  pbft.batchBuffers[shardId].vPReq[i]->pTx->GetHash();
                     /* all req in the batch have the same start time. */
-                    gettimeofday(&(pbft.mapTxStartTime[hashTx].startTime), NULL);
+                    gettimeofday(&(pbft.mapTxStat[hashTx].startTime), NULL);
                     //std::cout << __func__ << ": sending tx " << hashTx.ToString() << " to shard " << shardId << std::endl;
                 }
                 struct timeval start, end;
