@@ -63,6 +63,20 @@ void CReply::getHash(uint256& result) const {
 	    .Finalize((unsigned char*)&result);
 }
 
+bool TxReq::CheckParentTx(CCoinsViewCache& view, std::unordered_set<uint256, BlockHasher>& preReqTxs) const {
+    const CTransaction& tx = *pTx;
+    for (uint32_t i = 0; i < tx.vin.size(); i++) {
+        const uint256& parentTxid = tx.vin[i].prevout.hash;
+        if (preReqTxs.find(parentTxid) == preReqTxs.end() && !view.HaveCoin(tx.vin[i].prevout)) {
+            preReqTxs.emplace(parentTxid);
+        }
+    }
+    if (preReqTxs.empty()){
+        return true;
+    }
+    return false;
+}
+
 char TxReq::Execute(const int seq, CCoinsViewCache& view) const {
     /* -------------logic from Bitcoin code for tx processing--------- */
     const CTransaction& tx = *pTx;
@@ -139,6 +153,19 @@ const uint256 TxReq::GetDigest() const {
     //return result;
 }
 
+bool LockReq::CheckParentTx(CCoinsViewCache& view, std::unordered_set<uint256, BlockHasher>& preReqTxs) const {
+    const CTransaction& tx = *pTx;
+    for (const uint32_t utxoIdx: vInputUtxoIdxToLock) {
+        const uint256& parentTxid = tx.vin[utxoIdx].prevout.hash;
+        if (preReqTxs.find(parentTxid) == preReqTxs.end() && !view.HaveCoin(tx.vin[utxoIdx].prevout)) {
+            preReqTxs.emplace(parentTxid);
+        }
+    }
+    if (preReqTxs.empty()){
+        return true;
+    }
+    return false;
+}
 
 char LockReq::Execute(const int seq, CCoinsViewCache& view) const {
     /* we did not check if there is any input coins belonging our shard because
@@ -266,6 +293,10 @@ const uint256 UnlockToCommitReq::GetDigest() const {
 
 bool checkInputShardReplySigs(const std::vector<CInputShardReply>& vReplies);
 
+bool UnlockToCommitReq::CheckParentTx(CCoinsViewCache& view, std::unordered_set<uint256, BlockHasher>& preReqTxs) const {
+    return true;
+}
+
 char UnlockToCommitReq::Execute(const int seq, CCoinsViewCache& view) const {
     struct timeval start_time, end_time;
     uint64_t timeElapsed = 0;
@@ -375,6 +406,10 @@ const uint256 UnlockToAbortReq::GetDigest() const {
     return result;
 }
 
+bool UnlockToAbortReq::CheckParentTx(CCoinsViewCache& view, std::unordered_set<uint256, BlockHasher>& preReqTxs) const {
+    return true;
+}
+
 char UnlockToAbortReq::Execute(const int seq, CCoinsViewCache& view) const {
     if (!checkInputShardReplySigs(vNegativeReply)) {
         std::cout << __func__ << ": verify sigs fail!" << std::endl;
@@ -440,62 +475,101 @@ uint32_t CPbftBlock::Execute(const int seq, CConnman* connman, CCoinsViewCache& 
         struct timeval start_time, end_time, detail_start_time, detail_end_time;
         uint64_t timeElapsed = 0;
         gettimeofday(&start_time, NULL);
-        char exe_res = vPReq[i]->Execute(seq, view);
-        assert(exe_res == 'y');
-        if (vPReq[i]->type == ClientReqType::LOCK) {
-            gettimeofday(&detail_start_time, NULL);
-            CInputShardReply reply = pbft.assembleInputShardReply(seq, i, exe_res, ((LockReq*)vPReq[i].get())->totalValueInOfShard);
-            gettimeofday(&detail_end_time, NULL);
-            timeElapsed = (detail_end_time.tv_sec - detail_start_time.tv_sec) * 1000000 + (detail_end_time.tv_usec - detail_start_time.tv_usec);
-            pbft.detailTime[STEP::LOCK_RES_SIGN] = timeElapsed;
-            gettimeofday(&detail_start_time, NULL);
-            connman->PushMessage(pbft.client, msgMaker.Make(NetMsgType::OMNI_LOCK_REPLY, reply));
-            gettimeofday(&detail_end_time, NULL);
-            gettimeofday(&end_time, NULL);
-            timeElapsed = (detail_end_time.tv_sec - detail_start_time.tv_sec) * 1000000 + (detail_end_time.tv_usec - detail_start_time.tv_usec);
-            pbft.detailTime[STEP::LOCK_RES_SEND] = timeElapsed;
-        } else {
-            //std::cout << "executed TX or COMMIT req of tx " << vPReq[i]->pTx->GetHash().ToString() << std::endl;
-            gettimeofday(&end_time, NULL);
-            /* only count TX and UNLOCK_TO_COMMIT requests */
-            txCnt++;
+
+        /* Step 1: check parent tx. */
+        std::unordered_set<uint256, BlockHasher> preReqTxs;
+        if (!vPReq[i]->CheckParentTx(view, preReqTxs)) {
+            for (const auto& parentTx: preReqTxs) {
+                assert(g_pbft->mapTxDelayed.find(parentTx) != g_pbft->mapTxDelayed.end());
+                g_pbft->mapTxDelayed[parentTx].push_back(vPReq[i]);
+            }
+            g_pbft->mapRemainingPrereq.emplace(vPReq[i], preReqTxs.size());
+            g_pbft->mapTxDelayed.emplace(vPReq[i]->pTx->GetHash(), std::deque<std::shared_ptr<CClientReq>>());
+            continue;
         }
 
-        /* update execution time and count. Only count non-coinbase tx.*/
-        if (!vPReq[i]->pTx->IsCoinBase()) {
-            timeElapsed = (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
-	    g_pbft->totalExeTime[vPReq[i]->type] = timeElapsed;
-	    g_pbft->totalExeCount[vPReq[i]->type]++;
-            //if (vReq[i].type == ClientReqType::TX) {
-            //    std::cout << "TX_STAT. Overall time = " << g_pbft->totalExeTime[0]  
-            //            << ". Detail time: TX_UTXO_EXIST_AND_VALUE = " << g_pbft->detailTime[STEP::TX_UTXO_EXIST_AND_VALUE]
-            //            << ", TX_SIG_CHECK = " << g_pbft->detailTime[STEP::TX_SIG_CHECK] 
-            //            << ", TX_DB_UPDATE = " << g_pbft->detailTime[STEP::TX_DB_UPDATE] 
-            //            << ", TX_INPUT_UTXO_NUM = " << g_pbft->inputCount[INPUT_CNT::TX_INPUT_CNT]
-            //            << ", TX_cnt = " << g_pbft->totalExeCount[0] << std::endl;
+        /* BFS execute all parent-clear descendant tx */
+        std::queue<std::shared_ptr<CClientReq>> q;
+        q.push(vPReq[i]);
+        while (!q.empty()) {
+            /* Step 2: execute the tx. */
+            char exe_res = vPReq[i]->Execute(seq, view);
+            assert(exe_res == 'y');
+            if (vPReq[i]->type == ClientReqType::LOCK) {
+                gettimeofday(&detail_start_time, NULL);
+                CInputShardReply reply = pbft.assembleInputShardReply(seq, i, exe_res, ((LockReq*)vPReq[i].get())->totalValueInOfShard);
+                gettimeofday(&detail_end_time, NULL);
+                timeElapsed = (detail_end_time.tv_sec - detail_start_time.tv_sec) * 1000000 + (detail_end_time.tv_usec - detail_start_time.tv_usec);
+                pbft.detailTime[STEP::LOCK_RES_SIGN] = timeElapsed;
+                gettimeofday(&detail_start_time, NULL);
+                connman->PushMessage(pbft.client, msgMaker.Make(NetMsgType::OMNI_LOCK_REPLY, reply));
+                gettimeofday(&detail_end_time, NULL);
+                gettimeofday(&end_time, NULL);
+                timeElapsed = (detail_end_time.tv_sec - detail_start_time.tv_sec) * 1000000 + (detail_end_time.tv_usec - detail_start_time.tv_usec);
+                pbft.detailTime[STEP::LOCK_RES_SEND] = timeElapsed;
+            } else {
+                //std::cout << "executed TX or COMMIT req of tx " << vPReq[i]->pTx->GetHash().ToString() << std::endl;
+                gettimeofday(&end_time, NULL);
+                /* only count TX and UNLOCK_TO_COMMIT requests */
+                txCnt++;
+            }
 
-            //} else if (vReq[i].type == ClientReqType::LOCK) {
-            //    std::cout << "LOCK_STAT. Overall time = " << g_pbft->totalExeTime[1]  
-            //            << ". Detail time: LOCK_UTXO_EXIST = " << g_pbft->detailTime[STEP::LOCK_UTXO_EXIST] 
-            //            << ", LOCK_SIG_CHECK = " << g_pbft->detailTime[STEP::LOCK_SIG_CHECK]
-            //            << ", LOCK_UTXO_SPEND = " << g_pbft->detailTime[STEP::LOCK_UTXO_SPEND] 
-            //            << ", LOCK_RES_SIGN = " << g_pbft->detailTime[STEP::LOCK_RES_SIGN]
-            //            << ", LOCK_RES_SEND = " << g_pbft->detailTime[STEP::LOCK_RES_SEND]
-            //            << ", LOCK_INPUT_COPY = " << g_pbft->detailTime[STEP::LOCK_INPUT_COPY] 
-            //            << ", LOCK_INPUT_UTXO_NUM = " << g_pbft->inputCount[INPUT_CNT::LOCK_INPUT_CNT]
-            //            << ", LOCK_cnt = " << g_pbft->totalExeCount[1] << std::endl;
+            /* update execution time and count. Only count non-coinbase tx.*/
+            if (!vPReq[i]->pTx->IsCoinBase()) {
+                timeElapsed = (end_time.tv_sec - start_time.tv_sec) * 1000000 + (end_time.tv_usec - start_time.tv_usec);
+                pbft.totalExeTime[vPReq[i]->type] = timeElapsed;
+                pbft.totalExeCount[vPReq[i]->type]++;
+                //if (vReq[i].type == ClientReqType::TX) {
+                //    std::cout << "TX_STAT. Overall time = " << g_pbft->totalExeTime[0]  
+                //            << ". Detail time: TX_UTXO_EXIST_AND_VALUE = " << g_pbft->detailTime[STEP::TX_UTXO_EXIST_AND_VALUE]
+                //            << ", TX_SIG_CHECK = " << g_pbft->detailTime[STEP::TX_SIG_CHECK] 
+                //            << ", TX_DB_UPDATE = " << g_pbft->detailTime[STEP::TX_DB_UPDATE] 
+                //            << ", TX_INPUT_UTXO_NUM = " << g_pbft->inputCount[INPUT_CNT::TX_INPUT_CNT]
+                //            << ", TX_cnt = " << g_pbft->totalExeCount[0] << std::endl;
 
-            //} else if (vReq[i].type == ClientReqType::UNLOCK_TO_COMMIT) {
-            //    std::cout << "COMMIT_STAT. Overall time = " << g_pbft->totalExeTime[2] 
-            //            << ". Detail time: COMMIT_SIG_CHECK = " << g_pbft->detailTime[STEP::COMMIT_SIG_CHECK] 
-            //            << ", COMMIT_VALUE_CHECK = " << g_pbft->detailTime[STEP::COMMIT_VALUE_CHECK]
-            //            << ", COMMIT_UTXO_ADD = " << g_pbft->detailTime[STEP::COMMIT_UTXO_ADD] 
-            //            << ", COMMIT_cnt = " << g_pbft->totalExeCount[2] << std::endl;
+                //} else if (vReq[i].type == ClientReqType::LOCK) {
+                //    std::cout << "LOCK_STAT. Overall time = " << g_pbft->totalExeTime[1]  
+                //            << ". Detail time: LOCK_UTXO_EXIST = " << g_pbft->detailTime[STEP::LOCK_UTXO_EXIST] 
+                //            << ", LOCK_SIG_CHECK = " << g_pbft->detailTime[STEP::LOCK_SIG_CHECK]
+                //            << ", LOCK_UTXO_SPEND = " << g_pbft->detailTime[STEP::LOCK_UTXO_SPEND] 
+                //            << ", LOCK_RES_SIGN = " << g_pbft->detailTime[STEP::LOCK_RES_SIGN]
+                //            << ", LOCK_RES_SEND = " << g_pbft->detailTime[STEP::LOCK_RES_SEND]
+                //            << ", LOCK_INPUT_COPY = " << g_pbft->detailTime[STEP::LOCK_INPUT_COPY] 
+                //            << ", LOCK_INPUT_UTXO_NUM = " << g_pbft->inputCount[INPUT_CNT::LOCK_INPUT_CNT]
+                //            << ", LOCK_cnt = " << g_pbft->totalExeCount[1] << std::endl;
 
-            //} else if (vReq[i].type == ClientReqType::UNLOCK_TO_ABORT) {
-            //    std::cout << "ABORT = " << g_pbft->totalExeTime[3] << " us, ABORT_cnt = " << g_pbft->totalExeCount[3] << std::endl;
-            //}
-	}
+                //} else if (vReq[i].type == ClientReqType::UNLOCK_TO_COMMIT) {
+                //    std::cout << "COMMIT_STAT. Overall time = " << g_pbft->totalExeTime[2] 
+                //            << ". Detail time: COMMIT_SIG_CHECK = " << g_pbft->detailTime[STEP::COMMIT_SIG_CHECK] 
+                //            << ", COMMIT_VALUE_CHECK = " << g_pbft->detailTime[STEP::COMMIT_VALUE_CHECK]
+                //            << ", COMMIT_UTXO_ADD = " << g_pbft->detailTime[STEP::COMMIT_UTXO_ADD] 
+                //            << ", COMMIT_cnt = " << g_pbft->totalExeCount[2] << std::endl;
+
+                //} else if (vReq[i].type == ClientReqType::UNLOCK_TO_ABORT) {
+                //    std::cout << "ABORT = " << g_pbft->totalExeTime[3] << " us, ABORT_cnt = " << g_pbft->totalExeCount[3] << std::endl;
+                //}
+            }
+
+            /* Step 3: If the req is of TX or COMMIT type, add parent-clear 
+             * child tx to the bfs queue. 
+             */
+            if (vPReq[i]->type == ClientReqType::TX || vPReq[i]->type == ClientReqType::UNLOCK_TO_COMMIT) {
+                const uint256& txhash = vPReq[i]->pTx->GetHash();
+                assert(pbft.mapTxDelayed.find(txhash) != pbft.mapTxDelayed.end());
+                for (const std::shared_ptr<CClientReq> childReq: pbft.mapTxDelayed[txhash]) {
+                    assert(pbft.mapRemainingPrereq.find(childReq) != pbft.mapRemainingPrereq.end());
+                    if (--pbft.mapRemainingPrereq[childReq] == 0) {
+                        q.push(childReq);
+                        pbft.mapRemainingPrereq.erase(childReq);
+                    }
+                }
+                pbft.mapTxDelayed.erase(txhash);
+            }
+            q.pop();
+        }
+
+
+
     }
     return txCnt;
 }

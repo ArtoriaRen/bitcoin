@@ -19,6 +19,7 @@
 #include "primitives/transaction.h"
 #include "net.h"
 #include "coins.h"
+#include "validation.h"
 //global view number
 
 enum PbftPhase {pre_prepare, prepare, commit, reply, end};
@@ -140,6 +141,11 @@ public:
     /* we did not put serialization methods here because c++ does not allow
      * virtual template method.
      */
+    /* check if the tx has pending parent tx. If so, add it to the delay-execution
+     * graph.
+     * Return true if the tx is parent-tx-clear.
+     */
+    virtual bool CheckParentTx(CCoinsViewCache& view, std::unordered_set<uint256, BlockHasher>& preReqTxs) const = 0;
     virtual char Execute(const int seq, CCoinsViewCache& view) const = 0; // seq is passed in because we use it as block height.
     virtual const uint256 GetDigest() const = 0;
 
@@ -161,6 +167,7 @@ public:
         type = ClientReqType::TX;
         s >> pTx;
     }
+    bool CheckParentTx(CCoinsViewCache& view, std::unordered_set<uint256, BlockHasher>& preReqTxs) const override;
     char Execute(const int seq, CCoinsViewCache& view) const override;
     const uint256 GetDigest() const override;
 };
@@ -200,6 +207,7 @@ public:
         }
     }
 
+    bool CheckParentTx(CCoinsViewCache& view, std::unordered_set<uint256, BlockHasher>& preReqTxs) const override;
     char Execute(const int seq, CCoinsViewCache& view) const override;
     const uint256 GetDigest() const override;
 };
@@ -241,6 +249,7 @@ public:
             vInputShardReply[i].Unserialize(s);
         }
     }
+    bool CheckParentTx(CCoinsViewCache& view, std::unordered_set<uint256, BlockHasher>& preReqTxs) const override;
     char Execute(const int seq, CCoinsViewCache& view) const override;
     const uint256 GetDigest() const override;
 };
@@ -271,6 +280,7 @@ public:
              vNegativeReply[i].Unserialize(s);
         }
     }
+    bool CheckParentTx(CCoinsViewCache& view, std::unordered_set<uint256, BlockHasher>& preReqTxs) const override;
     char Execute(const int seq, CCoinsViewCache& view) const override;
     const uint256 GetDigest() const override;
 };

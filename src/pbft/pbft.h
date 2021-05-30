@@ -114,6 +114,15 @@ public:
     int lastPPSentHeight; 
     uint32_t avgTxVrfTimeLastBlock;
         
+    /* <tx_hash, list<req_pointer>>
+     * key is a parent tx, and value is a list of child tx.
+     * A tx is added to this map as a child tx when some input UTXO is not available.
+     * The tx is also added to the map as a parent tx with empty child tx list. 
+     */
+    std::unordered_map<uint256, std::deque<std::shared_ptr<CClientReq>>, BlockHasher> mapTxDelayed;
+
+    /* key is a child tx, value is the number of remaining parent tx of the tx. */
+    std::map<std::shared_ptr<CClientReq>, uint32_t> mapRemainingPrereq; 
     
     CPbft();
     // Check Pre-prepare message signature and send Prepare message

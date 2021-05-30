@@ -46,12 +46,24 @@ extern std::unique_ptr<CConnman> g_connman;
 void WaitForShutdown()
 {
     bool fShutdown = ShutdownRequested();
+    CPbft& pbft = *g_pbft;
     // Tell the main threads to shutdown.
     while (!fShutdown)
     {
-	g_pbft->sendReplies(g_connman.get());
+	pbft.sendReplies(g_connman.get());
         MilliSleep(10);
         fShutdown = ShutdownRequested();
+    }
+    std::cout << "mapTxDelayed cnt = " << pbft.mapTxDelayed.size() << ", txns are :" << std::endl;
+    for (const auto& entry : pbft.mapTxDelayed) {
+        std::cout << entry.first.ToString() << std::endl;
+    }
+
+    std::cout << "mapRemainingPrereq cnt = " << pbft.mapRemainingPrereq.size() << std::endl;
+    if (!pbft.mapRemainingPrereq.empty()) {
+        const auto& entry = *pbft.mapRemainingPrereq.begin();
+        const uint256& hash_first_tx = entry.first->pTx->GetHash();
+        std::cout << "first dependent tx = " << hash_first_tx.ToString() << ", remaining prereq tx cnt = " << entry.second << std::endl;
     }
     Interrupt();
 }
