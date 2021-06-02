@@ -613,7 +613,7 @@ std::vector<int32_t> TxPlacer::mostInputUTXOPlace_LB(const CTransactionRef pTx, 
 
         /* assign tx to the shard with the most number of input UTXO. */
         uint lowestScoreShard;
-        if (getMaxDifference(loadScores, lowestScoreShard) < mostUTXO_LB_thld) {
+        if (getMaxDifference(g_pbft->loadScores, lowestScoreShard) < mostUTXO_LB_thld) {
             //std::cout << "low-cost path" << std::endl;
             int mostInputUtxoInAShard = 0;
             for (auto const& p: mapInputShardUTXO) {
@@ -679,7 +679,7 @@ std::vector<int32_t> TxPlacer::mostInputValuePlace_LB(const CTransactionRef pTx,
 
         /* assign tx to the shard with the most input value. */
         uint lowestScoreShard;
-        if (getMaxDifference(loadScores, lowestScoreShard) < mostUTXO_LB_thld) {
+        if (getMaxDifference(g_pbft->loadScores, lowestScoreShard) < mostUTXO_LB_thld) {
             CAmount maxValue = -1;
             for (auto const& p: mapInputShardUTXO) {
                 if (p.second.totalValue > maxValue) {
@@ -745,7 +745,7 @@ std::vector<int32_t> TxPlacer::firstUtxoPlace_LB(const CTransactionRef pTx, std:
 
         /* Step 2: check load balancing */
         uint lowestScoreShard;
-        if (getMaxDifference(loadScores, lowestScoreShard) >= mostUTXO_LB_thld) {
+        if (getMaxDifference(g_pbft->loadScores, lowestScoreShard) >= mostUTXO_LB_thld) {
             assert(lowestScoreShard >= 0 && lowestScoreShard < num_committees);
             outputShard = lowestScoreShard;
         }
@@ -777,22 +777,6 @@ std::vector<int32_t> TxPlacer::firstUtxoPlace_LB(const CTransactionRef pTx, std:
     }
     assert(vShardUtxoIdxToLock.size() + 1 == ret.size());
     return ret;
-}
-
-void TxPlacer::updateLoadScore(uint shard_id, ClientReqType reqType, uint nSigs) {
-    switch(reqType) {
-        case ClientReqType::TX:
-            loadScores[shard_id] += 150 * nSigs + 35;
-            break;
-        case ClientReqType::LOCK:
-            loadScores[shard_id] += 170 * nSigs + 192;
-            break;
-        case ClientReqType::UNLOCK_TO_COMMIT:
-            loadScores[shard_id] += 125 * nSigs + 5;
-            break;
-        default:
-            std::cout << __func__ << "invalid client req type " << std::endl;
-    }
 }
 
 void TxPlacer::printPlaceResult(){
@@ -849,7 +833,7 @@ void TxPlacer::printTxSendRes() {
     uint maxScore = 0, minScore = UINT_MAX; 
     //std::cout << "tx cnt in each shard : ";
     for (int i = 0; i < num_committees; i++) {
-        uint load_score = loadScores[i];
+        uint load_score = g_pbft->loadScores[i];
         //std::cout << i << " = " << txCntInShard << ", ";
         if (load_score > maxScore) {
             maxScore = load_score;
@@ -978,7 +962,8 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
 	    if (shards.size() != 1) {
                 /* only count non-coinbase tx b/c coinbase tx do not 
                  * have the time-consuming sig verification step. */
-                txPlacer.updateLoadScore(shards[0], ClientReqType::TX, tx->vin.size());
+                g_pbft->updateLoadScore(shards[0], ClientReqType::TX, tx->vin.size());
+                g_pbft->nSingleShard++;
 	    }
             //std::cout << "send TX req for tx " << hashTx.ToString() << " to shard " << shards[0] << std::endl;
 	} else {
@@ -989,9 +974,10 @@ bool sendTx(const CTransactionRef tx, const uint idx, const uint32_t block_heigh
                 g_pbft->inputShardReplyMap[hashTx].decision.store('\0', std::memory_order_relaxed);
                 g_pbft->add2Batch(shards[i], ClientReqType::LOCK, tx, batchBuffers[shards[i]], &vShardUtxoIdxToLock[i - 1]);
                 reqSentCnt++;
-                txPlacer.updateLoadScore(shards[i], ClientReqType::LOCK, vShardUtxoIdxToLock[i - 1].size());
+                g_pbft->updateLoadScore(shards[i], ClientReqType::LOCK, vShardUtxoIdxToLock[i - 1].size());
                 //std::cout << "send LOCK req for tx " << hashTx.ToString() << " to shard " << shards[i] << std::endl;
 	    }
+        g_pbft->nCrossShard++;
 	}
 	return isSingleShard;
 }

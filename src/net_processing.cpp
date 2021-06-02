@@ -2012,6 +2012,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         //std::cout << "sending unlock_to_commit for tx = " << reply.digest.GetHex() << " to shard " << outputShard << std::endl;
         assert(outputShard >=0 && outputShard < num_committees);
         connman->PushMessage(pbft.leaders[outputShard], msgMaker.Make(NetMsgType::OMNI_UNLOCK_COMMIT, commitReq));
+        pbft.updateLoadScore(outputShard, ClientReqType::UNLOCK_TO_COMMIT, vReply.size());
 	} 
     }
 

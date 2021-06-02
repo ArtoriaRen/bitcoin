@@ -131,7 +131,6 @@ public:
 
     uint countInputTx(const CTransactionRef pTx);
 
-    void updateLoadScore(uint shard_id, ClientReqType reqType, uint nSigs);
     void printPlaceResult();
     void printTxSendRes();
 };

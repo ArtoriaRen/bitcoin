@@ -16,7 +16,7 @@ struct timeval thruInterval; // calculate throughput once every "thruInterval" s
 TxStat::TxStat(): outputShard(-1) { }
 TxStat::TxStat(CTransactionRef txIn, int32_t outputShardIn): tx(txIn),outputShard(outputShardIn) { }
 
-CPbft::CPbft() : leaders(num_committees), pubKeys(num_committees * groupSize), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nSucceed(0), nFail(0), nCommitted(0), nAborted(0), batchBuffers(num_committees), vBatchBufferMutex(num_committees), expected_tx_latency(num_committees), vecShardTxCount(num_committees, 0), privateKey(CKey()) {
+CPbft::CPbft() : leaders(num_committees), pubKeys(num_committees * groupSize), nLastCompletedTx(0), nCompletedTx(0), nTotalFailedTx(0), nSucceed(0), nFail(0), nCommitted(0), nAborted(0), batchBuffers(num_committees), vBatchBufferMutex(num_committees), expected_tx_latency(num_committees), vecShardTxCount(num_committees, 0), loadScores(num_committees, 0), nSingleShard(0), nCrossShard(0), privateKey(CKey()) {
     testStartTime = {0, 0};
     nextLogTime = {0, 0};
     nextShardLoadPrintTime = {0, 0};
@@ -78,9 +78,9 @@ void CPbft::logShardLoads(struct timeval& endTime) {
     for (uint i = 0; i < num_committees; i++) {
         shardLoadFile << ",shard"<< i;
     }
-    shardLoadFile << "\n";
+    shardLoadFile << ",nSingleShard,nCrossShard\n";
     shardLoadFile << endTime.tv_sec << "." << endTime.tv_usec;
-    for (uint i = 0; i < num_committees; i++) {
+    for (uint i = 0; i < num_committees + 2; i++) {
         shardLoadFile << ",0";
     }
     shardLoadFile << "\n";
@@ -93,7 +93,7 @@ void CPbft::logShardLoads(struct timeval& endTime) {
     for (uint i = 0; i < num_committees; i++) {
         shardLoadFile << "," << vecShardTxCount[i];
     }
-    shardLoadFile << "\n";
+    shardLoadFile << "," << nSingleShard << "," << nCrossShard << "\n";
     /* log every 10 seconds. */
     nextShardLoadPrintTime.tv_sec = endTime.tv_sec + 10;
     nextShardLoadPrintTime.tv_usec = endTime.tv_usec;
@@ -214,6 +214,22 @@ void CPbft::probeShardLatency() {
         gettimeofday(&(expected_tx_latency[i].probe_send_time), NULL);
         g_connman->PushMessage(leaders[i], msgMaker.Make(NetMsgType::LATENCY_PROBE));
         //std::cout << "send probe to shard " << i << std::endl;
+    }
+}
+
+void CPbft::updateLoadScore(uint shard_id, ClientReqType reqType, uint nSigs) {
+    switch(reqType) {
+        case ClientReqType::TX:
+            loadScores[shard_id] += 150 * nSigs + 35;
+            break;
+        case ClientReqType::LOCK:
+            loadScores[shard_id] += 170 * nSigs + 192;
+            break;
+        case ClientReqType::UNLOCK_TO_COMMIT:
+            loadScores[shard_id] += 125 * nSigs + 5;
+            break;
+        default:
+            std::cout << __func__ << "invalid client req type " << std::endl;
     }
 }
 

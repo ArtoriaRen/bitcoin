@@ -195,6 +195,10 @@ public:
     uint placementMethod;
     /* the number of tx assigned to each shard. */
     std::vector<uint> vecShardTxCount;
+    /* the load score of each shard. */
+    std::vector<uint> loadScores;
+    uint nSingleShard; /* number of single shard tx based on the placement results. */
+    uint nCrossShard; /* number of cross shard tx based on the placement results. */
 
     CPbft();
     ~CPbft();
@@ -206,6 +210,7 @@ public:
     void loadBlocks(uint32_t startBlock, uint32_t endBlock);
     void probeShardLatency();
     void logShardLoads(struct timeval& endTime);
+    void updateLoadScore(uint shard_id, ClientReqType reqType, uint nSigs);
 
 private:
     // private ECDSA key used to sign messages
