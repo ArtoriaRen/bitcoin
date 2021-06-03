@@ -88,9 +88,6 @@ public:
      */
     std::unordered_map<uint256, CPlacementStatus, uint256Hasher> mapNotFullySpentTx;
 
-    /* the load score of each shard. */
-    std::vector<uint> loadScores;
-
     /* return the number of shards that input UTXOs and output UTXOs span */
     TxPlacer();
 

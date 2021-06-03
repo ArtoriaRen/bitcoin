@@ -35,7 +35,7 @@ size_t txChunkSize = 100;
 //uint32_t txStartBlock;
 //uint32_t txEndBlock;
 
-TxPlacer::TxPlacer():totalTxNum(0), alpha(0.5f), loadScores(num_committees, 0) {}
+TxPlacer::TxPlacer():totalTxNum(0), alpha(0.5f) {}
 
 
 /* all output UTXOs of a tx is stored in one shard. */
@@ -165,12 +165,23 @@ std::vector<int32_t> TxPlacer::optchainPlace(const CTransactionRef pTx, std::deq
                 mapNotFullySpentTx.erase(txid);
             }
         }
-        //std::cout << "p(u) of the cur tx" << std::endl;
+
+        float avg_nTx_per_shard = std::accumulate(g_pbft->vecShardTxCount.begin(), g_pbft->vecShardTxCount.end(), 0)/(float)num_committees;
+        //std::cout << __func__ << ": g_pbft->nSingleShard = " << g_pbft->nSingleShard  << ", g_pbft->nCrossShard = " << g_pbft->nCrossShard << std::endl;
+        assert(avg_nTx_per_shard > 0);
         float maxScore = 0;
         for (uint32_t i = 0; i < num_committees; i++) {
             float p_u_prime = (1 - alpha) * sumScore[i];
             placementStatus.fitnessScore[i] = p_u_prime;
-            float p_u = p_u_prime / g_pbft->vecShardTxCount[i];
+
+            float p_u = 0.0f;
+            if (g_pbft->vecShardTxCount[i] == 0) {
+                /* since the shard has no tx in it, it certainly has no parent tx of this tx. Do not consider place the tx to this shard.*/
+                p_u = 100;
+            } else {
+            /* use  shardSize/avgShardSize instead of shardSize to keep the p(u) value at the similar range of p(u)'. */
+                p_u = p_u_prime * avg_nTx_per_shard / g_pbft->vecShardTxCount[i];
+            }
             //std::cout << __func__ << ": p(u) = " << p_u << std::endl;
             if (p_u > maxScore) {
                maxScore = p_u;
@@ -178,6 +189,7 @@ std::vector<int32_t> TxPlacer::optchainPlace(const CTransactionRef pTx, std::deq
             }
         }
     }
+    assert(outputShard >= 0);
 
     auto iter_bool_pair = mapNotFullySpentTx.emplace(pTx->GetHash(), std::move(placementStatus));
     /* update p'(u)  after placement. */
@@ -339,8 +351,19 @@ std::vector<int32_t> TxPlacer::firstUtxoPlace(const CTransactionRef pTx, std::de
             mapNotFullySpentTx[parentTxid].numUnspentCoin--;
             preReqTxs.emplace(parentTxid);
             mapInputShardUTXO[mapNotFullySpentTx[parentTxid].placementRes].push_back(i);
-            if (i == 0) {
-                outputShard = mapNotFullySpentTx[parentTxid].placementRes; 
+        }
+
+        if (mapInputShardUTXO.size() == 1) {
+            /* this tx has only one input shard, place it to this shard. */
+            outputShard = mapInputShardUTXO.begin()->first;
+        } else {
+            /* assign cross-shard tx to the shard with the least number of input UTXO. */
+            int leastInputUtxoInAShard = pTx->vin.size();
+            for (auto const& p: mapInputShardUTXO) {
+                if (p.second.size() < leastInputUtxoInAShard) {
+                   leastInputUtxoInAShard = p.second.size();
+                   outputShard = p.first; 
+                }
             }
         }
 
@@ -486,7 +509,7 @@ std::vector<int32_t> TxPlacer::HPOnlyCrossShardTx(const CTransactionRef pTx, std
 }
 
 /* return the max_difference / average_load_score */
-static float getMaxDifference(std::vector<uint>& vec, uint& min_val_index) {
+static bool loadsBalanced(std::vector<uint>& vec, uint& min_val_index) {
     uint max_val = 0, min_val = UINT_MAX, sum = 0;
     for(uint i = 0; i < vec.size(); i++) {
         sum += vec[i];
@@ -500,12 +523,14 @@ static float getMaxDifference(std::vector<uint>& vec, uint& min_val_index) {
     }
     if (sum > 0) {
         //std::cout << "range/avg = " << (max_val - min_val) * vec.size() / (float)sum << std::endl;
-        return (max_val - min_val) * vec.size() / (float)sum;
+        float relativeRange = (max_val - min_val) * vec.size() / (float)sum;
+
+        return relativeRange < mostUTXO_LB_thld && (max_val - min_val) < 300000;
     }
     else {
         /* if sum == 0, then every element must be 0. */
         //std::cout << "sum is 0" << std::endl;
-        return 0;
+        return true;
     }
 }
 
@@ -613,7 +638,7 @@ std::vector<int32_t> TxPlacer::mostInputUTXOPlace_LB(const CTransactionRef pTx, 
 
         /* assign tx to the shard with the most number of input UTXO. */
         uint lowestScoreShard;
-        if (getMaxDifference(g_pbft->loadScores, lowestScoreShard) < mostUTXO_LB_thld) {
+        if (loadsBalanced(g_pbft->loadScores, lowestScoreShard) ) {
             //std::cout << "low-cost path" << std::endl;
             int mostInputUtxoInAShard = 0;
             for (auto const& p: mapInputShardUTXO) {
@@ -679,7 +704,7 @@ std::vector<int32_t> TxPlacer::mostInputValuePlace_LB(const CTransactionRef pTx,
 
         /* assign tx to the shard with the most input value. */
         uint lowestScoreShard;
-        if (getMaxDifference(g_pbft->loadScores, lowestScoreShard) < mostUTXO_LB_thld) {
+        if (loadsBalanced(g_pbft->loadScores, lowestScoreShard)) {
             CAmount maxValue = -1;
             for (auto const& p: mapInputShardUTXO) {
                 if (p.second.totalValue > maxValue) {
@@ -745,7 +770,7 @@ std::vector<int32_t> TxPlacer::firstUtxoPlace_LB(const CTransactionRef pTx, std:
 
         /* Step 2: check load balancing */
         uint lowestScoreShard;
-        if (getMaxDifference(g_pbft->loadScores, lowestScoreShard) >= mostUTXO_LB_thld) {
+        if (loadsBalanced(g_pbft->loadScores, lowestScoreShard)) {
             assert(lowestScoreShard >= 0 && lowestScoreShard < num_committees);
             outputShard = lowestScoreShard;
         }
