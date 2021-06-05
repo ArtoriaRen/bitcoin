@@ -45,7 +45,7 @@ char ExecuteTx(const CTransaction& tx, const int seq, CCoinsViewCache& view) {
     if(!tx.IsCoinBase()) {
         bool fScriptChecks = true;
     //	    CBlockUndo blockundo;
-        unsigned int flags = SCRIPT_VERIFY_NONE; // only verify pay to public key hash
+        unsigned int flags = SCRIPT_VERIFY_NONE | SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_WITNESS; // only verify pay to public key hash
         CAmount txfee = 0;
         /* We use  INT_MAX as block height, so that we never fail coinbase 
          * maturity check. */
@@ -124,6 +124,13 @@ void CPbftBlock::ComputeHash(){
 uint32_t CPbftBlock::Execute(const int seq, CCoinsViewCache& view) const {
     for (uint i = 0; i < vReq.size(); i++) {
 	ExecuteTx(*vReq[i], seq, view);
+    }
+    return vReq.size();
+}
+
+uint32_t CPbftBlock::WarmupExecute(const int seq, CCoinsViewCache& view) const {
+    for (uint i = 0; i < vReq.size(); i++) {
+        UpdateCoins(*vReq[i], view, seq);
     }
     return vReq.size();
 }

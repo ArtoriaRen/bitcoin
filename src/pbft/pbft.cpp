@@ -386,7 +386,7 @@ void CPbft::WarmUpMemoryCache() {
     int lastExecutedSeqWarmUp = readBlocksFromFile();
     uint32_t nWarmUpTx = 0;
     for (int i = 0; i <= lastExecutedSeqWarmUp; i++) {
-        log[i].ppMsg.pPbftBlock->Execute(i, view_warmup);
+        log[i].ppMsg.pPbftBlock->WarmupExecute(i, view_warmup);
         nWarmUpTx += log[i].ppMsg.pPbftBlock->vReq.size();
         /* Discard the block to prepare for performance test. */
         log[i].ppMsg.pPbftBlock.reset();

@@ -128,6 +128,7 @@ public:
     CPbftBlock(std::deque<CTransactionRef> vReqIn);
     void ComputeHash();
     uint32_t Execute(const int seq, CCoinsViewCache& view) const;
+    uint32_t WarmupExecute(const int seq, CCoinsViewCache& view) const;
     void Clear();
 
     ADD_SERIALIZE_METHODS;
