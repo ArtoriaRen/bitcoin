@@ -45,7 +45,7 @@ bool VerifyTx(const CTransaction& tx, const int seq, CCoinsViewCache& view) {
     if(!tx.IsCoinBase()) {
         bool fScriptChecks = true;
     //	    CBlockUndo blockundo;
-        unsigned int flags = SCRIPT_VERIFY_NONE; // only verify pay to public key hash
+        unsigned int flags = SCRIPT_VERIFY_NONE | SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_WITNESS; // only verify pay to public key hash
         CAmount txfee = 0;
         /* We use  INT_MAX as block height, so that we never fail coinbase 
          * maturity check. */
