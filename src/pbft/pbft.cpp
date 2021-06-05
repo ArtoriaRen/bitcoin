@@ -72,6 +72,7 @@ void CPbft::logThruput(struct timeval& endTime) {
 }
 
 void CPbft::logShardLoads(struct timeval& endTime) {
+    uint shardLogInterval = 10; // uint is second
     if (testStartTime.tv_sec == 0) {
 	/* test just started. log the start time */
     shardLoadFile << "time";
@@ -84,8 +85,8 @@ void CPbft::logShardLoads(struct timeval& endTime) {
         shardLoadFile << ",0";
     }
     shardLoadFile << "\n";
-	/* log every 10 seconds. */
-	nextShardLoadPrintTime.tv_sec = endTime.tv_sec + 10;
+	/* log every shardLogInterval seconds. */
+	nextShardLoadPrintTime.tv_sec = endTime.tv_sec + shardLogInterval;
 	nextShardLoadPrintTime.tv_usec = endTime.tv_usec;
 	return;
     }
@@ -94,8 +95,8 @@ void CPbft::logShardLoads(struct timeval& endTime) {
         shardLoadFile << "," << vecShardTxCount[i];
     }
     shardLoadFile << "," << nSingleShard << "," << nCrossShard << "\n";
-    /* log every 10 seconds. */
-    nextShardLoadPrintTime.tv_sec = endTime.tv_sec + 10;
+    /* log every shardLogInterval seconds. */
+    nextShardLoadPrintTime.tv_sec = endTime.tv_sec + shardLogInterval;
     nextShardLoadPrintTime.tv_usec = endTime.tv_usec;
 }
 

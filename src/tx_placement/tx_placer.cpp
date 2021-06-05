@@ -525,7 +525,7 @@ static bool loadsBalanced(std::vector<uint>& vec, uint& min_val_index) {
         //std::cout << "range/avg = " << (max_val - min_val) * vec.size() / (float)sum << std::endl;
         float relativeRange = (max_val - min_val) * vec.size() / (float)sum;
 
-        return relativeRange < mostUTXO_LB_thld && (max_val - min_val) < 300000;
+        return relativeRange < mostUTXO_LB_thld;
     }
     else {
         /* if sum == 0, then every element must be 0. */
