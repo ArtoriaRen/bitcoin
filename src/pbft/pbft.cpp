@@ -14,6 +14,7 @@
 #include "consensus/tx_verify.h"
 #include "netmessagemaker.h"
 #include <memory>
+#include <bits/stl_map.h>
 #include "netmessagemaker.h"
 #include "init.h"
 #include "streams.h"
@@ -27,7 +28,7 @@ int32_t maxBlockSize = 2000;
 int32_t nWarmUpBlocks;
 bool testStarted = false;
 int32_t reqWaitTimeout = 1000;
-size_t groupSize = 4;
+size_t groupSize = 4; // total number of peers
 uint32_t nFaulty = 1;
 
 CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastConsecutiveSeqInReplyPhase(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalVerifyTime(0), totalVerifyCnt(0), totalExeTime(0), lastBlockVerifiedThisGroup(-1), lastCollabFullBlock(-1), qValidTx(2), qInvalidTx(2), validTxQIdx(0), invalidTxQIdx(0), otherSubgroupSendQ(groupSize), notEnoughReqStartTime(std::chrono::milliseconds::zero()), qNotInitialExecutedTx(2), qExecutedTx(2), notExecutedQIdx(0), executedQIdx(0), qCollabMsg(2), qCollabMulBlkMsg(2), collabMsgQIdx(0), collabMulBlkMsgQIdx(0), privateKey(CKey()) {
@@ -411,7 +412,7 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
         doneSomething = true;
         uint32_t curHeight = lastBlockVerifiedThisGroup + 1;
         CPbftBlock& block = *log[curHeight].ppMsg.pPbftBlock;
-        if(isInVerifySubGroup(pbftID, block.hash)) {
+        if(isInVerifySubGroup(pbftID, block.hash, curHeight)) {
             /* This is a block to be verified by our subgroup. 
              * Verify and Execute prerequiste-clear tx in this block.
              * (The VerifyTx call includes executing tx.) 
@@ -776,7 +777,7 @@ bool CPbft::SendCollabMsg() {
         const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
         const uint256& block_hash = log[toSent.height].ppMsg.pPbftBlock->hash;
         for (uint32_t i = 0; i < groupSize; i++) {
-            if (!isInVerifySubGroup(i, block_hash)) {
+            if (!isInVerifySubGroup(i, block_hash, toSent.height)) {
                 /* this is a peer in the other subgroup for this block. */
                 //std::cout << "sending collab msg for block " << toSent.height << " to peer " << i << std::endl;
                 mapBlockOtherSubgroup[toSent.height].push_back(i);
@@ -1178,6 +1179,28 @@ void  ThruputLogger::logServerSideThruput(struct timeval& curTime, uint32_t comp
     }
     lastLogTime = curTime;
     lastCompletedTxCnt = completedTxCnt;
+}
+
+bool CPbft::isInVerifySubGroup(int32_t peer_id, const uint256& block_hash, const uint32_t height){
+    if (!log[height].vrfGroup.empty()) {
+        return log[height].vrfGroup.find(peer_id) != log[height].vrfGroup.end();
+    }
+    /* we haven't calculate the verification group for this block, do it now.*/
+    std::map<uint, uint> mapHashValues;
+    CHash256 hasher;
+    uint256 result;
+    for (uint i = 0; i < groupSize; i++) {
+        hasher.Write((const unsigned char*)block_hash.begin(), block_hash.size())
+                .Finalize((unsigned char*)&result);
+        mapHashValues.emplace(result.GetCheapHash(), i);
+    }
+    std::map<uint, uint>::iterator it = mapHashValues.begin();
+    for (uint i = 0; i < nFaulty + 1; i++) {
+        log[height].vrfGroup.insert(it->second);
+        it++;
+    }
+    
+    return log[height].vrfGroup.find(peer_id) != log[height].vrfGroup.end();
 }
 
 std::unique_ptr<CPbft> g_pbft;
