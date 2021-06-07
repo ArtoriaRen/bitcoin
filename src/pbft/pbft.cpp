@@ -643,8 +643,9 @@ void CPbft::executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnCh
 
     /* verify the dependent tx belonging to our group. */
     while (!q.empty()) {
-        const TxIndexOnChain& curTxIdx = q.front();
+        const TxIndexOnChain curTxIdx = q.front();
         q.pop();
+        //assert(curTxIdx.block_height < logSize && curTxIdx.offset_in_block < log[curTxIdx.block_height].ppMsg.pPbftBlock->vReq.size());
         pTx = log[curTxIdx.block_height].ppMsg.pPbftBlock->vReq[curTxIdx.offset_in_block];
         switch (mapPrereqCnt[curTxIdx].collab_status) {
             case 2:
@@ -1199,7 +1200,13 @@ bool CPbft::isInVerifySubGroup(int32_t peer_id, const uint256& block_hash, const
         log[height].vrfGroup.insert(it->second);
         it++;
     }
-    
+
+    //std::string toPrint("vrf group of block " + std::to_string(height) + " is:"); 
+    //for (uint peerId : log[height].vrfGroup) {
+    //    toPrint += std::to_string(peerId) + ",";
+    //}
+    //std::cout << toPrint << std::endl;
+
     return log[height].vrfGroup.find(peer_id) != log[height].vrfGroup.end();
 }
 
