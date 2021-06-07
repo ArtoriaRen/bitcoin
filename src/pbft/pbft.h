@@ -328,10 +328,7 @@ public:
 	return pbftID % groupSize == 0;
     }
 
-    inline bool isInVerifySubGroup(int32_t peer_id, const uint256& block_hash){
-	return ((peer_id & 1) ^ (block_hash.GetCheapHash() & 1)) == 0;
-    }
-
+    bool isInVerifySubGroup(int32_t peer_id, const uint256& block_hash, const uint32_t height);
     void saveBlocks2File() const;
     int readBlocksFromFile();
     void WarmUpMemoryCache();

@@ -33,8 +33,8 @@ public:
 
     PbftPhase phase;
 
-    /* a set of peerId who sent us collab verifying results. */
-    std::set<uint32_t> setCollabPeerID;
+    /* the peer ID in the verification group of this block */
+    std::set<uint32_t> vrfGroup;
 
     //---placeholder. default phase should be pre-prepare.
     CPbftLogEntry(): prepareCount(0), commitCount(0), blockSizeInCollabMsg(0), phase(PbftPhase::pre_prepare){}
