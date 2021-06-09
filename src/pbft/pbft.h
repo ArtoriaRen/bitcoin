@@ -260,7 +260,7 @@ public:
 
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
-    bool ProcessPP(CConnman* connman, CPre_prepare& ppMsg);
+    bool ProcessPP(CConnman* connman, CPbftMessage& ppMsg);
 
     // Check Prepare message signature, add to corresponding log, check if we have accumulated 2f Prepare message. If so, send Commit message
     bool ProcessP(CConnman* connman, CPbftMessage& pMsg, bool fCheck = true);
@@ -268,9 +268,11 @@ public:
     // Check Commit message signature, add to corresponding log, check if we have accumulated 2f+1 Commit message. If so, execute transactions and reply. 
     bool ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck = true);
 
-    CPre_prepare assemblePPMsg(std::shared_ptr<CPbftBlock> pPbftBlockIn);
+    CBlockMsg assembleBlkMsg(std::shared_ptr<CPbftBlock> pPbftBlockIn);
+    CPbftMessage assemblePPMsg(uint256& block_hash);
     CPbftMessage assembleMsg(const uint32_t seq); 
     CReply assembleReply(std::deque<uint256>& vTx, const char exe_res) const;
+    bool checkBlkMsg(CBlockMsg& msg);
     bool checkMsg(CPbftMessage* msg);
     bool havePrereqTxCollab(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs, bool alreadyInGraph);
     void addTx2GraphAsDependent(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs);
@@ -303,7 +305,8 @@ public:
 	return pbftID % groupSize == 0;
     }
 
-    bool isInVerifySubGroup(int32_t peer_id, const uint256& block_hash, const uint32_t height);
+    void computeVG(const uint256& block_hash, const uint32_t height);
+    bool isInVerifySubGroup(int32_t peer_id, const uint32_t height);
 
     void saveBlocks2File() const;
     int readBlocksFromFile();

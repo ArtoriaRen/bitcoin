@@ -153,7 +153,7 @@ public:
 
 class CPbftBlock{
 public:
-    uint256 hash; 
+    uint256 hash; // memory-only, never go through the network.
     std::vector<CTransactionRef> vReq;
 
     CPbftBlock();
@@ -192,28 +192,37 @@ public:
     //}
 };
 
-class CPre_prepare : public CPbftMessage{
+class CBlockMsg {
 public:
+    uint32_t logSlot;
     std::shared_ptr<CPbftBlock> pPbftBlock;
-
-    CPre_prepare();
-    CPre_prepare(std::shared_ptr<CPbftBlock> pPbftBlockIn):CPbftMessage(), pPbftBlock(pPbftBlockIn) { }
-    CPre_prepare(const CPbftMessage& pbftMsg, std::shared_ptr<CPbftBlock> pPbftBlockIn):CPbftMessage(pbftMsg), pPbftBlock(pPbftBlockIn) { }
-    
-    CPre_prepare(const CPre_prepare& msg);
-    CPre_prepare(const CPbftMessage& msg);
+    CBlockMsg(std::shared_ptr<CPbftBlock> pPbftBlockIn);
+    int32_t peerID;
+    uint32_t sigSize;
+    std::vector<unsigned char> vchSig; //serilized ecdsa signature.
 
     template<typename Stream>
     void Serialize(Stream& s) const{
-	CPbftMessage::Serialize(s);
-	pPbftBlock->Serialize(s);
+	s.write((char*)&logSlot, sizeof(logSlot));
+        pPbftBlock->Serialize(s);
+
+	s.write((char*)&peerID, sizeof(peerID));
+	s.write((char*)&sigSize, sizeof(sigSize));
+	s.write((char*)vchSig.data(), sigSize);
     }
     
     template<typename Stream>
     void Unserialize(Stream& s) {
-	CPbftMessage::Unserialize(s);
-	pPbftBlock->Unserialize(s);
+	s.read((char*)&logSlot, sizeof(logSlot));
+        pPbftBlock->Unserialize(s);
+
+	s.read((char*)&peerID, sizeof(peerID));
+	s.read((char*)&sigSize, sizeof(sigSize));
+	vchSig.resize(sigSize);
+	s.read((char*)vchSig.data(), sigSize);
     }
+
+    void getHash(uint256& result) const;
 };
 
 class CCollabMessage {
