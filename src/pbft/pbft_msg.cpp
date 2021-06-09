@@ -31,14 +31,6 @@ void CPbftMessage::getHash(uint256& result){
 	    .Finalize((unsigned char*)&result);
 }
 
-CPre_prepare::CPre_prepare(): CPbftMessage(), pPbftBlock() { }
-
-CPre_prepare::CPre_prepare(const CPre_prepare& msg): CPbftMessage(msg), pPbftBlock(msg.pPbftBlock) { }
-
-CPre_prepare::CPre_prepare(const CPbftMessage& msg): CPbftMessage(msg), pPbftBlock() { }
-
-
-
 bool VerifyTx(const CTransaction& tx, const int seq, CCoinsViewCache& view) {
     /* -------------logic from Bitcoin code for tx processing--------- */
     CValidationState state;
@@ -160,7 +152,7 @@ void CPbftBlock::ComputeHash(){
 /* check if the tx have create-spend or spend-spend dependency with tx not yet verified. */
 static bool havePrereqTx(uint32_t height, uint32_t txSeq) {
     CPbft& pbft= *g_pbft;
-    CTransactionRef tx = pbft.log[height].ppMsg.pPbftBlock->vReq[txSeq];
+    CTransactionRef tx = pbft.log[height].pPbftBlock->vReq[txSeq];
     if (tx->IsCoinBase()) {
         return false;
     }
@@ -300,4 +292,12 @@ void CCollabMultiBlockMsg::clear() {
 
 bool CCollabMultiBlockMsg::empty() const {
     return validTxs.empty() && invalidTxs.empty();
+}
+
+CBlockMsg::CBlockMsg(std::shared_ptr<CPbftBlock> pPbftBlockIn): pPbftBlock(pPbftBlockIn) { }
+
+void CBlockMsg::getHash(uint256& result) const {
+    CHash256().Write((const unsigned char*)&logSlot, sizeof(logSlot))
+            .Write((const unsigned char*)pPbftBlock->hash.begin(), pPbftBlock->hash.size())
+	    .Finalize((unsigned char*)&result);
 }

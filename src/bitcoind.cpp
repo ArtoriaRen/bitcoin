@@ -71,7 +71,7 @@ void WaitForShutdown()
         std::cout << std::endl;
     }
     for (auto& p: pbft.mapPrereqCnt) {
-        std::cout << p.first.ToString() << ", prereq cnt = " << p.second.remaining_prereq_tx_cnt << ", collab status = " << (int) p.second.collab_status << std::endl;
+        std::cout << p.first.ToString() << ", hash = " << pbft.log[p.first.block_height].pPbftBlock->vReq[p.first.offset_in_block]->GetHash().ToString() << ", prereq cnt = " << p.second.remaining_prereq_tx_cnt << ", collab status = " << (int) p.second.collab_status << std::endl;
     }
 
     std::cout << "mapUtxoConflict.size() = " << pbft.mapUtxoConflict.size() << std::endl;

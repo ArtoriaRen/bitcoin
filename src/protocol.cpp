@@ -43,6 +43,7 @@ const char *PBFT_PP="pbftpp"; // pbft pre-prepare
 const char *PBFT_P="pbftp"; // pbft prepare
 const char *PBFT_C="pbftc"; // pbft commit
 const char *PBFT_REPLY="pbftrpl"; // pbft commit
+const char *PBFT_BLOCK="pbftblk"; // block propagation msg
 const char *PBFT_TX="pbfttx"; // use to differentiate pbft tx from normal tx
 const char *PBFT_PUBKEY="pubkey"; 
 const char *PBFT_CLIENT="client"; // a pbft client use this msg to inform the leader that it is a client not a follower.
@@ -84,6 +85,7 @@ const static std::string allNetMessageTypes[] = {
     NetMsgType::PBFT_P, // pbft prepare
     NetMsgType::PBFT_C, // pbft commit
     NetMsgType::PBFT_REPLY, // pbft commit
+    NetMsgType::PBFT_BLOCK, // block propagation msg
     NetMsgType::PBFT_TX, // use to differentiate pbft tx from normal tx
     NetMsgType::PBFT_PUBKEY,
     NetMsgType::PBFT_CLIENT, // a pbft client use this msg to inform the leader that it is a client not a follower.

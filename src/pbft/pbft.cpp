@@ -104,19 +104,13 @@ bool ThreadSafeQueue::empty() {
     return queue_.empty();
 }
 
-bool CPbft::ProcessPP(CConnman* connman, CPre_prepare& ppMsg) {
+bool CPbft::ProcessPP(CConnman* connman, CPbftMessage& ppMsg) {
     // sanity check for signature, seq, view, digest.
     /*Faulty nodes may proceed even if the sanity check fails*/
     if (!checkMsg(&ppMsg)) {
         return false;
     }
 
-    // check if the digest matches client req
-    ppMsg.pPbftBlock->ComputeHash();
-    if (ppMsg.digest != ppMsg.pPbftBlock->hash) {
-	std::cerr << "digest does not match block hash tx. block hash = " << ppMsg.pPbftBlock->hash.GetHex() << ", but digest = " << ppMsg.digest.GetHex() << std::endl;
-	return false;
-    }
     // add to log
     log[ppMsg.seq].ppMsg = ppMsg;
 
@@ -242,6 +236,21 @@ bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
     return true;
 }
 
+bool CPbft::checkBlkMsg(CBlockMsg& msg) {
+    auto it = pubKeyMap.find(msg.peerID);
+    if (it == pubKeyMap.end()) {
+        std::cerr << "no pub key for sender " << msg.peerID << std::endl;
+        return false;
+    }
+    uint256 msgHash;
+    msg.getHash(msgHash);
+    if (!it->second.Verify(msgHash, msg.vchSig)) {
+        std::cerr << "PBFT verification sig fail" << std::endl;
+        return false;
+    }
+    return true;
+}
+
 bool CPbft::checkMsg(CPbftMessage* msg) {
     // verify signature and return wrong if sig is wrong
     auto it = pubKeyMap.find(msg->peerID);
@@ -273,13 +282,21 @@ bool CPbft::checkMsg(CPbftMessage* msg) {
     return true;
 }
 
-CPre_prepare CPbft::assemblePPMsg(std::shared_ptr<CPbftBlock> pPbftBlockIn) {
-    CPre_prepare toSent; // phase is set to Pre_prepare by default.
+CBlockMsg CPbft::assembleBlkMsg(std::shared_ptr<CPbftBlock> pPbftBlockIn) {
+    CBlockMsg toSent(pPbftBlockIn); // phase is set to Pre_prepare by default.
+    uint256 hash;
+    toSent.getHash(hash); // this hash is used for signature, so client tx is not included in this hash.
+    privateKey.Sign(hash, toSent.vchSig);
+    toSent.sigSize = toSent.vchSig.size();
+    return toSent;
+}
+
+CPbftMessage CPbft::assemblePPMsg(uint256& block_hash) {
+    CPbftMessage toSent; // phase is set to Pre_prepare by default.
     toSent.seq = nextSeq++;
     toSent.view = 0;
     localView = 0; // also change the local view, or the sanity check would fail.
-    toSent.pPbftBlock = pPbftBlockIn;
-    toSent.digest = toSent.pPbftBlock->hash;
+    toSent.digest = block_hash;
     uint256 hash;
     toSent.getHash(hash); // this hash is used for signature, so client tx is not included in this hash.
     privateKey.Sign(hash, toSent.vchSig);
@@ -321,7 +338,7 @@ CReply CPbft::assembleReply(std::deque<uint256>& vTx, const char exe_res) const 
  * wait for spend-spend-conflict prereq-tx to abort the tx.
  */
 bool CPbft::havePrereqTxCollab(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs, bool alreadyInGraph) {
-    CTransactionRef tx = log[height].ppMsg.pPbftBlock->vReq[txSeq];
+    CTransactionRef tx = log[height].pPbftBlock->vReq[txSeq];
     if (tx->IsCoinBase()) {
         return false;
     }
@@ -408,11 +425,15 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
     /* Step 1: verify the successor block of the last block we have verified
      * if it belongs to our group. Otherwise, use collab_vrf result to execute
      * tx in the block. */
-    if (lastBlockVerifiedThisGroup < lastConsecutiveSeqInReplyPhase){
+    uint32_t nextHeight = lastBlockVerifiedThisGroup + 1;
+    if (lastBlockVerifiedThisGroup < lastConsecutiveSeqInReplyPhase
+            && log[nextHeight].pPbftBlock != nullptr){
+        /* the block hash should match PBFT pre-prepare msg. */
+        assert(log[nextHeight].pPbftBlock->hash == log[nextHeight].ppMsg.digest);
         doneSomething = true;
         uint32_t curHeight = lastBlockVerifiedThisGroup + 1;
-        CPbftBlock& block = *log[curHeight].ppMsg.pPbftBlock;
-        if(isInVerifySubGroup(pbftID, block.hash, curHeight)) {
+        CPbftBlock& block = *log[curHeight].pPbftBlock;
+        if(isInVerifySubGroup(pbftID, curHeight)) {
             /* This is a block to be verified by our subgroup. 
              * Verify and Execute prerequiste-clear tx in this block.
              * (The VerifyTx call includes executing tx.) 
@@ -561,7 +582,7 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
                     continue;
                 }
                 /* backlog collab res, execute tx.*/
-                CTransactionRef pTx = log[txIdx.block_height].ppMsg.pPbftBlock->vReq[txIdx.offset_in_block];
+                CTransactionRef pTx = log[txIdx.block_height].pPbftBlock->vReq[txIdx.offset_in_block];
                 std::unordered_set<uint256, uint256Hasher> preReqTxs;
                 if (!havePrereqTxCollab(txIdx.block_height, txIdx.offset_in_block, preReqTxs, true)) {
                     /* this tx is prereq-clear. execute it. */
@@ -628,7 +649,7 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
         /* the lowest-height block is old enough, verify tx without collab res in it. */
         uint32_t height_to_verify = mapSkippedBlocks.begin()->first; 
         /* remove it from the skipped block map and mapCollabRes. */
-        CPbftBlock& blk = *log[height_to_verify].ppMsg.pPbftBlock;
+        CPbftBlock& blk = *log[height_to_verify].pPbftBlock;
         assert(mapSkippedBlocks.begin()->second.outstandingTxCnt > 0);
         std::cout << "Step 3: executing " << mapSkippedBlocks.begin()->second.outstandingTxCnt << " outstanding tx in block " << height_to_verify << std::endl;
         const std::deque<char>& collabStatus = mapSkippedBlocks.begin()->second.collabStatus; 
@@ -673,7 +694,7 @@ void CPbft::executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnCh
     std::queue<TxIndexOnChain> q;
     std::deque<TxIndexOnChain> localQExecutedTx;
     /* execute this prereq tx */
-    CTransactionRef pTx = log[txIdx.block_height].ppMsg.pPbftBlock->vReq[txIdx.offset_in_block];
+    CTransactionRef pTx = log[txIdx.block_height].pPbftBlock->vReq[txIdx.offset_in_block];
     ExecuteTx(*pTx, txIdx.block_height, *pcoinsTip);
     localQExecutedTx.push_back(std::move(txIdx));
     /* add dependent tx to the queue. */
@@ -718,7 +739,8 @@ void CPbft::executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnCh
     while (!q.empty()) {
         const TxIndexOnChain curTxIdx = q.front();
         q.pop();
-        pTx = log[curTxIdx.block_height].ppMsg.pPbftBlock->vReq[curTxIdx.offset_in_block];
+        //assert(curTxIdx.block_height < logSize && curTxIdx.offset_in_block < log[curTxIdx.block_height].ppMsg.pPbftBlock->vReq.size());
+        pTx = log[curTxIdx.block_height].pPbftBlock->vReq[curTxIdx.offset_in_block];
         switch (mapPrereqCnt[curTxIdx].collab_status) {
             case 2:
             {
@@ -848,9 +870,8 @@ bool CPbft::SendCollabMsg() {
         toSent.sigSize = toSent.vchSig.size();
 
         const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
-        const uint256& block_hash = log[toSent.height].ppMsg.pPbftBlock->hash;
         for (uint32_t i = 0; i < groupSize; i++) {
-            if (!isInVerifySubGroup(i, block_hash, toSent.height)) {
+            if (!isInVerifySubGroup(i, toSent.height)) {
                 /* this is a peer in the other subgroup for this block. */
                 //std::cout << "sending collab msg for block " << toSent.height << " to peer " << i << std::endl;
                 mapBlockOtherSubgroup[toSent.height].push_back(i);
@@ -939,7 +960,7 @@ bool CPbft::sendReplies(CConnman* connman) {
     std::deque<uint256> completedTx;
     for (InitialBlockExecutionStatus& p: qNotInitialExecutedTx[1 - notExecutedQIdx]) {
         /* send reply for all tx in the block except for tx in the InitialExecutedTx list. */
-        std::vector<CTransactionRef>& txList = log[p.height].ppMsg.pPbftBlock->vReq;
+        std::vector<CTransactionRef>& txList = log[p.height].pPbftBlock->vReq;
         for (uint i = 0; i < txList.size(); i++) {
             if (i == p.dependentTxs.front()) {
                 p.dependentTxs.pop_front();
@@ -951,7 +972,7 @@ bool CPbft::sendReplies(CConnman* connman) {
     qNotInitialExecutedTx[1 - notExecutedQIdx].clear();
 
     for (const TxIndexOnChain& txIdx: qExecutedTx[1 - executedQIdx]) {
-        completedTx.push_back(log[txIdx.block_height].ppMsg.pPbftBlock->vReq[txIdx.offset_in_block]->GetHash());
+        completedTx.push_back(log[txIdx.block_height].pPbftBlock->vReq[txIdx.offset_in_block]->GetHash());
     }
     qExecutedTx[1 - executedQIdx].clear();
 
@@ -984,7 +1005,7 @@ void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
             log[msg.height].blockSizeInCollabMsg = msg.txCnt;
         }
         else {
-            log[msg.height].blockSizeInCollabMsg = log[msg.height].ppMsg.pPbftBlock->vReq.size();
+            log[msg.height].blockSizeInCollabMsg = log[msg.height].pPbftBlock->vReq.size();
         }
         mapBlockCollabRes.emplace(msg.height, BlockCollabRes(log[msg.height].blockSizeInCollabMsg));
         //std::cout << "create collab msg counters for block "<< msg.height << ", tx count = " << log[msg.height].ppMsg.pPbftBlock->vReq.size() << std::endl;
@@ -1137,7 +1158,7 @@ void CPbft::saveBlocks2File() const {
 
     fileout.write((char*)&lastConsecutiveSeqInReplyPhase, sizeof(lastConsecutiveSeqInReplyPhase));
     for (int i = 0; i <= lastConsecutiveSeqInReplyPhase; i++) {
-        log[i].ppMsg.pPbftBlock->Serialize(fileout);
+        log[i].pPbftBlock->Serialize(fileout);
     }
 }
 
@@ -1154,8 +1175,8 @@ int CPbft::readBlocksFromFile() {
     std::cout << __func__ << ": lastExecutedSeqWarmUp = " << lastExecutedSeqWarmUp << std::endl;
     for (int i = 0; i <= lastExecutedSeqWarmUp; i++) {
         try {
-	    log[i].ppMsg.pPbftBlock = std::make_shared<CPbftBlock>();
-            log[i].ppMsg.pPbftBlock->Unserialize(filein);
+	    log[i].pPbftBlock = std::make_shared<CPbftBlock>();
+            log[i].pPbftBlock->Unserialize(filein);
         }
         catch (const std::exception& e) {
             std::cerr << "Deserialize or I/O error when reading PBFT block " << i << ": " << e.what() << std::endl;
@@ -1172,10 +1193,10 @@ void CPbft::WarmUpMemoryCache() {
     int lastExecutedSeqWarmUp = readBlocksFromFile();
     uint32_t nWarmUpTx = 0;
     for (int i = 0; i <= lastExecutedSeqWarmUp; i++) {
-        log[i].ppMsg.pPbftBlock->Execute(i, view_warmup);
-        nWarmUpTx += log[i].ppMsg.pPbftBlock->vReq.size();
+        log[i].pPbftBlock->Execute(i, view_warmup);
+        nWarmUpTx += log[i].pPbftBlock->vReq.size();
         /* Discard the block to prepare for performance test. */
-        log[i].ppMsg.pPbftBlock.reset();
+        log[i].pPbftBlock.reset();
     }
     std::cout << "warm up -- total executed tx: " << nWarmUpTx << std::endl;
 }
@@ -1283,11 +1304,7 @@ void  ThruputLogger::logServerSideThruput(struct timeval& curTime, uint32_t comp
 
 CSkippedBlockEntry::CSkippedBlockEntry(const struct timeval& blockMetTimeIn, std::deque<char>&& collabStatusIn, uint32_t outstandingTxCntIn):blockMetTime(blockMetTimeIn), collabStatus(collabStatusIn), outstandingTxCnt(outstandingTxCntIn) { }
 
-bool CPbft::isInVerifySubGroup(int32_t peer_id, const uint256& block_hash, const uint32_t height){
-    if (!log[height].vrfGroup.empty()) {
-        return log[height].vrfGroup.find(peer_id) != log[height].vrfGroup.end();
-    }
-    /* we haven't calculate the verification group for this block, do it now.*/
+void CPbft::computeVG(const uint256& block_hash, const uint32_t height){
     std::map<uint, uint> mapHashValues;
     CHash256 hasher;
     uint256 result;
@@ -1302,6 +1319,35 @@ bool CPbft::isInVerifySubGroup(int32_t peer_id, const uint256& block_hash, const
         it++;
     }
 
+    if (isLeader()) {
+        /* leader should send block to the first peer in VG. */
+        log[height].successorBlockPassing = mapHashValues.begin()->second;
+    } else {
+        /* the peer ranked next to us is the successor of block propagation. */
+        it = mapHashValues.begin();
+        /* find where this peer ranks. */
+        for (uint i = 0; i < groupSize && it->second != pbftID; i++, it++);
+        assert(it->second == pbftID);
+        /* set the succssor to be the next-ranking peer. */
+        if (++it != mapHashValues.end()) {
+            log[height].successorBlockPassing = it->second;
+        }
+        if (log[height].successorBlockPassing % groupSize == 0) {
+            /* the next-ranking peer is the leader, skip it, and use the next next peer. */
+            log[height].successorBlockPassing = ++it == mapHashValues.end() ? -1 : it->second;
+        }
+    }
+
+    std::string toPrint("peers' hash ranking for block " + std::to_string(height) + " is:"); 
+    for (const auto& entry : mapHashValues) {
+        toPrint += std::to_string(entry.second) + ",";
+    }
+    toPrint += " successor = " + std::to_string(log[height].successorBlockPassing);
+    std::cout << toPrint << std::endl;
+}
+
+bool CPbft::isInVerifySubGroup(int32_t peer_id, const uint32_t height){
+    assert (!log[height].vrfGroup.empty());
     return log[height].vrfGroup.find(peer_id) != log[height].vrfGroup.end();
 }
 

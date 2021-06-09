@@ -21,23 +21,27 @@
 
 class CPbftLogEntry{
 public:
-    CPre_prepare ppMsg;
+    CPbftMessage ppMsg;
     // Prepare and Commit vectors are only used in view change. For normal operation, we use the count instead.
 //    std::vector<CPrepare> prepareArray;
 //    std::vector<CCommit> commitArray;
     uint32_t prepareCount;
     uint32_t commitCount;
+
+    std::shared_ptr<CPbftBlock> pPbftBlock;
+
     /* in case we receive collab msg before we receive a block, use this field to store
      * the block size extracted from the collab msg. */
     uint32_t blockSizeInCollabMsg;
 
     PbftPhase phase;
 
-    /* the peer ID in the verification group of this block */
+    /* the peer IDs in the verification group of this block */
     std::set<uint32_t> vrfGroup;
+    /* the peer that we need to send this block to once we received it.*/
+    int successorBlockPassing;
 
-    //---placeholder. default phase should be pre-prepare.
-    CPbftLogEntry(): prepareCount(0), commitCount(0), blockSizeInCollabMsg(0), phase(PbftPhase::pre_prepare){}
+    CPbftLogEntry(): prepareCount(0), commitCount(0), blockSizeInCollabMsg(0), phase(PbftPhase::pre_prepare), successorBlockPassing(-1) {}
 };
 
 
