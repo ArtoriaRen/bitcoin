@@ -1303,6 +1303,9 @@ void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txund
         for (const CTxIn &txin : tx.vin) {
             txundo.vprevout.emplace_back();
             bool is_spent = inputs.SpendCoin(txin.prevout, &txundo.vprevout.back());
+            //if (!is_spent) {
+            //    std::cout << __func__ << ": cannot find the coin produce by tx " << txin.prevout.hash.ToString() << std::endl;
+            //}
             assert(is_spent);
         }
     }

@@ -268,7 +268,7 @@ public:
     // Check Commit message signature, add to corresponding log, check if we have accumulated 2f+1 Commit message. If so, execute transactions and reply. 
     bool ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck = true);
 
-    CBlockMsg assembleBlkMsg(std::shared_ptr<CPbftBlock> pPbftBlockIn);
+    CBlockMsg assembleBlkMsg(std::shared_ptr<CPbftBlock> pPbftBlockIn, uint32_t seq);
     CPbftMessage assemblePPMsg(uint256& block_hash);
     CPbftMessage assembleMsg(const uint32_t seq); 
     CReply assembleReply(std::deque<uint256>& vTx, const char exe_res) const;
