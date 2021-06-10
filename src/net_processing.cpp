@@ -1899,8 +1899,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
     else if (strCommand == NetMsgType::PBFT_BLOCK) {
 	std::shared_ptr<CPbftBlock> p_pbft_block = std::make_shared<CPbftBlock>();
-        CBlockMsg blockMsg(p_pbft_block);
+        CBlockMsg blockMsg(p_pbft_block, 0);
         vRecv >> blockMsg;
+        std::cout << "received BLOCK at slot " << blockMsg.logSlot << std::endl;
         assert(blockMsg.logSlot < pbft->logSize);
         p_pbft_block->ComputeHash(); // update the memory-only block hash
         assert(pbft->checkBlkMsg(blockMsg));
@@ -1910,14 +1911,22 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         if (blockPropSuccessor != -1) {
             connman->PushMessage(pbft->peers[blockPropSuccessor], msgMaker.Make(NetMsgType::PBFT_BLOCK, blockMsg));
         }
+        if (pbft->log[blockMsg.logSlot].ppMsg.sigSize > 0) {
+            /* we have received ppMsg for this block. */
+            assert(pbft->log[blockMsg.logSlot].ppMsg.digest == pbft->log[blockMsg.logSlot].pPbftBlock->hash);
+        }
     }
 
     else if (strCommand == NetMsgType::PBFT_PP) {
         CPbftMessage ppMsg;
         vRecv >> ppMsg;
-	if(!pbft->ProcessPP(connman, ppMsg)) {
-	    std::cout << __func__ << ": process ppMsg failed" <<std::endl;
-	}
+        if (pbft->log[ppMsg.seq].pPbftBlock != nullptr) {
+            //std::cout << "seq = " << ppMsg.seq << "ppMsg digest = " << ppMsg.digest.ToString() << ", block hash = " << pbft->log[ppMsg.seq].pPbftBlock->hash.ToString() << std::endl;
+            assert(ppMsg.digest == pbft->log[ppMsg.seq].pPbftBlock->hash);
+        }
+        if(!pbft->ProcessPP(connman, ppMsg)) {
+            std::cout << __func__ << ": process ppMsg failed" <<std::endl;
+        }
     }
 
     else if (strCommand == NetMsgType::PBFT_P) {
@@ -3010,6 +3019,7 @@ bool PeerLogicValidation::SendPPMessages(){
             //std::cout << __func__ << ": block size = " << p_pbft_block->vReq.size() << " client reqs" << std::endl;
             CPbftMessage ppMsg = pbft->assemblePPMsg(p_pbft_block->hash);
             pbft->log[ppMsg.seq].ppMsg = ppMsg;
+            pbft->log[ppMsg.seq].pPbftBlock = p_pbft_block;
             pbft->log[ppMsg.seq].phase = PbftPhase::prepare;
             const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
             //std::cout << __func__ << ": log slot "<< ppMsg.seq << " for pbftblock = "
@@ -3019,7 +3029,8 @@ bool PeerLogicValidation::SendPPMessages(){
 
             /* send the block to the successor peer. */
             pbft->computeVG(p_pbft_block->hash, ppMsg.seq);
-            CBlockMsg blockMsg = pbft->assembleBlkMsg(p_pbft_block);
+            CBlockMsg blockMsg = pbft->assembleBlkMsg(p_pbft_block, ppMsg.seq);
+            //std::cout << "sending BLOCK at slot " << blockMsg.logSlot << " to peer " << pbft->log[ppMsg.seq].successorBlockPassing << std::endl;
             connman->PushMessage(pbft->peers[pbft->log[ppMsg.seq].successorBlockPassing], msgMaker.Make(NetMsgType::PBFT_BLOCK, blockMsg));
 
             /* send PBFT pre-prepare message to the other peers. */

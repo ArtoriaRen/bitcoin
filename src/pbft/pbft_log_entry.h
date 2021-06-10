@@ -41,7 +41,7 @@ public:
     /* the peer that we need to send this block to once we received it.*/
     int successorBlockPassing;
 
-    CPbftLogEntry(): prepareCount(0), commitCount(0), blockSizeInCollabMsg(0), phase(PbftPhase::pre_prepare), successorBlockPassing(-1) {}
+    CPbftLogEntry(): prepareCount(0), commitCount(0), pPbftBlock(nullptr), blockSizeInCollabMsg(0), phase(PbftPhase::pre_prepare), successorBlockPassing(-1) {}
 };
 
 

@@ -282,8 +282,8 @@ bool CPbft::checkMsg(CPbftMessage* msg) {
     return true;
 }
 
-CBlockMsg CPbft::assembleBlkMsg(std::shared_ptr<CPbftBlock> pPbftBlockIn) {
-    CBlockMsg toSent(pPbftBlockIn); // phase is set to Pre_prepare by default.
+CBlockMsg CPbft::assembleBlkMsg(std::shared_ptr<CPbftBlock> pPbftBlockIn, uint32_t seq) {
+    CBlockMsg toSent(pPbftBlockIn, seq); // phase is set to Pre_prepare by default.
     uint256 hash;
     toSent.getHash(hash); // this hash is used for signature, so client tx is not included in this hash.
     privateKey.Sign(hash, toSent.vchSig);
@@ -432,6 +432,7 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
         assert(log[nextHeight].pPbftBlock->hash == log[nextHeight].ppMsg.digest);
         doneSomething = true;
         uint32_t curHeight = lastBlockVerifiedThisGroup + 1;
+        std::cout << "sequentially process block " << curHeight << ": ";
         CPbftBlock& block = *log[curHeight].pPbftBlock;
         if(isInVerifySubGroup(pbftID, curHeight)) {
             /* This is a block to be verified by our subgroup. 
@@ -568,7 +569,7 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
     if (!qValidTx[validTxQIdx].empty()) {
         doneSomething = true;
         for (const TxIndexOnChain& txIdx: qValidTx[validTxQIdx]) {
-            if (txIdx.block_height > lastBlockVerifiedThisGroup) {
+            if ((int) txIdx.block_height > lastBlockVerifiedThisGroup) {
                 if (futureCollabVrfedBlocks.find(txIdx.block_height) == futureCollabVrfedBlocks.end()) {
                     /* we haven't met collab result for any tx in this block, create 
                      * a new entry for this block.
@@ -739,7 +740,7 @@ void CPbft::executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnCh
     while (!q.empty()) {
         const TxIndexOnChain curTxIdx = q.front();
         q.pop();
-        //assert(curTxIdx.block_height < logSize && curTxIdx.offset_in_block < log[curTxIdx.block_height].ppMsg.pPbftBlock->vReq.size());
+        //assert(curTxIdx.block_height < logSize && curTxIdx.offset_in_block < log[curTxIdx.block_height].pPbftBlock->vReq.size());
         pTx = log[curTxIdx.block_height].pPbftBlock->vReq[curTxIdx.offset_in_block];
         switch (mapPrereqCnt[curTxIdx].collab_status) {
             case 2:
@@ -1001,14 +1002,14 @@ void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
     std::deque<TxIndexOnChain> localValidTxQ;
     std::deque<TxIndexOnChain> localInvalidTxQ;
     if (mapBlockCollabRes.find(msg.height) == mapBlockCollabRes.end()) {
-        if (msg.height > lastConsecutiveSeqInReplyPhase) {
+        if (log[msg.height].pPbftBlock == nullptr) {
             log[msg.height].blockSizeInCollabMsg = msg.txCnt;
         }
         else {
             log[msg.height].blockSizeInCollabMsg = log[msg.height].pPbftBlock->vReq.size();
         }
         mapBlockCollabRes.emplace(msg.height, BlockCollabRes(log[msg.height].blockSizeInCollabMsg));
-        //std::cout << "create collab msg counters for block "<< msg.height << ", tx count = " << log[msg.height].ppMsg.pPbftBlock->vReq.size() << std::endl;
+        //std::cout << "create collab msg counters for block "<< msg.height << ", tx count = " << log[msg.height].pPbftBlock->vReq.size() << std::endl;
     }
     
     BlockCollabRes& block_collab_res = mapBlockCollabRes[msg.height];
@@ -1319,22 +1320,27 @@ void CPbft::computeVG(const uint256& block_hash, const uint32_t height){
         it++;
     }
 
+    /* replace the PBFT leader peer with the last-ranked peer. */
+    it = mapHashValues.begin();
+    for (uint i = 0; i < groupSize - 1; i++, it++) {
+        if (it->second % groupSize == 0) {
+            /* this is the PBFT leader node, replace it with the last node. */
+            it->second = mapHashValues.rbegin()->second;
+            break;
+        }
+    }
+
     if (isLeader()) {
         /* leader should send block to the first peer in VG. */
         log[height].successorBlockPassing = mapHashValues.begin()->second;
     } else {
         /* the peer ranked next to us is the successor of block propagation. */
         it = mapHashValues.begin();
-        /* find where this peer ranks. */
-        for (uint i = 0; i < groupSize && it->second != pbftID; i++, it++);
-        assert(it->second == pbftID);
-        /* set the succssor to be the next-ranking peer. */
-        if (++it != mapHashValues.end()) {
-            log[height].successorBlockPassing = it->second;
-        }
-        if (log[height].successorBlockPassing % groupSize == 0) {
-            /* the next-ranking peer is the leader, skip it, and use the next next peer. */
-            log[height].successorBlockPassing = ++it == mapHashValues.end() ? -1 : it->second;
+        for (uint i = 0; i < groupSize - 2 ; i++, it++) {
+            if (it->second == pbftID) {
+                log[height].successorBlockPassing = (++it)->second;
+                break;
+            }
         }
     }
 

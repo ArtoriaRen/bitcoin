@@ -208,10 +208,12 @@ uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view, std::vector<ch
         totalDependencyCheckTime += end_time - start_time;
         if (hasPrereqTx) {
             qDependentTx.push_back(i);
+            //std::cout << " tx " << vReq[i]->GetHash().ToString() << "of block " << seq << " has pending parent " << std::endl;
             continue;
         }
         gettimeofday(&start_time, NULL);
         bool isValid = VerifyTx(*vReq[i], seq, view);
+        //std::cout << " verified tx " << vReq[i]->GetHash().ToString() << "of block " << seq << std::endl;
         gettimeofday(&end_time, NULL);
         totalVrfTime += end_time - start_time;
         if (isValid) {
@@ -294,7 +296,7 @@ bool CCollabMultiBlockMsg::empty() const {
     return validTxs.empty() && invalidTxs.empty();
 }
 
-CBlockMsg::CBlockMsg(std::shared_ptr<CPbftBlock> pPbftBlockIn): pPbftBlock(pPbftBlockIn) { }
+CBlockMsg::CBlockMsg(std::shared_ptr<CPbftBlock> pPbftBlockIn, uint32_t seq): pPbftBlock(pPbftBlockIn), logSlot(seq), peerID(pbftID) { }
 
 void CBlockMsg::getHash(uint256& result) const {
     CHash256().Write((const unsigned char*)&logSlot, sizeof(logSlot))
