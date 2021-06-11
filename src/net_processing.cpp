@@ -1897,14 +1897,35 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 	}
     }
 
+    else if (strCommand == NetMsgType::PBFT_BLOCK) {
+        std::shared_ptr<CPbftBlock> p_pbft_block = std::make_shared<CPbftBlock>();
+        CBlockMsg blockMsg(p_pbft_block, 0);
+        vRecv >> blockMsg;
+        std::cout << "received BLOCK at slot " << blockMsg.logSlot << std::endl;
+        assert(blockMsg.logSlot < pbft->logSize);
+        p_pbft_block->ComputeHash(); // update the memory-only block hash
+        assert(pbft->checkBlkMsg(blockMsg));
+        pbft->computesSuccessor(p_pbft_block->hash, blockMsg.logSlot);
+        pbft->log[blockMsg.logSlot].pPbftBlock = std::move(p_pbft_block);
+        int blockPropSuccessor = pbft->log[blockMsg.logSlot].successorBlockPassing;
+        if (blockPropSuccessor != -1) {
+            connman->PushMessage(pbft->peers[blockPropSuccessor], msgMaker.Make(NetMsgType::PBFT_BLOCK, blockMsg));
+        }
+        if (pbft->log[blockMsg.logSlot].ppMsg.sigSize > 0) {
+            /* we have received ppMsg for this block. */
+            assert(pbft->log[blockMsg.logSlot].ppMsg.digest == pbft->log[blockMsg.logSlot].pPbftBlock->hash);
+        }
+    }
     else if (strCommand == NetMsgType::PBFT_PP) {
-	    std::cout << __func__ << ": received PRE-PREPARE msg" <<std::endl;
-	std::shared_ptr<CPbftBlock> p_pbft_block = std::make_shared<CPbftBlock>();
-        CPre_prepare ppMsg(p_pbft_block);
+        CPbftMessage ppMsg;
         vRecv >> ppMsg;
-	if(!pbft->ProcessPP(connman, ppMsg)) {
-	    std::cout << __func__ << ": process ppMsg failed" <<std::endl;
-	}
+        if (pbft->log[ppMsg.seq].pPbftBlock != nullptr) {
+            //std::cout << "seq = " << ppMsg.seq << "ppMsg digest = " << ppMsg.digest.ToString() << ", block hash = " << pbft->log[ppMsg.seq].pPbftBlock->hash.ToString() << std::endl;
+            assert(ppMsg.digest == pbft->log[ppMsg.seq].pPbftBlock->hash);
+        }
+        if (!pbft->ProcessPP(connman, ppMsg)) {
+            std::cout << __func__ << ": process ppMsg failed" << std::endl;
+        }
     }
 
     else if (strCommand == NetMsgType::PBFT_P) {
@@ -2991,14 +3012,22 @@ bool PeerLogicValidation::SendPPMessages(){
             std::shared_ptr<CPbftBlock> p_pbft_block = std::make_shared<CPbftBlock>(pbft->reqQueue.get_upto(static_cast<uint32_t>(maxBlockSize)));
             p_pbft_block->ComputeHash();
             std::cout << __func__ << ": block size = " << p_pbft_block->vReq.size() << " client reqs" << std::endl;
-            CPre_prepare ppMsg = pbft->assemblePPMsg(p_pbft_block);
+            CPbftMessage ppMsg = pbft->assemblePPMsg(p_pbft_block->hash);
             pbft->log[ppMsg.seq].ppMsg = ppMsg;
+            pbft->log[ppMsg.seq].pPbftBlock = p_pbft_block;
             pbft->log[ppMsg.seq].phase = PbftPhase::prepare;
             const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
             //std::cout << __func__ << ": log slot "<< ppMsg.seq << " for pbftblock = "
             //	<< pbft->log[ppMsg.seq].ppMsg.pbft_block.hash.GetHex().substr(0, 10)
             //	<< ", block size = " << pbft->log[ppMsg.seq].ppMsg.pbft_block.vReq.size()
             //	<< " reqs." << std::endl;
+
+            /* send the block to the successor peer. */
+            pbft->computesSuccessor(p_pbft_block->hash, ppMsg.seq);
+            CBlockMsg blockMsg = pbft->assembleBlkMsg(p_pbft_block, ppMsg.seq);
+            connman->PushMessage(pbft->peers[pbft->log[ppMsg.seq].successorBlockPassing], msgMaker.Make(NetMsgType::PBFT_BLOCK, blockMsg));
+
+            /* send PBFT pre-prepare message to the other peers. */
             uint32_t start_peerID = pbftID + 1; // skip the leader id b/c it is myself
             uint32_t end_peerID = start_peerID + groupSize - 1;
             for (uint32_t i = start_peerID; i < end_peerID; i++) {

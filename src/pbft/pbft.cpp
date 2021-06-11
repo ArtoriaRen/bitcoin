@@ -103,19 +103,13 @@ bool ThreadSafeQueue::empty() {
     return queue_.empty();
 }
 
-bool CPbft::ProcessPP(CConnman* connman, CPre_prepare& ppMsg) {
+bool CPbft::ProcessPP(CConnman* connman, CPbftMessage& ppMsg) {
     // sanity check for signature, seq, view, digest.
     /*Faulty nodes may proceed even if the sanity check fails*/
     if (!checkMsg(&ppMsg)) {
         return false;
     }
 
-    // check if the digest matches client req
-    ppMsg.pPbftBlock->ComputeHash();
-    if (ppMsg.digest != ppMsg.pPbftBlock->hash) {
-	std::cerr << "digest does not match block hash tx. block hash = " << ppMsg.pPbftBlock->hash.GetHex() << ", but digest = " << ppMsg.digest.GetHex() << std::endl;
-	return false;
-    }
     // add to log
     log[ppMsg.seq].ppMsg = ppMsg;
     /* check if at least 2f prepare has been received. If so, enter commit phase directly; otherwise, enter prepare phase.(The goal of this operation is to tolerate network reordering.)
@@ -236,6 +230,21 @@ bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
     return true;
 }
 
+bool CPbft::checkBlkMsg(CBlockMsg& msg) {
+    auto it = pubKeyMap.find(msg.peerID);
+    if (it == pubKeyMap.end()) {
+        std::cerr << "no pub key for sender " << msg.peerID << std::endl;
+        return false;
+    }
+    uint256 msgHash;
+    msg.getHash(msgHash);
+    if (!it->second.Verify(msgHash, msg.vchSig)) {
+        std::cerr << "PBFT verification sig fail" << std::endl;
+        return false;
+    }
+    return true;
+}
+
 bool CPbft::checkMsg(CPbftMessage* msg) {
     // verify signature and return wrong if sig is wrong
     auto it = pubKeyMap.find(msg->peerID);
@@ -267,13 +276,21 @@ bool CPbft::checkMsg(CPbftMessage* msg) {
     return true;
 }
 
-CPre_prepare CPbft::assemblePPMsg(std::shared_ptr<CPbftBlock> pPbftBlockIn) {
-    CPre_prepare toSent; // phase is set to Pre_prepare by default.
+CBlockMsg CPbft::assembleBlkMsg(std::shared_ptr<CPbftBlock> pPbftBlockIn, uint32_t seq) {
+    CBlockMsg toSent(pPbftBlockIn, seq); // phase is set to Pre_prepare by default.
+    uint256 hash;
+    toSent.getHash(hash); // this hash is used for signature, so client tx is not included in this hash.
+    privateKey.Sign(hash, toSent.vchSig);
+    toSent.sigSize = toSent.vchSig.size();
+    return toSent;
+}
+
+CPbftMessage CPbft::assemblePPMsg(uint256& block_hash) {
+    CPbftMessage toSent; // phase is set to Pre_prepare by default.
     toSent.seq = nextSeq++;
     toSent.view = 0;
     localView = 0; // also change the local view, or the sanity check would fail.
-    toSent.pPbftBlock = pPbftBlockIn;
-    toSent.digest = toSent.pPbftBlock->hash;
+    toSent.digest = block_hash;
     uint256 hash;
     toSent.getHash(hash); // this hash is used for signature, so client tx is not included in this hash.
     privateKey.Sign(hash, toSent.vchSig);
@@ -313,7 +330,7 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
      * log slots after it to be executed. */
     for (; i < logSize && log[i].phase == PbftPhase::reply; i++) {
         gettimeofday(&start_time, NULL);
-        log[i].txCnt = log[i].ppMsg.pPbftBlock->Execute(i, *pcoinsTip);
+        log[i].txCnt = log[i].pPbftBlock->Execute(i, *pcoinsTip);
         gettimeofday(&end_time, NULL);
         lastExecutedSeq = i;
         nCompletedTx += log[i].txCnt;
@@ -331,7 +348,7 @@ bool CPbft::sendReplies(CConnman* connman) {
         /* sent reply msg for only one block per loop .*/
         int seq = ++lastReplySentSeq;
         std::cout << "sending reply for block " << seq <<",  lastReplySentSeq = "<<  lastReplySentSeq << std::endl;
-        std::vector<CTransactionRef>& txList = log[seq].ppMsg.pPbftBlock->vReq;
+        std::vector<CTransactionRef>& txList = log[seq].pPbftBlock->vReq;
         for (uint i = 0; i < txList.size(); i++) {
             /* hard code execution result as 'y' since we are replaying tx on Bitcoin's chain. */
             completedTx.push_back(txList[i]->GetHash());
@@ -354,7 +371,7 @@ void CPbft::saveBlocks2File() const {
 
     fileout.write((char*)&lastExecutedSeq, sizeof(lastExecutedSeq));
     for (int i = 0; i <= lastExecutedSeq; i++) {
-        log[i].ppMsg.pPbftBlock->Serialize(fileout);
+        log[i].pPbftBlock->Serialize(fileout);
     }
 }
 
@@ -371,8 +388,8 @@ int CPbft::readBlocksFromFile() {
     std::cout << __func__ << ": lastExecutedSeqWarmUp = " << lastExecutedSeqWarmUp << std::endl;
     for (int i = 0; i <= lastExecutedSeqWarmUp; i++) {
         try {
-	    log[i].ppMsg.pPbftBlock = std::make_shared<CPbftBlock>();
-            log[i].ppMsg.pPbftBlock->Unserialize(filein);
+	    log[i].pPbftBlock = std::make_shared<CPbftBlock>();
+            log[i].pPbftBlock->Unserialize(filein);
         }
         catch (const std::exception& e) {
             std::cerr << "Deserialize or I/O error when reading PBFT block " << i << ": " << e.what() << std::endl;
@@ -386,10 +403,10 @@ void CPbft::WarmUpMemoryCache() {
     int lastExecutedSeqWarmUp = readBlocksFromFile();
     uint32_t nWarmUpTx = 0;
     for (int i = 0; i <= lastExecutedSeqWarmUp; i++) {
-        log[i].ppMsg.pPbftBlock->WarmupExecute(i, view_warmup);
-        nWarmUpTx += log[i].ppMsg.pPbftBlock->vReq.size();
+        log[i].pPbftBlock->WarmupExecute(i, view_warmup);
+        nWarmUpTx += log[i].pPbftBlock->vReq.size();
         /* Discard the block to prepare for performance test. */
-        log[i].ppMsg.pPbftBlock.reset();
+        log[i].pPbftBlock.reset();
     }
     std::cout << "warm up -- total executed tx: " << nWarmUpTx << std::endl;
 }
@@ -434,6 +451,49 @@ void  ThruputLogger::logServerSideThruput(struct timeval& curTime, uint32_t comp
     }
     lastLogTime = curTime;
     lastCompletedTxCnt = completedTxCnt;
+}
+
+void CPbft::computesSuccessor(const uint256& block_hash, const uint32_t height) {
+    std::map<uint, uint> mapHashValues;
+    CHash256 hasher;
+    uint256 result;
+    for (uint i = 0; i < groupSize; i++) {
+        hasher.Write((const unsigned char*) block_hash.begin(), block_hash.size())
+                .Finalize((unsigned char*) &result);
+        mapHashValues.emplace(result.GetCheapHash(), i);
+    }
+    std::map<uint, uint>::iterator it = mapHashValues.begin();
+
+    /* replace the PBFT leader peer with the last-ranked peer. */
+    it = mapHashValues.begin();
+    for (uint i = 0; i < groupSize - 1; i++, it++) {
+        if (it->second % groupSize == 0) {
+            /* this is the PBFT leader node, replace it with the last node. */
+            it->second = mapHashValues.rbegin()->second;
+            break;
+        }
+    }
+
+    if (isLeader()) {
+        /* leader should send block to the first peer in VG. */
+        log[height].successorBlockPassing = mapHashValues.begin()->second;
+    } else {
+        /* the peer ranked next to us is the successor of block propagation. */
+        it = mapHashValues.begin();
+        for (uint i = 0; i < groupSize - 2; i++, it++) {
+            if (it->second == pbftID) {
+                log[height].successorBlockPassing = (++it)->second;
+                break;
+            }
+        }
+    }
+
+    std::string toPrint("peers' hash ranking for block " + std::to_string(height) + " is:");
+    for (const auto& entry : mapHashValues) {
+        toPrint += std::to_string(entry.second) + ",";
+    }
+    toPrint += " successor = " + std::to_string(log[height].successorBlockPassing);
+    std::cout << toPrint << std::endl;
 }
 
 std::unique_ptr<CPbft> g_pbft;

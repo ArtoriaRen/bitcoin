@@ -32,13 +32,6 @@ void CPbftMessage::getHash(uint256& result){
 	    .Finalize((unsigned char*)&result);
 }
 
-CPre_prepare::CPre_prepare(): CPbftMessage(), pPbftBlock() { }
-
-CPre_prepare::CPre_prepare(const CPre_prepare& msg): CPbftMessage(msg), pPbftBlock(msg.pPbftBlock) { }
-
-CPre_prepare::CPre_prepare(const CPbftMessage& msg): CPbftMessage(msg), pPbftBlock() { }
-
-
 char ExecuteTx(const CTransaction& tx, const int seq, CCoinsViewCache& view) {
     /* -------------logic from Bitcoin code for tx processing--------- */
     CValidationState state;
@@ -140,3 +133,11 @@ void CPbftBlock::Clear() {
     vReq.clear();
 }
 
+CBlockMsg::CBlockMsg(std::shared_ptr<CPbftBlock> pPbftBlockIn, uint32_t seq) : pPbftBlock(pPbftBlockIn), logSlot(seq), peerID(pbftID) {
+}
+
+void CBlockMsg::getHash(uint256& result) const {
+    CHash256().Write((const unsigned char*) &logSlot, sizeof (logSlot))
+            .Write((const unsigned char*) pPbftBlock->hash.begin(), pPbftBlock->hash.size())
+            .Finalize((unsigned char*) &result);
+}

@@ -108,7 +108,7 @@ public:
 
     CPbft();
     // Check Pre-prepare message signature and send Prepare message
-    bool ProcessPP(CConnman* connman, CPre_prepare& ppMsg);
+    bool ProcessPP(CConnman* connman, CPbftMessage& ppMsg);
 
     // Check Prepare message signature, add to corresponding log, check if we have accumulated 2f Prepare message. If so, send Commit message
     bool ProcessP(CConnman* connman, CPbftMessage& pMsg, bool fCheck = true);
@@ -116,9 +116,11 @@ public:
     // Check Commit message signature, add to corresponding log, check if we have accumulated 2f+1 Commit message. If so, execute transactions and reply. 
     bool ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck = true);
 
-    CPre_prepare assemblePPMsg(std::shared_ptr<CPbftBlock> pPbftBlockIn);
+    CBlockMsg assembleBlkMsg(std::shared_ptr<CPbftBlock> pPbftBlockIn, uint32_t seq);
+    CPbftMessage assemblePPMsg(uint256& block_hash);
     CPbftMessage assembleMsg(const uint32_t seq); 
     CReply assembleReply(std::deque<uint256>& vTx, const char exe_res) const;
+    bool checkBlkMsg(CBlockMsg& msg);
     bool checkMsg(CPbftMessage* msg);
     /*return the last executed seq */
     bool executeLog(struct timeval& start_process_first_block);
@@ -139,6 +141,9 @@ public:
     inline bool isLeader(){
 	return pbftID % groupSize == 0;
     }
+
+    /* compute the successor on the propagation chain of this block */
+    void computesSuccessor(const uint256& block_hash, const uint32_t height);
 
     void saveBlocks2File() const;
     int readBlocksFromFile();
