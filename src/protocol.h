@@ -248,6 +248,7 @@ extern const char *PBFT_PUBKEY;
 extern const char *PBFT_CLIENT; // a pbft client use this msg to inform the leader that it is a client not a follower.
 extern const char *COLLAB_VRF;
 extern const char *COLLAB_MULTI_BLK;
+extern const char *BLOCK_SEND_DONE; //leader has sent all blocks
 };
 
 /* Get a vector of all valid message types (see above) */

@@ -34,6 +34,7 @@ extern int32_t reqWaitTimeout;
 extern struct timeval collabResWaitTime; 
 extern size_t groupSize;
 extern uint32_t nFaulty;
+extern bool waitAllblock;
 
 
 class ThreadSafeQueue {
@@ -280,6 +281,14 @@ public:
 
     /* server-side thruput logger. */
     ThruputLogger thruputLogger;
+
+    /* nTxSentByLeader is only useful when testing the througput without waiting for block 
+     * propagation.
+     * The number of tx in all blocks sent to followers. Used by the leader to
+     * decide when it has sent all blocks so that it can notify followers to 
+     * start block execution. */
+    uint nTxSentByLeader;
+    uint nWarmUpTx;
 
 
     CPbft();

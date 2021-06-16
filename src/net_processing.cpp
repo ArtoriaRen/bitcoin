@@ -1917,6 +1917,11 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         }
     }
 
+    else if (strCommand == NetMsgType::BLOCK_SEND_DONE) {
+       /*lift block execution holding, start to execute all blocks. */ 
+       waitAllblock = false;
+    }
+
     else if (strCommand == NetMsgType::PBFT_PP) {
         CPbftMessage ppMsg;
         vRecv >> ppMsg;
@@ -3038,7 +3043,17 @@ bool PeerLogicValidation::SendPPMessages(){
             uint32_t end_peerID = start_peerID + groupSize - 1;
             for (uint32_t i = start_peerID; i < end_peerID; i++) {
                 connman->PushMessage(pbft->peers[i], msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
+            } 
+            if (waitAllblock) {
+                pbft->nTxSentByLeader +=  p_pbft_block-> vReq.size();
+                if (pbft->nTxSentByLeader ==  pbft->nWarmUpTx) {
+                    for (uint32_t i = start_peerID; i < end_peerID; i++) {
+                        connman->PushMessage(pbft->peers[i], msgMaker.Make(NetMsgType::BLOCK_SEND_DONE));
+                    } 
+                    waitAllblock = false;
+                }
             }
+            
         } else if (pbft->reqQueue.size() > 0) {
             pbft->setReqWaitTimer();
         }

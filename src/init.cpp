@@ -836,6 +836,9 @@ void InitParameterInteraction()
     if (gArgs.IsArgSet("-numfaultynodes")) {
         nFaulty = gArgs.GetArg("-numfaultynodes", 1);
     }
+    if (gArgs.IsArgSet("-waitforallblock")) {
+        waitAllblock = gArgs.GetBoolArg("-waitforallblock", false);
+    }
 }
 
 static std::string ResolveErrMsg(const char * const optname, const std::string& strBind)
