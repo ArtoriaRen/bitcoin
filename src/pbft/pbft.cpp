@@ -30,9 +30,10 @@ int32_t reqWaitTimeout = 1000;
 struct timeval collabResWaitTime = {60, 0};
 size_t groupSize = 4;
 uint32_t nFaulty = 1;
+uint32_t vrfResBatchSize = 500;
 volatile bool waitAllblock = false;
 
-CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastConsecutiveSeqInReplyPhase(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalVerifyTime(0), totalVerifyCnt(0), totalExeTime(0), lastBlockVerifiedThisGroup(-1), firstOutstandingBlock(0), qValidTx(2), qInvalidTx(2), validTxQIdx(0), invalidTxQIdx(0), otherSubgroupSendQ(groupSize), notEnoughReqStartTime(std::chrono::milliseconds::zero()), qNotInitialExecutedTx(2), qExecutedTx(2), notExecutedQIdx(0), executedQIdx(0), qCollabMsg(2), qCollabMulBlkMsg(2), collabMsgQIdx(0), collabMulBlkMsgQIdx(0), privateKey(CKey()), nTxSentByLeader(0), nWarmUpTx(0) {
+CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastConsecutiveSeqInReplyPhase(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalVerifyTime(0), totalVerifyCnt(0), totalExeTime(0), lastBlockVerifiedThisGroup(-1), firstOutstandingBlock(0), qValidTx(2), qInvalidTx(2), validTxQIdx(0), invalidTxQIdx(0), otherSubgroupSendQ(groupSize), notEnoughReqStartTime(std::chrono::milliseconds::zero()), qNotInitialExecutedTx(2), qExecutedTx(2), notExecutedQIdx(0), executedQIdx(0), qCollabMsg(2), qCollabMulBlkMsg(2), collabMsgQIdx(0), collabMulBlkMsgQIdx(0), nTxSentByLeader(0), nWarmUpTx(0), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
@@ -443,22 +444,14 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
             struct timeval totalVrfTime = {0, 0};
             //struct timeval collabMsgSendingTime = {0, 0};
             gettimeofday(&start_time, NULL);
-            std::vector<char> validTxs((block.vReq.size() + 7) >> 3); // +7 for ceiling
-            std::vector<uint32_t> invalidTxs;
             std::cout << "verifying block " << curHeight << " of size " << block.vReq.size() << std::endl;
-            uint32_t validTxCnt = block.Verify(curHeight, *pcoinsTip, validTxs, invalidTxs);
+            uint32_t validTxCnt = block.Verify(curHeight, *pcoinsTip);
             gettimeofday(&end_time, NULL);
             totalVrfTime += end_time - start_time;
             lastBlockVerifiedThisGroup++;
             nCompletedTx += validTxCnt;
             thruputLogger.logServerSideThruput(end_time, nCompletedTx);
-            //gettimeofday(&start_time, NULL);
-            mutexCollabMsgQ.lock();
-            qCollabMsg[collabMsgQIdx].emplace_back(curHeight, block.vReq.size(), std::move(validTxs), std::move(invalidTxs));
-            mutexCollabMsgQ.unlock();
-            //gettimeofday(&end_time, NULL);
-            //collabMsgSendingTime += end_time - start_time;
-            //std::cout << "Enqueue Collab msg for block " << curHeight << "takes " << (collabMsgSendingTime.tv_sec * 1000000 + collabMsgSendingTime.tv_usec) << " us. valid tx cnt = " << validTxCnt << ". invalid tx cnt = " << invalidTxs.size() << std::endl;
+            //std::cout << "valid tx cnt = " << validTxCnt << ". invalid tx cnt = " << invalidTxs.size() << std::endl;
         } else {
             /* This is a block of the other subgroup.
              * Check if we have collab_vrf results for this block. If so, execute
@@ -1022,7 +1015,7 @@ void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
 
 
     uint32_t validTxCntInMsg = 0;
-    for (uint i = 0; i < block_collab_res.tx_collab_valid_cnt.size(); i++) {
+    for (uint i = msg.validTxsOffset; i < msg.validTxsOffset + msg.validTxs.size() && i < block_collab_res.tx_collab_valid_cnt.size(); i++) {
         if (block_collab_res.tx_collab_valid_cnt[i] == nFaulty + 1) {
             /* this tx has collect enough collab_valid msg. */
             continue;
@@ -1359,6 +1352,12 @@ void CPbft::computeVG(const uint256& block_hash, const uint32_t height){
 bool CPbft::isInVerifySubGroup(int32_t peer_id, const uint32_t height){
     assert (!log[height].vrfGroup.empty());
     return log[height].vrfGroup.find(peer_id) != log[height].vrfGroup.end();
+}
+
+void CPbft::Copy2CollabMsgQ(uint32_t block_height, uint32_t block_size, uint32_t validTxOffset, std::vector<char>& validTxs, std::vector<uint32_t>& invalidTxs) {
+    mutexCollabMsgQ.lock();
+    qCollabMsg[collabMsgQIdx].emplace_back(block_height, block_size, validTxOffset, validTxs, invalidTxs);
+    mutexCollabMsgQ.unlock();
 }
 
 std::unique_ptr<CPbft> g_pbft;

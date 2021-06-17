@@ -839,6 +839,10 @@ void InitParameterInteraction()
     if (gArgs.IsArgSet("-waitforallblock")) {
         waitAllblock = gArgs.GetBoolArg("-waitforallblock", false);
     }
+    if (gArgs.IsArgSet("-vrfresbatchsize")) {
+        vrfResBatchSize = gArgs.GetArg("-vrfresbatchsize", 500);
+    }
+    
 }
 
 static std::string ResolveErrMsg(const char * const optname, const std::string& strBind)

@@ -160,7 +160,7 @@ public:
     CPbftBlock(std::deque<CTransactionRef> vReqIn);
     void ComputeHash();
     /* verify and execute prereq-clear tx in this block. */
-    uint32_t Verify(const int seq, CCoinsViewCache& view, std::vector<char>& validTxs, std::vector<uint32_t>& invalidTxs) const;
+    uint32_t Verify(const int seq, CCoinsViewCache& view) const;
     uint32_t Execute(const int seq, CCoinsViewCache& view) const;
     void Clear();
 
@@ -196,10 +196,11 @@ class CBlockMsg {
 public:
     uint32_t logSlot;
     std::shared_ptr<CPbftBlock> pPbftBlock;
-    CBlockMsg(std::shared_ptr<CPbftBlock> pPbftBlockIn, uint32_t seq);
     int32_t peerID;
     uint32_t sigSize;
     std::vector<unsigned char> vchSig; //serilized ecdsa signature.
+
+    CBlockMsg(std::shared_ptr<CPbftBlock> pPbftBlockIn, uint32_t seq);
 
     template<typename Stream>
     void Serialize(Stream& s) const{
@@ -229,6 +230,9 @@ class CCollabMessage {
 public:
     uint32_t height;
     uint32_t txCnt;
+    /* used to indicate the starting offset when interpreting the bit vector validTxs
+     * b/c vrf res batch size is lower than block size*/
+    uint32_t validTxsOffset;
     std::vector<char> validTxs;
     std::vector<uint32_t> invalidTxs;
     int32_t peerID;
@@ -236,12 +240,13 @@ public:
     std::vector<unsigned char> vchSig; //serilized ecdsa signature.
 
     CCollabMessage();
-    CCollabMessage(uint32_t heightIn, uint32_t txCntIn, std::vector<char>&& validTxsIn, std::vector<uint32_t>&& invalidTxsIn);
+    CCollabMessage(uint32_t heightIn, uint32_t txCntIn, uint32_t validTxsOffsetIn, std::vector<char>& validTxsIn, std::vector<uint32_t>& invalidTxsIn);
     
     template<typename Stream>
     void Serialize(Stream& s) const{
 	s.write((char*)&height, sizeof(height));
 	s.write((char*)&txCnt, sizeof(txCnt));
+	s.write((char*)&validTxsOffset, sizeof(validTxsOffset));
         uint32_t vector_size = validTxs.size();
 	s.write((char*)&vector_size, sizeof(vector_size));
 	s.write((char*)validTxs.data(), vector_size);
@@ -258,6 +263,7 @@ public:
     void Unserialize(Stream& s) {
 	s.read((char*)&height, sizeof(height));
 	s.read((char*)&txCnt, sizeof(txCnt));
+	s.read((char*)&validTxsOffset, sizeof(validTxsOffset));
         uint32_t vector_size = 0;
         s.read((char*)&vector_size, sizeof(vector_size));
 	validTxs.resize(vector_size);

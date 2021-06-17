@@ -34,6 +34,7 @@ extern int32_t reqWaitTimeout;
 extern struct timeval collabResWaitTime; 
 extern size_t groupSize;
 extern uint32_t nFaulty;
+extern uint32_t vrfResBatchSize;
 extern volatile bool waitAllblock;
 
 
@@ -320,8 +321,14 @@ public:
     void UpdateTxValidity(const CCollabMultiBlockMsg& msg);
     bool checkCollabMsg(const CCollabMessage& msg);
     bool checkCollabMulBlkMsg(const CCollabMultiBlockMsg& msg);
+    /* send verification results to peers not in the VG of this block.*/
     bool SendCollabMsg();
     bool SendCollabMultiBlkMsg(); 
+    /* copy to the global collab msg queue once we finished verifying a certain 
+     * number of transactions.
+     */
+    void Copy2CollabMsgQ(uint32_t block_height, uint32_t block_size, uint32_t validTxOffset, std::vector<char>& validTxs, std::vector<uint32_t>& invalidTxs);
+    
     bool sendReplies(CConnman* connman);
 
     bool timeoutWaitReq();
