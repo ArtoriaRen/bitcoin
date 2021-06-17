@@ -512,7 +512,7 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
                     } /* for invalid tx, there is nothing to do because the tx is not
                        * yet added to the dependency graph. */
                 }
-                std::cout << "Collab processing block " << curHeight << ": average execution time = " << (totalExeTime.tv_sec * 1000000 + totalExeTime.tv_usec) / localExecutedTxCnt << " us/req, average dependency checking time = " << (totalDependencyCheckTime.tv_sec + totalDependencyCheckTime.tv_usec) /futureCollabVrfedBlocks[curHeight].size();
+                //std::cout << "Collab processing block " << curHeight << ": average execution time = " << (totalExeTime.tv_sec * 1000000 + totalExeTime.tv_usec) / localExecutedTxCnt << " us/req, average dependency checking time = " << (totalDependencyCheckTime.tv_sec + totalDependencyCheckTime.tv_usec) /futureCollabVrfedBlocks[curHeight].size();
                 //if (!qDependentTx.empty()) {
                 //    std::cout << " us/req, average add to graph time = " << (totalAdd2GraphTime.tv_sec + totalAdd2GraphTime.tv_usec) / qDependentTx.size();
                 //}

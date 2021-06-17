@@ -195,6 +195,7 @@ static bool havePrereqTx(uint32_t height, uint32_t txSeq) {
 
 uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view) const {
     std::vector<char> validTxs((vrfResBatchSize + 7) >> 3); // +7 for ceiling
+    uint startOffset = 0;
     std::vector<uint32_t> invalidTxs;
     uint32_t validTxCnt = 0;
     /* a queue of tx that are not executed b/c dependency. */
@@ -211,24 +212,27 @@ uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view) const {
         if (hasPrereqTx) {
             qDependentTx.push_back(i);
             //std::cout << " tx " << vReq[i]->GetHash().ToString() << "of block " << seq << " has pending parent " << std::endl;
-            continue;
-        }
-        gettimeofday(&start_time, NULL);
-        bool isValid = VerifyTx(*vReq[i], seq, view);
-        //std::cout << " verified tx " << vReq[i]->GetHash().ToString() << "of block " << seq << std::endl;
-        gettimeofday(&end_time, NULL);
-        totalVrfTime += end_time - start_time;
-        if (isValid) {
-            char bit = 1 << (i % 8); 
-            validTxs[i >> 3] |= bit; 
-            validTxCnt++;
         } else {
-            invalidTxs.push_back(i);
+            gettimeofday(&start_time, NULL);
+            bool isValid = VerifyTx(*vReq[i], seq, view);
+            //std::cout << " verified tx " << vReq[i]->GetHash().ToString() << "of block " << seq << std::endl;
+            gettimeofday(&end_time, NULL);
+            totalVrfTime += end_time - start_time;
+            if (isValid) {
+                uint idx = i - startOffset;
+                char bit = 1 << (idx % 8); 
+                validTxs[idx >> 3] |= bit; 
+                validTxCnt++;
+            } else {
+                invalidTxs.push_back(i);
+            }
         }
         if((i+1) % vrfResBatchSize == 0 || i == vReq.size() - 1) {
             /* processed enough tx, move them to the global queue. */
-            g_pbft->Copy2CollabMsgQ(seq, vReq.size(), i - i % vrfResBatchSize, validTxs, invalidTxs);
-            std::fill(validTxs.begin(), validTxs.end(), 0);
+            g_pbft->Copy2CollabMsgQ(seq, vReq.size(), startOffset, validTxs, invalidTxs);
+            std::fill(validTxs.begin(), validTxs.end(), '\0');
+            startOffset = i + 1;
+            std::cout << "startOffset  = " << startOffset << std::endl;
             invalidTxs.clear();
         }
     }
