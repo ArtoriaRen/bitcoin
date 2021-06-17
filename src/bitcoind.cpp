@@ -55,6 +55,14 @@ void WaitForShutdown()
         sentSomething = g_pbft->sendReplies(g_connman.get());
         sentSomething |= g_pbft->SendCollabMsg();
         sentSomething |= g_pbft-> SendCollabMultiBlkMsg();
+
+        /* log throughput if enough long time has elapsed. */
+        struct timeval currentTime;
+        gettimeofday(&currentTime, NULL);
+        if (pbft.nCompletedTx > 0 && pbft.nCompletedTx < pbft.nWarmUpTx) {
+            pbft.thruputLogger.logServerSideThruput(currentTime, pbft.nCompletedTx);
+        }
+
         if (!sentSomething) {
             MilliSleep(10);
         }

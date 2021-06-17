@@ -230,7 +230,6 @@ bool CPbft::ProcessC(CConnman* connman, CPbftMessage& cMsg, bool fCheck) {
             /* log that test has started. */
             struct timeval curTime;
             gettimeofday(&curTime, NULL);
-            thruputLogger.logServerSideThruput(curTime, 0);
         }
 
         /* the log-exe thread will execute blocks in reply phase sequentially. */
@@ -450,7 +449,6 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
             totalVrfTime += end_time - start_time;
             lastBlockVerifiedThisGroup++;
             nCompletedTx += validTxCnt;
-            thruputLogger.logServerSideThruput(end_time, nCompletedTx);
             //std::cout << "valid tx cnt = " << validTxCnt << ". invalid tx cnt = " << invalidTxs.size() << std::endl;
         } else {
             /* This is a block of the other subgroup.
@@ -533,7 +531,6 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
                 futureCollabVrfedBlocks.erase(curHeight);
                 informReplySendingThread(curHeight, qDependentTx);
                 nCompletedTx += localExecutedTxCnt;
-                thruputLogger.logServerSideThruput(end_time, nCompletedTx);
             } else {
                 std::cout << " future map DOES'T have block "  << curHeight << std::endl;
                 /* we haven't received collab_vrf results for any tx in the block, add
@@ -609,7 +606,6 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
             }
         }
         gettimeofday(&end_time, NULL);
-        thruputLogger.logServerSideThruput(end_time, nCompletedTx);
         qValidTx[validTxQIdx].clear();
         /* TODO : handle invalid tx queue. */
     }
@@ -1013,23 +1009,13 @@ void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
         return;
     }
 
-
-    uint32_t validTxCntInMsg = 0;
-    for (uint i = msg.validTxsOffset; i < msg.validTxsOffset + msg.validTxs.size() && i < block_collab_res.tx_collab_valid_cnt.size(); i++) {
-        if (block_collab_res.tx_collab_valid_cnt[i] == nFaulty + 1) {
-            /* this tx has collect enough collab_valid msg. */
-            continue;
-        }
-        if (msg.isValidTx(i)) {
-            validTxCntInMsg++;
-            block_collab_res.tx_collab_valid_cnt[i]++;
-            if (block_collab_res.tx_collab_valid_cnt[i] == nFaulty + 1) {
+    for (const auto txSeq: msg.validTxs) {
+            block_collab_res.tx_collab_valid_cnt[txSeq]++;
+            if (block_collab_res.tx_collab_valid_cnt[txSeq] == nFaulty + 1) {
                 block_collab_res.collab_msg_full_tx_cnt++;
                 /* add the tx to validTxQ */
-                localValidTxQ.emplace_back(msg.height, i);
+                localValidTxQ.emplace_back(msg.height, txSeq);
             }
-
-        }
     }
 
     for (const auto txSeq: msg.invalidTxs) {
@@ -1288,13 +1274,17 @@ InitialBlockExecutionStatus::InitialBlockExecutionStatus(){ };
 InitialBlockExecutionStatus::InitialBlockExecutionStatus(uint32_t heightIn, std::deque<uint32_t>&& dependentTxsIn): height(heightIn), dependentTxs(dependentTxsIn){ };
 
 void  ThruputLogger::logServerSideThruput(struct timeval& curTime, uint32_t completedTxCnt) {
+    struct timeval timeElapsed = curTime - lastLogTime;
+    /* log throughput per second. */
+    if (timeElapsed.tv_sec * 1000000 + timeElapsed.tv_usec < 1000000) {
+        return;
+    }
     if (completedTxCnt != 0) {
-        struct timeval timeElapsed = curTime - lastLogTime;
         double thruput = (completedTxCnt - lastCompletedTxCnt) / (timeElapsed.tv_sec + timeElapsed.tv_usec * 0.000001);
-        thruputSS << curTime.tv_sec << "." << curTime.tv_usec << "," <<  completedTxCnt << "," << thruput << "\n";
+        thruputSS << curTime.tv_sec << "." << curTime.tv_usec << "," << completedTxCnt << "," << thruput << "\n";
     } else {
         /* test just starts. */
-        thruputSS << curTime.tv_sec << "." << curTime.tv_usec << ",0,0\n";
+        thruputSS << curTime.tv_sec << "." << curTime.tv_usec << "," << completedTxCnt << ",0\n";
     }
     lastLogTime = curTime;
     lastCompletedTxCnt = completedTxCnt;
@@ -1354,9 +1344,9 @@ bool CPbft::isInVerifySubGroup(int32_t peer_id, const uint32_t height){
     return log[height].vrfGroup.find(peer_id) != log[height].vrfGroup.end();
 }
 
-void CPbft::Copy2CollabMsgQ(uint32_t block_height, uint32_t block_size, uint32_t validTxOffset, std::vector<char>& validTxs, std::vector<uint32_t>& invalidTxs) {
+void CPbft::Copy2CollabMsgQ(uint32_t block_height, uint32_t block_size, std::vector<uint32_t>& validTxs, std::vector<uint32_t>& invalidTxs) {
     mutexCollabMsgQ.lock();
-    qCollabMsg[collabMsgQIdx].emplace_back(block_height, block_size, validTxOffset, validTxs, invalidTxs);
+    qCollabMsg[collabMsgQIdx].emplace_back(block_height, block_size, validTxs, invalidTxs);
     mutexCollabMsgQ.unlock();
 }
 

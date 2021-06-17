@@ -327,7 +327,7 @@ public:
     /* copy to the global collab msg queue once we finished verifying a certain 
      * number of transactions.
      */
-    void Copy2CollabMsgQ(uint32_t block_height, uint32_t block_size, uint32_t validTxOffset, std::vector<char>& validTxs, std::vector<uint32_t>& invalidTxs);
+    void Copy2CollabMsgQ(uint32_t block_height, uint32_t block_size, std::vector<uint32_t>& validTxs, std::vector<uint32_t>& invalidTxs);
     
     bool sendReplies(CConnman* connman);
 

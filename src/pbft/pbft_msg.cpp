@@ -194,8 +194,7 @@ static bool havePrereqTx(uint32_t height, uint32_t txSeq) {
 
 
 uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view) const {
-    std::vector<char> validTxs((vrfResBatchSize + 7) >> 3); // +7 for ceiling
-    uint startOffset = 0;
+    std::vector<uint32_t> validTxs; 
     std::vector<uint32_t> invalidTxs;
     uint32_t validTxCnt = 0;
     /* a queue of tx that are not executed b/c dependency. */
@@ -219,20 +218,16 @@ uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view) const {
             gettimeofday(&end_time, NULL);
             totalVrfTime += end_time - start_time;
             if (isValid) {
-                uint idx = i - startOffset;
-                char bit = 1 << (idx % 8); 
-                validTxs[idx >> 3] |= bit; 
+                validTxs.push_back(i); 
                 validTxCnt++;
             } else {
                 invalidTxs.push_back(i);
             }
         }
-        if((i+1) % vrfResBatchSize == 0 || i == vReq.size() - 1) {
+        if(validTxs.size() + invalidTxs.size() == vrfResBatchSize  || i == vReq.size() - 1) {
             /* processed enough tx, move them to the global queue. */
-            g_pbft->Copy2CollabMsgQ(seq, vReq.size(), startOffset, validTxs, invalidTxs);
-            std::fill(validTxs.begin(), validTxs.end(), '\0');
-            startOffset = i + 1;
-            std::cout << "startOffset  = " << startOffset << std::endl;
+            g_pbft->Copy2CollabMsgQ(seq, vReq.size(), validTxs, invalidTxs);
+            validTxs.clear();
             invalidTxs.clear();
         }
     }
@@ -268,24 +263,16 @@ CCollabMessage::CCollabMessage(): peerID(pbftID), sigSize(0), vchSig() {
     vchSig.reserve(72); // the expected sig size is 72 bytes.
 }
 
-CCollabMessage::CCollabMessage(uint32_t heightIn, uint32_t txCntIn, uint32_t validTxsOffsetIn, std::vector<char>& validTxsIn, std::vector<uint32_t>& invalidTxsIn): height(heightIn), txCnt(txCntIn), validTxsOffset(validTxsOffsetIn), validTxs(validTxsIn),invalidTxs(invalidTxsIn), peerID(pbftID), sigSize(0), vchSig() {
+CCollabMessage::CCollabMessage(uint32_t heightIn, uint32_t txCntIn, std::vector<uint32_t>& validTxsIn, std::vector<uint32_t>& invalidTxsIn): height(heightIn), txCnt(txCntIn), validTxs(validTxsIn),invalidTxs(invalidTxsIn), peerID(pbftID), sigSize(0), vchSig() {
     vchSig.reserve(72); // the expected sig size is 72 bytes.
 }
 
 void CCollabMessage::getHash(uint256& result) const {
     CHash256().Write((const unsigned char*)&height, sizeof(height))
             .Write((const unsigned char*)&txCnt, sizeof(txCnt))
-            .Write((const unsigned char*)&validTxsOffset, sizeof(validTxsOffset))
-            .Write((const unsigned char*)validTxs.data(), validTxs.size())
+            .Write((const unsigned char*)validTxs.data(), validTxs.size() * sizeof(uint32_t))
             .Write((const unsigned char*)invalidTxs.data(), invalidTxs.size() * sizeof(uint32_t))
 	    .Finalize((unsigned char*)&result);
-}
-
-/* fetch the bit for this tx. If the bit is 1, then the tx is valid. */
-bool CCollabMessage::isValidTx(const uint32_t txSeq) const {
-    uint idx = txSeq - validTxsOffset;
-    char bit_mask = 1 << (idx % 8);
-    return  validTxs[idx >> 3] & bit_mask;
 }
 
 CCollabMultiBlockMsg::CCollabMultiBlockMsg(): peerID(pbftID), sigSize(0), vchSig() {

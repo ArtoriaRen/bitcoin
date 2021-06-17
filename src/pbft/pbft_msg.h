@@ -232,24 +232,22 @@ public:
     uint32_t txCnt;
     /* used to indicate the starting offset when interpreting the bit vector validTxs
      * b/c vrf res batch size is lower than block size*/
-    uint32_t validTxsOffset;
-    std::vector<char> validTxs;
+    std::vector<uint32_t> validTxs;
     std::vector<uint32_t> invalidTxs;
     int32_t peerID;
     uint32_t sigSize;
     std::vector<unsigned char> vchSig; //serilized ecdsa signature.
 
     CCollabMessage();
-    CCollabMessage(uint32_t heightIn, uint32_t txCntIn, uint32_t validTxsOffsetIn, std::vector<char>& validTxsIn, std::vector<uint32_t>& invalidTxsIn);
+    CCollabMessage(uint32_t heightIn, uint32_t txCntIn, std::vector<uint32_t>& validTxsIn, std::vector<uint32_t>& invalidTxsIn);
     
     template<typename Stream>
     void Serialize(Stream& s) const{
 	s.write((char*)&height, sizeof(height));
 	s.write((char*)&txCnt, sizeof(txCnt));
-	s.write((char*)&validTxsOffset, sizeof(validTxsOffset));
         uint32_t vector_size = validTxs.size();
 	s.write((char*)&vector_size, sizeof(vector_size));
-	s.write((char*)validTxs.data(), vector_size);
+	s.write((char*)validTxs.data(), vector_size * sizeof(uint32_t));
         vector_size = invalidTxs.size();
 	s.write((char*)&vector_size, sizeof(vector_size));
 	s.write((char*)invalidTxs.data(), vector_size * sizeof(uint32_t));
@@ -263,11 +261,10 @@ public:
     void Unserialize(Stream& s) {
 	s.read((char*)&height, sizeof(height));
 	s.read((char*)&txCnt, sizeof(txCnt));
-	s.read((char*)&validTxsOffset, sizeof(validTxsOffset));
         uint32_t vector_size = 0;
         s.read((char*)&vector_size, sizeof(vector_size));
 	validTxs.resize(vector_size);
-	s.read((char*)validTxs.data(), vector_size);
+	s.read((char*)validTxs.data(), vector_size * sizeof(uint32_t));
         s.read((char*)&vector_size, sizeof(vector_size));
 	invalidTxs.resize(vector_size);
 	s.read((char*)invalidTxs.data(), vector_size * sizeof(uint32_t));
@@ -278,9 +275,6 @@ public:
 	s.read((char*)vchSig.data(), sigSize);
     }
     void getHash(uint256& result) const;
-
-    /* fetch the bit for this tx. If the bit is 1, then the tx is valid. */
-    bool isValidTx(const uint32_t txSeq) const;
 };
 
 class CCollabMultiBlockMsg {
