@@ -30,7 +30,7 @@ int32_t reqWaitTimeout = 1000;
 struct timeval collabResWaitTime = {60, 0};
 size_t groupSize = 4;
 uint32_t nFaulty = 1;
-bool waitAllblock = false;
+volatile bool waitAllblock = false;
 
 CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastConsecutiveSeqInReplyPhase(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalVerifyTime(0), totalVerifyCnt(0), totalExeTime(0), lastBlockVerifiedThisGroup(-1), firstOutstandingBlock(0), qValidTx(2), qInvalidTx(2), validTxQIdx(0), invalidTxQIdx(0), otherSubgroupSendQ(groupSize), notEnoughReqStartTime(std::chrono::milliseconds::zero()), qNotInitialExecutedTx(2), qExecutedTx(2), notExecutedQIdx(0), executedQIdx(0), qCollabMsg(2), qCollabMulBlkMsg(2), collabMsgQIdx(0), collabMulBlkMsgQIdx(0), privateKey(CKey()), nTxSentByLeader(0), nWarmUpTx(0) {
     privateKey.MakeNewKey(false);
@@ -1193,7 +1193,7 @@ void CPbft::WarmUpMemoryCache() {
      * and this match the practical use case. */
     CCoinsViewCache view_warmup(pcoinsTip.get());
     int lastExecutedSeqWarmUp = readBlocksFromFile();
-    uint32_t nWarmUpTx = 0;
+    nWarmUpTx = 0;
     for (int i = 0; i <= lastExecutedSeqWarmUp; i++) {
         log[i].pPbftBlock->Execute(i, view_warmup);
         nWarmUpTx += log[i].pPbftBlock->vReq.size();
@@ -1206,7 +1206,10 @@ void CPbft::WarmUpMemoryCache() {
 void ThreadConsensusLogExe() {
     RenameThread("bitcoin-logexe");
     struct timeval start_process_first_block = {0, 0};
-    while (!ShutdownRequested() && !waitAllblock) {
+    while (waitAllblock) {
+        MilliSleep(10);
+    }
+    while (!ShutdownRequested()) {
         bool busy = g_pbft->executeLog(start_process_first_block);
         if (!busy) {
             MilliSleep(10);

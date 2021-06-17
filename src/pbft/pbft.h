@@ -34,7 +34,7 @@ extern int32_t reqWaitTimeout;
 extern struct timeval collabResWaitTime; 
 extern size_t groupSize;
 extern uint32_t nFaulty;
-extern bool waitAllblock;
+extern volatile bool waitAllblock;
 
 
 class ThreadSafeQueue {
