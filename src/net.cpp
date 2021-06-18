@@ -2854,6 +2854,45 @@ void CConnman::PushMessage(CNode* pnode, CSerializedNetMsg&& msg)
         RecordBytesSent(nBytesSent);
 }
 
+void CConnman::PushMessageMultiPeers(std::deque<int32_t>& receiverIds, std::vector<CNode*>& pnodes, CSerializedNetMsg&& msg)
+{
+    //std::cout << __func__ << ": " << msg.command << std::endl;
+    size_t nMessageSize = msg.data.size();
+    size_t nTotalSize = nMessageSize + CMessageHeader::HEADER_SIZE;
+    //LogPrint(BCLog::NET, "sending %s (%d bytes) peer=%d\n",  SanitizeString(msg.command.c_str()), nMessageSize, pnode->GetId());
+
+    std::vector<unsigned char> serializedHeader;
+    serializedHeader.reserve(CMessageHeader::HEADER_SIZE);
+    uint256 hash = Hash(msg.data.data(), msg.data.data() + nMessageSize);
+    CMessageHeader hdr(Params().MessageStart(), msg.command.c_str(), nMessageSize);
+    memcpy(hdr.pchChecksum, hash.begin(), CMessageHeader::CHECKSUM_SIZE);
+
+    CVectorWriter{SER_NETWORK, INIT_PROTO_VERSION, serializedHeader, 0, hdr};
+
+    size_t nBytesSent = 0;
+    for (int32_t i: receiverIds) {
+        CNode* pnode = pnodes[i];
+        LOCK(pnode->cs_vSend);
+        bool optimisticSend(pnode->vSendMsg.empty());
+
+        //log total amount of bytes per command
+        pnode->mapSendBytesPerMsgCmd[msg.command] += nTotalSize;
+        pnode->nSendSize += nTotalSize;
+
+        if (pnode->nSendSize > nSendBufferMaxSize)
+            pnode->fPauseSend = true;
+        pnode->vSendMsg.push_back(serializedHeader);
+        if (nMessageSize)
+            pnode->vSendMsg.push_back(msg.data);
+
+        // If write queue empty, attempt "optimistic write"
+        if (optimisticSend == true)
+            nBytesSent += SocketSendData(pnode);
+    }
+    if (nBytesSent)
+        RecordBytesSent(nBytesSent);
+}
+
 bool CConnman::ForNode(NodeId id, std::function<bool(CNode* pnode)> func)
 {
     CNode* found = nullptr;

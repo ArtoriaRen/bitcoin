@@ -866,9 +866,9 @@ bool CPbft::SendCollabMsg() {
                 /* this is a peer in the other subgroup for this block. */
                 //std::cout << "sending collab msg for block " << toSent.height << " to peer " << i << std::endl;
                 mapBlockOtherSubgroup[toSent.height].push_back(i);
-                g_connman->PushMessage(peers[i], msgMaker.Make(NetMsgType::COLLAB_VRF, toSent));
             }
         } 
+        g_connman->PushMessageMultiPeers(mapBlockOtherSubgroup[toSent.height], peers, msgMaker.Make(NetMsgType::COLLAB_VRF, toSent));
     }
     qCollabMsg[1 - collabMsgQIdx].clear();
     return true;
