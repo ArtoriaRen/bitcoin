@@ -133,6 +133,7 @@ private:
     uint32_t lastCompletedTxCnt;
 
 public:
+    ThruputLogger();
     std::stringstream thruputSS;
     void logServerSideThruput(struct timeval& curTime, uint32_t completedTxCnt);
 };

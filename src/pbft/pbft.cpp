@@ -634,38 +634,38 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
 
     /* Step 3: If the lowest-height skippd block has been outstanding for a long time,
      *  verify it. */
-    gettimeofday(&end_time, NULL);
-    if (!mapSkippedBlocks.empty() && end_time - mapSkippedBlocks.begin()->second.blockMetTime > collabResWaitTime) {
-        std::cout << "Step 3: current time = " << end_time.tv_sec << "s , block met time = " << mapSkippedBlocks.begin()->second.blockMetTime.tv_sec << "s" << std::endl;
-        /* the lowest-height block is old enough, verify tx without collab res in it. */
-        uint32_t height_to_verify = mapSkippedBlocks.begin()->first; 
-        /* remove it from the skipped block map and mapCollabRes. */
-        CPbftBlock& blk = *log[height_to_verify].pPbftBlock;
-        assert(mapSkippedBlocks.begin()->second.outstandingTxCnt > 0);
-        std::cout << "Step 3: executing " << mapSkippedBlocks.begin()->second.outstandingTxCnt << " outstanding tx in block " << height_to_verify << std::endl;
-        const std::deque<char>& collabStatus = mapSkippedBlocks.begin()->second.collabStatus; 
-        for (int i = 0; i < blk.vReq.size(); i++) {
-            if (collabStatus[i] == 0 && VerifyButNoExecuteTx(*(blk.vReq[i]), height_to_verify, *pcoinsTip)) {
-                /* this tx does not have enough collab msg to prove it is 
-                 * valid or invalid, we must verify it by ourselves.
-                 * We do not need to check for prereqTx b/c all tx ahead of 
-                 * this tx must have been executed no matter it is triggered by
-                 * collab res or dependency.
-                 */
-                executePrereqTx(TxIndexOnChain(height_to_verify, i), validTxsMulBlk, invalidTxsMulBlk);
-            }
-        }
-        mapSkippedBlocks.erase(mapSkippedBlocks.begin());
-        if (!mapSkippedBlocks.empty()) {
-            firstOutstandingBlock = mapSkippedBlocks.begin()->first;
-        } else {
-            /* there is no skipped blocks. use the next block as the first
-             * outstanding block for mapBlockCollabRes pruning. */
-            firstOutstandingBlock = height_to_verify + 1;
-        }
-        std::cout << "Step 3: firstOutstandingBlock = " << firstOutstandingBlock << std::endl;
-        doneSomething = true;
-    }
+    //gettimeofday(&end_time, NULL);
+    //if (!mapSkippedBlocks.empty() && end_time - mapSkippedBlocks.begin()->second.blockMetTime > collabResWaitTime) {
+    //    std::cout << "Step 3: current time = " << end_time.tv_sec << "s , block met time = " << mapSkippedBlocks.begin()->second.blockMetTime.tv_sec << "s" << std::endl;
+    //    /* the lowest-height block is old enough, verify tx without collab res in it. */
+    //    uint32_t height_to_verify = mapSkippedBlocks.begin()->first; 
+    //    /* remove it from the skipped block map and mapCollabRes. */
+    //    CPbftBlock& blk = *log[height_to_verify].pPbftBlock;
+    //    assert(mapSkippedBlocks.begin()->second.outstandingTxCnt > 0);
+    //    std::cout << "Step 3: executing " << mapSkippedBlocks.begin()->second.outstandingTxCnt << " outstanding tx in block " << height_to_verify << std::endl;
+    //    const std::deque<char>& collabStatus = mapSkippedBlocks.begin()->second.collabStatus; 
+    //    for (int i = 0; i < blk.vReq.size(); i++) {
+    //        if (collabStatus[i] == 0 && VerifyButNoExecuteTx(*(blk.vReq[i]), height_to_verify, *pcoinsTip)) {
+    //            /* this tx does not have enough collab msg to prove it is 
+    //             * valid or invalid, we must verify it by ourselves.
+    //             * We do not need to check for prereqTx b/c all tx ahead of 
+    //             * this tx must have been executed no matter it is triggered by
+    //             * collab res or dependency.
+    //             */
+    //            executePrereqTx(TxIndexOnChain(height_to_verify, i), validTxsMulBlk, invalidTxsMulBlk);
+    //        }
+    //    }
+    //    mapSkippedBlocks.erase(mapSkippedBlocks.begin());
+    //    if (!mapSkippedBlocks.empty()) {
+    //        firstOutstandingBlock = mapSkippedBlocks.begin()->first;
+    //    } else {
+    //        /* there is no skipped blocks. use the next block as the first
+    //         * outstanding block for mapBlockCollabRes pruning. */
+    //        firstOutstandingBlock = height_to_verify + 1;
+    //    }
+    //    std::cout << "Step 3: firstOutstandingBlock = " << firstOutstandingBlock << std::endl;
+    //    doneSomething = true;
+    //}
 
     if (!validTxsMulBlk.empty() || !invalidTxsMulBlk.empty()) {
         mutexCollabMsgQ.lock();
@@ -953,7 +953,7 @@ bool CPbft::sendReplies(CConnman* connman) {
         /* send reply for all tx in the block except for tx in the InitialExecutedTx list. */
         std::vector<CTransactionRef>& txList = log[p.height].pPbftBlock->vReq;
         for (uint i = 0; i < txList.size(); i++) {
-            if (i == p.dependentTxs.front()) {
+            if (!p.dependentTxs.empty() && i == p.dependentTxs.front()) {
                 p.dependentTxs.pop_front();
             } else {
                 completedTx.push_back(txList[i]->GetHash());
@@ -1274,18 +1274,18 @@ InitialBlockExecutionStatus::InitialBlockExecutionStatus(){ };
 InitialBlockExecutionStatus::InitialBlockExecutionStatus(uint32_t heightIn, std::deque<uint32_t>&& dependentTxsIn): height(heightIn), dependentTxs(dependentTxsIn){ };
 
 void  ThruputLogger::logServerSideThruput(struct timeval& curTime, uint32_t completedTxCnt) {
+    if (lastLogTime.tv_sec == 0) {
+        lastLogTime = curTime;
+        lastCompletedTxCnt = completedTxCnt;
+        return;
+    }
     struct timeval timeElapsed = curTime - lastLogTime;
     /* log throughput per second. */
     if (timeElapsed.tv_sec * 1000000 + timeElapsed.tv_usec < 1000000) {
         return;
     }
-    if (completedTxCnt != 0) {
-        double thruput = (completedTxCnt - lastCompletedTxCnt) / (timeElapsed.tv_sec + timeElapsed.tv_usec * 0.000001);
-        thruputSS << curTime.tv_sec << "." << curTime.tv_usec << "," << completedTxCnt << "," << thruput << "\n";
-    } else {
-        /* test just starts. */
-        thruputSS << curTime.tv_sec << "." << curTime.tv_usec << "," << completedTxCnt << ",0\n";
-    }
+    double thruput = (completedTxCnt - lastCompletedTxCnt) / (timeElapsed.tv_sec + timeElapsed.tv_usec * 0.000001);
+    thruputSS << curTime.tv_sec << "." << curTime.tv_usec << "," << completedTxCnt << "," << thruput << "," << g_pbft->mapTxDependency.size() << "," << g_pbft->mapPrereqCnt.size() << "\n";
     lastLogTime = curTime;
     lastCompletedTxCnt = completedTxCnt;
 }
@@ -1349,5 +1349,7 @@ void CPbft::Copy2CollabMsgQ(uint32_t block_height, uint32_t block_size, std::vec
     qCollabMsg[collabMsgQIdx].emplace_back(block_height, block_size, validTxs, invalidTxs);
     mutexCollabMsgQ.unlock();
 }
+
+ThruputLogger::ThruputLogger(): lastLogTime({0, 0}) { }
 
 std::unique_ptr<CPbft> g_pbft;
