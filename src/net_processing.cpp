@@ -3040,15 +3040,17 @@ bool PeerLogicValidation::SendPPMessages(){
             connman->PushMessage(pbft->peers[pbft->log[ppMsg.seq].successorBlockPassing], msgMaker.Make(NetMsgType::PBFT_BLOCK, blockMsg));
 
             /* send PBFT pre-prepare message to the other peers. */
-            std::deque<int32_t> followersIds(groupSize - 1);
-            for (uint32_t i = 1; i < groupSize; i++) {
-                followersIds.push_back(i);
+            uint32_t start_peerID = pbftID + 1; // skip the leader id b/c it is myself
+            uint32_t end_peerID = start_peerID + groupSize - 1;
+            for (uint32_t i = start_peerID; i < end_peerID; i++) {
+                connman->PushMessage(pbft->peers[i], msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
             } 
-            connman->PushMessageMultiPeers(followersIds, pbft->peers, msgMaker.Make(NetMsgType::PBFT_PP, ppMsg));
             if (waitAllblock) {
                 pbft->nTxSentByLeader +=  p_pbft_block->vReq.size();
                 if (pbft->nTxSentByLeader == pbft->nWarmUpTx) {
-                    connman->PushMessageMultiPeers(followersIds, pbft->peers, msgMaker.Make(NetMsgType::BLOCK_SEND_DONE));
+                    for (uint32_t i = start_peerID; i < end_peerID; i++) {
+                       connman->PushMessage(pbft->peers[i], msgMaker.Make(NetMsgType::BLOCK_SEND_DONE));
+                    } 
                     waitAllblock = false;
                 }
             }

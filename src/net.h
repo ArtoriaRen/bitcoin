@@ -184,7 +184,6 @@ public:
     bool ForNode(NodeId id, std::function<bool(CNode* pnode)> func);
 
     void PushMessage(CNode* pnode, CSerializedNetMsg&& msg);
-    void PushMessageMultiPeers(std::deque<int32_t>& receiverIds, std::vector<CNode*>& pnodes, CSerializedNetMsg&& msg);
 
     template<typename Callable>
     void ForEachNode(Callable&& func)
