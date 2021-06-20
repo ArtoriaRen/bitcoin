@@ -218,6 +218,7 @@ uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view) const {
             gettimeofday(&end_time, NULL);
             totalVrfTime += end_time - start_time;
             if (isValid) {
+                //std::cout << __func__ << ": tx (" << seq << ", "  << i << ") " << vReq[i]->GetHash().ToString().substr(0, 10) << " is valid" << std::endl;
                 validTxs.push_back(i); 
                 validTxCnt++;
             } else {
@@ -226,6 +227,7 @@ uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view) const {
         }
         if(validTxs.size() + invalidTxs.size() == vrfResBatchSize  || i == vReq.size() - 1) {
             /* processed enough tx, move them to the global queue. */
+            //std::cout << "verified to tx "  << i << " in block " << seq << ". valid tx cnt = " << validTxs.size() << std::endl;
             g_pbft->Copy2CollabMsgQ(seq, vReq.size(), validTxs, invalidTxs);
             validTxs.clear();
             invalidTxs.clear();
