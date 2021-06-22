@@ -635,38 +635,40 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
 
     /* Step 3: If the lowest-height skippd block has been outstanding for a long time,
      *  verify it. */
-    //gettimeofday(&end_time, NULL);
-    //if (!mapSkippedBlocks.empty() && end_time - mapSkippedBlocks.begin()->second.blockMetTime > collabResWaitTime) {
-    //    std::cout << "Step 3: current time = " << end_time.tv_sec << "s , block met time = " << mapSkippedBlocks.begin()->second.blockMetTime.tv_sec << "s" << std::endl;
-    //    /* the lowest-height block is old enough, verify tx without collab res in it. */
-    //    uint32_t height_to_verify = mapSkippedBlocks.begin()->first; 
-    //    /* remove it from the skipped block map and mapCollabRes. */
-    //    CPbftBlock& blk = *log[height_to_verify].pPbftBlock;
-    //    assert(mapSkippedBlocks.begin()->second.outstandingTxCnt > 0);
-    //    std::cout << "Step 3: executing " << mapSkippedBlocks.begin()->second.outstandingTxCnt << " outstanding tx in block " << height_to_verify << std::endl;
-    //    const std::deque<char>& collabStatus = mapSkippedBlocks.begin()->second.collabStatus; 
-    //    for (int i = 0; i < blk.vReq.size(); i++) {
-    //        if (collabStatus[i] == 0 && VerifyButNoExecuteTx(*(blk.vReq[i]), height_to_verify, *pcoinsTip)) {
-    //            /* this tx does not have enough collab msg to prove it is 
-    //             * valid or invalid, we must verify it by ourselves.
-    //             * We do not need to check for prereqTx b/c all tx ahead of 
-    //             * this tx must have been executed no matter it is triggered by
-    //             * collab res or dependency.
-    //             */
-    //            executePrereqTx(TxIndexOnChain(height_to_verify, i), validTxsMulBlk, invalidTxsMulBlk);
-    //        }
-    //    }
-    //    mapSkippedBlocks.erase(mapSkippedBlocks.begin());
-    //    if (!mapSkippedBlocks.empty()) {
-    //        firstOutstandingBlock = mapSkippedBlocks.begin()->first;
-    //    } else {
-    //        /* there is no skipped blocks. use the next block as the first
-    //         * outstanding block for mapBlockCollabRes pruning. */
-    //        firstOutstandingBlock = height_to_verify + 1;
-    //    }
-    //    std::cout << "Step 3: firstOutstandingBlock = " << firstOutstandingBlock << std::endl;
-    //    doneSomething = true;
-    //}
+    gettimeofday(&end_time, NULL);
+    if (!mapSkippedBlocks.empty() && end_time - mapSkippedBlocks.begin()->second.blockMetTime > collabResWaitTime) {
+        std::cout << "Step 3: current time = " << end_time.tv_sec << "s , block met time = " << mapSkippedBlocks.begin()->second.blockMetTime.tv_sec << "s" << std::endl;
+        /* the lowest-height block is old enough, verify tx without collab res in it. */
+        uint32_t height_to_verify = mapSkippedBlocks.begin()->first; 
+        /* remove it from the skipped block map and mapCollabRes. */
+        CPbftBlock& blk = *log[height_to_verify].pPbftBlock;
+        assert(mapSkippedBlocks.begin()->second.outstandingTxCnt > 0);
+        std::cout << "Step 3: executing " << mapSkippedBlocks.begin()->second.outstandingTxCnt << " outstanding tx in block " << height_to_verify << std::endl;
+        const std::deque<char>& collabStatus = mapSkippedBlocks.begin()->second.collabStatus; 
+        for (int i = 0; i < blk.vReq.size(); i++) {
+            if (collabStatus[i] == 0 && VerifyButNoExecuteTx(*(blk.vReq[i]), height_to_verify, *pcoinsTip)) {
+                /* this tx does not have enough collab msg to prove it is 
+                 * valid or invalid, we must verify it by ourselves.
+                 * We do not need to check for prereqTx b/c all tx ahead of 
+                 * this tx must have been executed no matter it is triggered by
+                 * collab res or dependency.
+                 */
+                TxIndexOnChain txIdx(height_to_verify, i);
+                validTxsMulBlk.push_back(txIdx);
+                executePrereqTx(txIdx, validTxsMulBlk, invalidTxsMulBlk);
+            }
+        }
+        mapSkippedBlocks.erase(mapSkippedBlocks.begin());
+        if (!mapSkippedBlocks.empty()) {
+            firstOutstandingBlock = mapSkippedBlocks.begin()->first;
+        } else {
+            /* there is no skipped blocks. use the next block as the first
+             * outstanding block for mapBlockCollabRes pruning. */
+            firstOutstandingBlock = height_to_verify + 1;
+        }
+        std::cout << "Step 3: firstOutstandingBlock = " << firstOutstandingBlock << std::endl;
+        doneSomething = true;
+    }
 
     if (!validTxsMulBlk.empty() || !invalidTxsMulBlk.empty()) {
         mutexCollabMsgQ.lock();
