@@ -69,7 +69,7 @@ public:
 class CPbft{
 public:
     // TODO: may need to recycle log slots for throughput test. Consider deque.
-    static const size_t logSize = 3000;  
+    static const size_t logSize = 6000;
     static const int32_t clientID = 65; // the pbftID of the client.
     uint32_t localView;
     // pbft log. The index is sequence number.
