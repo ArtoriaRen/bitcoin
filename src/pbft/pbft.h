@@ -156,7 +156,7 @@ public:
 class CPbft{
 public:
     // TODO: may need to recycle log slots for throughput test. Consider deque.
-    static const size_t logSize = 3000;  
+    static const size_t logSize = 6000;  
     static const int32_t clientID = 65; // the pbftID of the client.
     /* verify a block of the other subgroup if it grows older than the collabResWaitTime. */
     uint32_t localView;

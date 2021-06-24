@@ -658,6 +658,15 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
                 executePrereqTx(txIdx, validTxsMulBlk, invalidTxsMulBlk);
             }
         }
+
+        /* calculate the receiving group of this block. We have to do it here b/c we did not do the calculation in computeVG() for blocks that this node is not a member of its VG.*/
+        for (uint i = 0; i < groupSize; i++) {
+            /* exclude this node itself when calculating the receiving group */
+            if (i != pbftID && log[height_to_verify].vrfGroup.find(i) == log[height_to_verify].vrfGroup.end()){
+                mapBlockOtherSubgroup[height_to_verify].push_back(i);
+            }
+        }
+
         mapSkippedBlocks.erase(mapSkippedBlocks.begin());
         if (!mapSkippedBlocks.empty()) {
             firstOutstandingBlock = mapSkippedBlocks.begin()->first;
@@ -865,6 +874,7 @@ bool CPbft::SendCollabMsg() {
         //std::cout << "sending collab msg for block " << toSent.height << std::endl;
         const CNetMsgMaker msgMaker(INIT_PROTO_VERSION);
         /* the receiving peers have been calculated when we heard about the block */
+        assert(mapBlockOtherSubgroup.find(toSent.height) != mapBlockOtherSubgroup.end());
         for (auto peerId: mapBlockOtherSubgroup[toSent.height]) {
             g_connman->PushMessage(peers[peerId], msgMaker.Make(NetMsgType::COLLAB_VRF, toSent));
         }
@@ -902,6 +912,7 @@ bool CPbft::SendCollabMultiBlkMsg() {
     }
     qCollabMulBlkMsg[1 - collabMulBlkMsgQIdx].validTxs.clear();
     for (const TxIndexOnChain& tx: qCollabMulBlkMsg[1 - collabMulBlkMsgQIdx].invalidTxs) {
+        assert(mapBlockOtherSubgroup.find(tx.block_height) != mapBlockOtherSubgroup.end());
         for (auto peerId: mapBlockOtherSubgroup[tx.block_height]) {
             otherSubgroupSendQ[peerId].invalidTxs.push_back(tx);
         }
