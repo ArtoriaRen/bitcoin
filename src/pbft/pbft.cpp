@@ -33,7 +33,7 @@ uint32_t nFaulty = 1;
 uint32_t vrfResBatchSize = 500;
 volatile bool waitAllblock = false;
 
-CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastConsecutiveSeqInReplyPhase(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalVerifyTime(0), totalVerifyCnt(0), totalExeTime(0), lastBlockVerifiedThisGroup(-1), firstOutstandingBlock(0), qValidTx(2), qInvalidTx(2), validTxQIdx(0), invalidTxQIdx(0), otherSubgroupSendQ(groupSize), notEnoughReqStartTime(std::chrono::milliseconds::zero()), qNotInitialExecutedTx(2), qExecutedTx(2), notExecutedQIdx(0), executedQIdx(0), qCollabMsg(2), qCollabMulBlkMsg(2), collabMsgQIdx(0), collabMulBlkMsgQIdx(0), nTxSentByLeader(0), nWarmUpTx(0), privateKey(CKey()) {
+CPbft::CPbft(): localView(0), log(std::vector<CPbftLogEntry>(logSize)), nextSeq(0), lastConsecutiveSeqInReplyPhase(-1), client(nullptr), peers(std::vector<CNode*>(groupSize)), nReqInFly(0), nCompletedTx(0), clientConnMan(nullptr), lastQSizePrintTime(std::chrono::milliseconds::zero()), totalVerifyTime(0), totalVerifyCnt(0), totalExeTime(0), lastBlockVerifiedThisGroup(-1), qValidTx(2), qInvalidTx(2), validTxQIdx(0), invalidTxQIdx(0), otherSubgroupSendQ(groupSize), notEnoughReqStartTime(std::chrono::milliseconds::zero()), qNotInitialExecutedTx(2), qExecutedTx(2), notExecutedQIdx(0), executedQIdx(0), qCollabMsg(2), qCollabMulBlkMsg(2), collabMsgQIdx(0), collabMulBlkMsgQIdx(0), nTxSentByLeader(0), nWarmUpTx(0), privateKey(CKey()) {
     privateKey.MakeNewKey(false);
     myPubKey= privateKey.GetPubKey();
     pubKeyMap.insert(std::make_pair(pbftID, myPubKey));
@@ -327,81 +327,6 @@ CReply CPbft::assembleReply(std::deque<uint256>& vTx, const char exe_res) const 
     return toSent;
 }
 
-/* check if a tx of the other subgroup have create-spend dependency with tx not 
- * yet verified. 
- * There is no need to check spend-spend dependency, because the collab result 
- * will cover this type of dependency. In other words, if the tx is collab-valid,
- * it either has no spend-spend dependency with previous tx or the previous tx
- * involved is invalid. If the tx is collab-invalid, it either spends a coin never
- * exist or a previous tx has spent the coin. 
- * As a result, if the tx is collab-valid, there is no need to wait for spend-spend-conflict
- * prereq-tx to execute this tx. If the tx is collab-invalid, there is no need to
- * wait for spend-spend-conflict prereq-tx to abort the tx.
- */
-bool CPbft::havePrereqTxCollab(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs, bool alreadyInGraph) {
-    CTransactionRef tx = log[height].pPbftBlock->vReq[txSeq];
-    if (tx->IsCoinBase()) {
-        return false;
-    }
-    for (const CTxIn& inputUtxo: tx->vin) {
-        /* check create-spend dependency. */
-        if (mapTxDependency.find(inputUtxo.prevout.hash) != mapTxDependency.end()) {
-            preReqTxs.emplace(inputUtxo.prevout.hash);
-        }
-        /* check spend-spend dependency. */
-        if (!alreadyInGraph) {
-            /* The tx is not in the graph yet, so it is not added to the mapUtxoConflict.*/
-            if (mapUtxoConflict.find(inputUtxo.prevout) != mapUtxoConflict.end()) {
-                preReqTxs.insert(mapUtxoConflict[inputUtxo.prevout].begin(), mapUtxoConflict[inputUtxo.prevout].end());
-                std::cout << "(" << height << ", " << txSeq << ") has " << mapUtxoConflict[inputUtxo.prevout].size() << " UTXO-conflict tx" << std::endl;
-            }
-        } else {
-            /* The tx is already in the graph yet, be careful not to add itself as a prereq
-             * tx when going through the mapUtxoConflict. */
-            if (mapUtxoConflict.find(inputUtxo.prevout) == mapUtxoConflict.end() || mapUtxoConflict[inputUtxo.prevout].size() == 1) {
-                /* The UTXO has been spent by other tx, 
-                 * or this tx is the only tx spending this UTXO. */
-                continue;
-            } else {
-                for (uint256& conflictTx: mapUtxoConflict[inputUtxo.prevout]) {
-                    if (conflictTx != tx->GetHash()) {
-                        preReqTxs.emplace(conflictTx);
-                        std::cout << "UTXO-conflict tx of (" << height << ", " << txSeq << "): " << conflictTx.ToString() << std::endl;
-                    }
-                }
-            }
-        }
-    }
-    return preReqTxs.size() != 0;
-}
-
-void CPbft::addTx2GraphAsDependent(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs) {
-    /* Add this tx as a dependent tx to the dependency graph. */
-    for (const uint256& prereqTx: preReqTxs) {
-        mapTxDependency[prereqTx].emplace_back(height, txSeq);
-    }
-    /* Because we only call this function when the tx is collab-valid, the  collab_status
-     * field in the PendingTxStatus must be one. */
-    mapPrereqCnt.emplace(TxIndexOnChain(height, txSeq), PendingTxStatus(preReqTxs.size(), 1));
-}
-
-void CPbft::addTx2GraphAsPrerequiste(CTransactionRef pTx) {
-    /* add this tx as a potential prereqTx to the dependency graph. */
-    mapTxDependency.emplace(pTx->GetHash(), std::deque<TxIndexOnChain>()); 
-    if (pTx->IsCoinBase()) {
-        return;
-    }
-    for (const CTxIn& inputUtxo: pTx->vin) {
-        if (mapUtxoConflict.find(inputUtxo.prevout) == mapUtxoConflict.end()) {
-            mapUtxoConflict.emplace(inputUtxo.prevout, std::deque<uint256>(1, pTx->GetHash())); // create an entry for this UTXO and put this tx in the list
-        } else {
-            /* add this tx to the UTXO spending list so that future tx spending this UTXO
-             * know this tx is a prerequisite tx for it. */
-            mapUtxoConflict[inputUtxo.prevout].emplace_back(pTx->GetHash());
-        }
-    }
-}
-
 void CPbft::informReplySendingThread(uint32_t height, std::deque<uint32_t>& qDependentTx) {
     /* inform the reply sending thread of what tx is not executed. */
     mutex4ExecutedTx.lock();
@@ -437,7 +362,7 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
         CPbftBlock& block = *log[curHeight].pPbftBlock;
         if(isInVerifySubGroup(pbftID, curHeight)) {
             /* This is a block to be verified by our subgroup. 
-             * Verify and Execute prerequiste-clear tx in this block.
+             * Verify and Execute tx in this block.
              * (The VerifyTx call includes executing tx.) 
              */
             struct timeval totalVrfTime = {0, 0};
@@ -458,95 +383,30 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
             struct timeval totalExeTime = {0, 0};
             struct timeval totalDependencyCheckTime = {0, 0};
             struct timeval totalAdd2GraphTime = {0, 0};
-            uint32_t outstandingTxCnt = 0;
             if (futureCollabVrfedBlocks.find(curHeight) != futureCollabVrfedBlocks.end()) {
                 /* a queue of tx that are not executed b/c dependency. */
-                std::deque<uint32_t> qDependentTx; 
+                std::deque<uint32_t> notExecutedTxs; 
                 uint32_t localExecutedTxCnt = 0;
                 //std::cout << " future map has block "  << curHeight << std::endl;
                 for (uint i = 0; i < block.vReq.size(); i++) {
                     CTransactionRef pTx =  block.vReq[i];
                     if (futureCollabVrfedBlocks[curHeight][i] == 1) {
                         /* valid tx */
-                        std::unordered_set<uint256, uint256Hasher> preReqTxs;
-                        gettimeofday(&start_time, NULL);
-                        bool hasPrereqTx = havePrereqTxCollab(curHeight, i, preReqTxs, false);
-                        gettimeofday(&end_time, NULL);
-                        totalDependencyCheckTime += end_time - start_time;
-                        if (!hasPrereqTx ) {
-                            /* this tx is prereq-clear.execute it. 
-                             * Because this tx has never been added to the dependency 
-                             * graph, we can execute it without checking its dependent
-                             * tx.
-                             */
-                            gettimeofday(&start_time, NULL);
-                            ExecuteTx(*pTx, curHeight, *pcoinsTip);
-                            gettimeofday(&end_time, NULL);
-                            totalExeTime += end_time - start_time;
+                        /* execution may fail due to missing inputs. */
+                        if (ExecuteTx(*pTx, curHeight, *pcoinsTip)) {
                             localExecutedTxCnt++;
-                        } else {
-                            /* This tx has some prereq tx and cannot be executed now.
-                             * Its execution will be triggerred by the last prereq tx.
-                             */
-                            gettimeofday(&start_time, NULL);
-                            addTx2GraphAsDependent(curHeight, i, preReqTxs);
-                            addTx2GraphAsPrerequiste(pTx);
-                            gettimeofday(&end_time, NULL);
-                            totalAdd2GraphTime += end_time - start_time;
-                            /* We cannot execute the tx b/c of dependency in the our group*/
-                            qDependentTx.push_back(i);
                         }
                     } else if (futureCollabVrfedBlocks[curHeight][i] == 0) {
-                        /* not-yet-verified tx
-                         * add this tx as a potential prereqTx to the dependency graph. 
-                         */
-                        gettimeofday(&start_time, NULL);
-                        addTx2GraphAsPrerequiste(pTx);
-                        gettimeofday(&end_time, NULL);
-                        totalAdd2GraphTime += end_time - start_time;
-                        /* We cannot execute the tx b/c of dependency in the other group*/
-                        qDependentTx.push_back(i);
-                        outstandingTxCnt++;
+                        /* not-yet-verified tx */
+                        notExecutedTxs.push_back(i);
                     } /* for invalid tx, there is nothing to do because the tx is not
                        * yet added to the dependency graph. */
                 }
-                //std::cout << "Collab processing block " << curHeight << ": average execution time = " << (totalExeTime.tv_sec * 1000000 + totalExeTime.tv_usec) / localExecutedTxCnt << " us/req, average dependency checking time = " << (totalDependencyCheckTime.tv_sec + totalDependencyCheckTime.tv_usec) /futureCollabVrfedBlocks[curHeight].size();
-                //if (!qDependentTx.empty()) {
-                //    std::cout << " us/req, average add to graph time = " << (totalAdd2GraphTime.tv_sec + totalAdd2GraphTime.tv_usec) / qDependentTx.size();
-                //}
-                //std::cout << std::endl;
                 gettimeofday(&end_time, NULL);
-                if (outstandingTxCnt > 0) {
-                    mapSkippedBlocks.emplace(curHeight, CSkippedBlockEntry(end_time, std::move(futureCollabVrfedBlocks[curHeight]), outstandingTxCnt));
-                    if (mapSkippedBlocks.size() == 1) {
-                        firstOutstandingBlock = mapSkippedBlocks.begin()->first;
-                        //std::cout << "Step 1: firstOutstandingBlock = " << firstOutstandingBlock << std::endl;
-                    }
-                } else if (mapSkippedBlocks.empty()) {
-                    /* there is no skipped blocks. use the next block as the first
-                     * outstanding block for mapBlockCollabRes pruning. */
-                    firstOutstandingBlock = curHeight + 1;
-                    //std::cout << "Step 1: firstOutstandingBlock = " << firstOutstandingBlock << std::endl;
-                }
                 futureCollabVrfedBlocks.erase(curHeight);
-                informReplySendingThread(curHeight, qDependentTx);
+                informReplySendingThread(curHeight, notExecutedTxs);
                 nCompletedTx += localExecutedTxCnt;
-            } else {
-                //std::cout << " future map DOES'T have block "  << curHeight << std::endl;
-                /* we haven't received collab_vrf results for any tx in the block, add
-                 * all tx in the block to the dependency graph as potential prereqTx.
-                 */
-                //std::cout << "add all " << block.vReq.size() << " tx in block " << curHeight << " to dependency graph as potential prereqTx." << std::endl;
-                /* tx belongs to the other group are not added to mapPreqCnt b/c we are not interest in its prereq tx until later we have to verify such tx by ourselves. */
-                for (CTransactionRef pTx: block.vReq) {
-                    addTx2GraphAsPrerequiste(pTx);
-                }
-                outstandingTxCnt = block.vReq.size();
-                gettimeofday(&end_time, NULL);
-                mapSkippedBlocks.emplace(curHeight, CSkippedBlockEntry(end_time, std::deque<char>(outstandingTxCnt, 0), outstandingTxCnt));
-                firstOutstandingBlock = mapSkippedBlocks.begin()->first;
-            }
-
+            } 
             /*Although we did not verified tx in this block, we advance the 
              * pointer so that we would not check the same block next time. */
             lastBlockVerifiedThisGroup++;
@@ -559,6 +419,7 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
      */
     if (!qValidTx[validTxQIdx].empty()) {
         doneSomething = true;
+        std::deque<TxIndexOnChain> localQExecutedTx;
         for (const TxIndexOnChain& txIdx: qValidTx[validTxQIdx]) {
             if ((int) txIdx.block_height > lastBlockVerifiedThisGroup) {
                 if (futureCollabVrfedBlocks.find(txIdx.block_height) == futureCollabVrfedBlocks.end()) {
@@ -569,57 +430,24 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
                 }
                 futureCollabVrfedBlocks[txIdx.block_height][txIdx.offset_in_block] = 1;
             } else {
-                if (txIdx.block_height < firstOutstandingBlock) {
-                    /* stale collab res, we have verify the tx by ourselves, discard it.*/
-                    //std::cout << __func__ << " expired collab res.  firstOutstandingBlock = " <<  firstOutstandingBlock << ", txIdx.block_height = " << txIdx.block_height << std::endl;
-                    continue;
-                }
                 /* backlog collab res, execute tx.*/
                 CTransactionRef pTx = log[txIdx.block_height].pPbftBlock->vReq[txIdx.offset_in_block];
-                std::unordered_set<uint256, uint256Hasher> preReqTxs;
-                if (!havePrereqTxCollab(txIdx.block_height, txIdx.offset_in_block, preReqTxs, true)) {
-                    /* this tx is prereq-clear. execute it. */
-                    executePrereqTx(txIdx, validTxsMulBlk, invalidTxsMulBlk);
-                } else {
-                    /* This tx has some prereq tx and cannot be executed now.
-                     * Its execution will be triggerred by the last prereq tx.
-                     * Add this tx as a dependent tx to the dependency graph. */
-                    addTx2GraphAsDependent(txIdx.block_height, txIdx.offset_in_block, preReqTxs);
-                }
-                auto iter = mapSkippedBlocks.find(txIdx.block_height); 
-                assert(iter != mapSkippedBlocks.end());
-                if (--(iter->second.outstandingTxCnt) == 0) {
-                    /* all tx in this block has been collab verified, remove this block from
-                     * the skipped block map. */
-                    mapSkippedBlocks.erase(iter);
-                    if (!mapSkippedBlocks.empty()) {
-                        firstOutstandingBlock = mapSkippedBlocks.begin()->first;
-                    } else {
-                        /* there is no skipped blocks. use the next block as the first
-                         * outstanding block for mapBlockCollabRes pruning. */
-                        firstOutstandingBlock = txIdx.block_height + 1;
-                    }
-                    //std::cout << "Step 2: firstOutstandingBlock = " << firstOutstandingBlock << std::endl;
-                } else {
-                    iter->second.collabStatus[txIdx.offset_in_block] = 1;
+                if(ExecuteTx(*pTx, txIdx.block_height, *pcoinsTip)) {
+                    localQExecutedTx.push_back(std::move(txIdx));
+                    nCompletedTx += 1;
                 }
 
             }
         }
         gettimeofday(&end_time, NULL);
         qValidTx[validTxQIdx].clear();
+
+        /* inform the reply sending thread of what tx has been executed. */
+        mutex4ExecutedTx.lock();
+        qExecutedTx[executedQIdx].insert(qExecutedTx[executedQIdx].end(), localQExecutedTx.begin(), localQExecutedTx.end());
+        mutex4ExecutedTx.unlock();
         /* TODO : handle invalid tx queue. */
     }
-
-
-    /* TODO: for tx in qInValidTx:
-     * 1) remove them without executing.
-     * 2.1) Update futureCollabVrfedBlocks map if the block height is greater than
-     * lastBlockVerifiedThisGroup
-     * 2.2) Otherwise, remove it from the dependency graph, update the prereq cnt
-     * of its dependent tx, verify a dependent tx if it is prereq-clear and 
-     * belongs to our group.
-     */
 
     /* check if the pointers of queue pairs should be switched. */
     if (mutex4Q.try_lock()) {
@@ -633,177 +461,8 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
         mutex4Q.unlock();
     }
 
-    /* Step 3: If the lowest-height skippd block has been outstanding for a long time,
-     *  verify it. */
-    //gettimeofday(&end_time, NULL);
-    //if (!mapSkippedBlocks.empty() && end_time - mapSkippedBlocks.begin()->second.blockMetTime > collabResWaitTime) {
-    //    std::cout << "Step 3: current time = " << end_time.tv_sec << "s , block met time = " << mapSkippedBlocks.begin()->second.blockMetTime.tv_sec << "s" << std::endl;
-    //    /* the lowest-height block is old enough, verify tx without collab res in it. */
-    //    uint32_t height_to_verify = mapSkippedBlocks.begin()->first; 
-    //    /* remove it from the skipped block map and mapCollabRes. */
-    //    CPbftBlock& blk = *log[height_to_verify].pPbftBlock;
-    //    assert(mapSkippedBlocks.begin()->second.outstandingTxCnt > 0);
-    //    std::cout << "Step 3: executing " << mapSkippedBlocks.begin()->second.outstandingTxCnt << " outstanding tx in block " << height_to_verify << std::endl;
-    //    const std::deque<char>& collabStatus = mapSkippedBlocks.begin()->second.collabStatus; 
-    //    for (int i = 0; i < blk.vReq.size(); i++) {
-    //        if (collabStatus[i] == 0 && VerifyButNoExecuteTx(*(blk.vReq[i]), height_to_verify, *pcoinsTip)) {
-    //            /* this tx does not have enough collab msg to prove it is 
-    //             * valid or invalid, we must verify it by ourselves.
-    //             * We do not need to check for prereqTx b/c all tx ahead of 
-    //             * this tx must have been executed no matter it is triggered by
-    //             * collab res or dependency.
-    //             */
-    //            executePrereqTx(TxIndexOnChain(height_to_verify, i), validTxsMulBlk, invalidTxsMulBlk);
-    //        }
-    //    }
-    //    mapSkippedBlocks.erase(mapSkippedBlocks.begin());
-    //    if (!mapSkippedBlocks.empty()) {
-    //        firstOutstandingBlock = mapSkippedBlocks.begin()->first;
-    //    } else {
-    //        /* there is no skipped blocks. use the next block as the first
-    //         * outstanding block for mapBlockCollabRes pruning. */
-    //        firstOutstandingBlock = height_to_verify + 1;
-    //    }
-    //    std::cout << "Step 3: firstOutstandingBlock = " << firstOutstandingBlock << std::endl;
-    //    doneSomething = true;
-    //}
-
-    if (!validTxsMulBlk.empty() || !invalidTxsMulBlk.empty()) {
-        mutexCollabMsgQ.lock();
-        std::deque<TxIndexOnChain>& validTxSwappingQ = qCollabMulBlkMsg[collabMulBlkMsgQIdx].validTxs; 
-        std::deque<TxIndexOnChain>& invalidTxSwappingQ = qCollabMulBlkMsg[collabMulBlkMsgQIdx].invalidTxs; 
-        validTxSwappingQ.insert(validTxSwappingQ.end(), validTxsMulBlk.begin(), validTxsMulBlk.end());
-        invalidTxSwappingQ.insert(invalidTxSwappingQ.end(), invalidTxsMulBlk.begin(), invalidTxsMulBlk.end());
-        mutexCollabMsgQ.unlock();
-    }
-
-
      /* return true if we have done something useful. */
      return doneSomething || !qValidTx[validTxQIdx].empty() || !qInvalidTx[invalidTxQIdx].empty();
-}
-
-void CPbft::executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnChain>& validTxs, std::vector<TxIndexOnChain>& invalidTxs) {
-    std::queue<TxIndexOnChain> q;
-    std::deque<TxIndexOnChain> localQExecutedTx;
-    /* execute this prereq tx */
-    CTransactionRef pTx = log[txIdx.block_height].pPbftBlock->vReq[txIdx.offset_in_block];
-    ExecuteTx(*pTx, txIdx.block_height, *pcoinsTip);
-    localQExecutedTx.push_back(std::move(txIdx));
-    /* add dependent tx to the queue. */
-    for (const TxIndexOnChain& depTx: mapTxDependency[pTx->GetHash()]) {
-        if (mapPrereqCnt.find(depTx) == mapPrereqCnt.end()){
-            std::cerr << "dependent tx " << depTx.ToString() << " is not in mapPrereqCnt" << std::endl;
-            continue;
-        }
-        if(--mapPrereqCnt[depTx].remaining_prereq_tx_cnt == 0) {
-            /* prereqTx clear tx. This tx is either in our subgroup or is collab-valid.
-             * Add it to the queue for verification or execution. */
-            q.push(depTx);
-        }
-    }
-
-    /* remove this prereq tx from dependency graph. */
-    mapTxDependency.erase(pTx->GetHash());
-    /* remove all input UTXO of this tx from mapUtxoConflict. Because mapPrereqCnt 
-     * is only for spend-spend conflict detection instead of tracking (which is done
-     * by the mapTxDependency), there is no need to change the mapPrereqCnt when 
-     * cleaning mapUtxoConflict. */
-    if (!pTx->IsCoinBase()) {
-        for (const CTxIn& inputUtxo: pTx->vin) {
-            std::unordered_map<COutPoint, std::deque<uint256>, OutpointHasher>::iterator iter = mapUtxoConflict.find(inputUtxo.prevout);
-            //if (iter == mapUtxoConflict.end()) {
-            //    std::cout << "input UTXO " << inputUtxo.ToString() << " of tx " << pTx->GetHash().ToString() << " does not exist in utxo conflict map. txIdx =  " << txIdx.ToString() << std::endl;
-            //}
-            assert(iter != mapUtxoConflict.end()); 
-            /* remove the whole entry b/c future tx spending this UTXO can be verified
-             * without waitinf for any tx spending this UTXO (as this UTXO has already
-             * been spent, the future tx must be invalid). 
-             * On the other hand, when cleaning mapUtxoConflict after a tx is dealt with
-             * as invalid, we can only remove the tx in the entry b/c the validity of a
-             * future tx spending the UTXO stills depends on the validity of other tx
-             * in the entry.
-             */
-            mapUtxoConflict.erase(iter); // remove the entry for this UTXO 
-        }
-    }
-
-    /* verify the dependent tx belonging to our group. */
-    while (!q.empty()) {
-        const TxIndexOnChain curTxIdx = q.front();
-        q.pop();
-        //assert(curTxIdx.block_height < logSize && curTxIdx.offset_in_block < log[curTxIdx.block_height].pPbftBlock->vReq.size());
-        pTx = log[curTxIdx.block_height].pPbftBlock->vReq[curTxIdx.offset_in_block];
-        switch (mapPrereqCnt[curTxIdx].collab_status) {
-            case 2:
-            {
-                /* this is a tx in our subgroup, verify it. */
-                bool isValid = VerifyTx(*pTx, curTxIdx.block_height, *pcoinsTip);
-                if (isValid) {
-                    validTxs.push_back(curTxIdx);
-                    localQExecutedTx.push_back(curTxIdx);
-                    /* remove input UTXOs from mapUtxoConflict */
-                    for (const CTxIn& inputUtxo: pTx->vin) {
-                        std::unordered_map<COutPoint, std::deque<uint256>, OutpointHasher>::iterator iter = mapUtxoConflict.find(inputUtxo.prevout); 
-                        assert(iter != mapUtxoConflict.end()); 
-                        mapUtxoConflict.erase(iter); // remove the entry for this UTXO 
-                    }
-                } else {
-                    invalidTxs.push_back(curTxIdx);
-                    /* remove the tx from mapUtxoConflict */
-                    for (const CTxIn& inputUtxo: pTx->vin) {
-                        std::unordered_map<COutPoint, std::deque<uint256>, OutpointHasher>::iterator iter = mapUtxoConflict.find(inputUtxo.prevout);
-                        assert(iter != mapUtxoConflict.end()); 
-                        if (iter->second.size() == 1) {
-                            /* this tx is the only tx spending this UTXO, remove 
-                             * the whole entry. */
-                            mapUtxoConflict.erase(iter); // remove the entry for this UTXO 
-                        } else {
-                            /* there are other tx spending the UTXO, remove only
-                             * the tx in this entry.*/
-                            std::deque<uint256>::iterator deqIter = std::find(iter->second.begin(), iter->second.end(), pTx->GetHash());
-                            iter->second.erase(deqIter);  
-                        }
-                    }
-                }
-                break;
-            }
-            case 1:
-                /* this is a collab-valid tx, execute it. */
-                ExecuteTx(*pTx, curTxIdx.block_height, *pcoinsTip);
-                /* remove input UTXOs from mapUtxoConflict */
-                for (const CTxIn& inputUtxo: pTx->vin) {
-                    std::unordered_map<COutPoint, std::deque<uint256>, OutpointHasher>::iterator iter = mapUtxoConflict.find(inputUtxo.prevout); 
-                    assert(iter != mapUtxoConflict.end()); 
-                    mapUtxoConflict.erase(iter); // remove the entry for this UTXO 
-                }
-                localQExecutedTx.push_back(curTxIdx);
-                break;
-            default:
-                std::cerr << "invalid collab_status = " << mapPrereqCnt[curTxIdx].collab_status << std::endl;
-        }
-
-        /* add dependent tx to the queue. */
-        for (const TxIndexOnChain& depTx: mapTxDependency[pTx->GetHash()]) {
-            if (mapPrereqCnt.find(depTx) == mapPrereqCnt.end()){
-                std::cerr << "dependent tx " << depTx.ToString() << " is not in mapPrereqCnt" << std::endl;
-                continue;
-            }
-            if(--mapPrereqCnt[depTx].remaining_prereq_tx_cnt == 0) {
-                /* prereqTx clear tx. This tx is either in our subgroup or is collab-valid.
-                 * Add it to the queue for verification or execution. */
-                q.push(depTx);
-            }
-        }
-        /* remove the tx from dependency graph */
-        mapTxDependency.erase(pTx->GetHash());
-        mapPrereqCnt.erase(curTxIdx);
-    }
-
-    nCompletedTx += localQExecutedTx.size();
-    /* inform the reply sending thread of what tx has been executed. */
-    mutex4ExecutedTx.lock();
-    qExecutedTx[executedQIdx].insert(qExecutedTx[executedQIdx].end(), localQExecutedTx.begin(), localQExecutedTx.end());
-    mutex4ExecutedTx.unlock();
 }
 
 bool CPbft::checkCollabMsg(const CCollabMessage& msg) {
@@ -982,12 +641,6 @@ void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
         return;
     }
 
-    uint32_t lowestHeightOutstandingBlock = firstOutstandingBlock;
-    if (msg.height < lowestHeightOutstandingBlock) {
-        std::cout << "Less than  firstOutstandingBlock = " <<  firstOutstandingBlock << ". received collab msg for block " << msg.height << " from peer " << msg.peerID << std::endl;
-        return;
-    }
-
     std::deque<TxIndexOnChain> localValidTxQ;
     std::deque<TxIndexOnChain> localInvalidTxQ;
     if (mapBlockCollabRes.find(msg.height) == mapBlockCollabRes.end()) {
@@ -1044,10 +697,6 @@ void CPbft::UpdateTxValidity(const CCollabMessage& msg) {
      * 1) have height lower than < lastBlockVerifiedThisGroup 
      * 2) whose tx are all fully collab-verified 
      */
-    for (auto iter = mapBlockCollabRes.begin(); iter != mapBlockCollabRes.end() && iter->first < lowestHeightOutstandingBlock;) {
-        mapBlockCollabRes.erase(iter++);
-    }
-    
     /* add tx in local queues to the global queues*/
     mutex4Q.lock();
     qValidTx[1 - validTxQIdx].insert(qValidTx[1 - validTxQIdx].end(), localValidTxQ.begin(),  localValidTxQ.end());
@@ -1066,18 +715,7 @@ void CPbft::UpdateTxValidity(const CCollabMultiBlockMsg& msg) {
     std::deque<TxIndexOnChain> localValidTxQ;
     std::deque<TxIndexOnChain> localInvalidTxQ;
     /* add valid tx to the BlockCollabRes map*/
-    uint32_t lowestHeightOutstandingBlock = firstOutstandingBlock;
     for (TxIndexOnChain txIdx: msg.validTxs) {
-        if (txIdx.block_height < lowestHeightOutstandingBlock) {
-            /* This block is no longer outstanding.
-             * All tx in this block have been executed, either using collab res or
-             * we verified them by ourselves due to timeout waiting for collab res,
-             * so we can safely discard this message.
-             */
-            std::cout << __func__ << ": Less than  firstOutstandingBlock = " <<  firstOutstandingBlock << ". received collab msg for block " << txIdx.block_height << " from peer " << msg.peerID << std::endl;
-            continue;
-        }
-
         if (mapBlockCollabRes.find(txIdx.block_height) == mapBlockCollabRes.end()) {
             if (log[txIdx.block_height].pPbftBlock == nullptr) {
                 log[txIdx.block_height].blockSizeInCollabMsg = maxBlockSize;
@@ -1112,15 +750,6 @@ void CPbft::UpdateTxValidity(const CCollabMultiBlockMsg& msg) {
 
     /* add invalid tx to the BlockCollabRes map*/
     for (TxIndexOnChain txIdx: msg.invalidTxs) {
-        if (txIdx.block_height < lowestHeightOutstandingBlock) {
-            /* This block is no longer outstanding.
-             * All tx in this block have been executed, either using collab res or
-             * we verified them by ourselves due to timeout waiting for collab res,
-             * so we can safely discard this message.
-             */
-            continue;
-        }
-
         BlockCollabRes& block_collab_res = mapBlockCollabRes[txIdx.block_height];
         block_collab_res.map_collab_invalid_cnt[txIdx.offset_in_block]++;
         if (block_collab_res.map_collab_invalid_cnt[txIdx.offset_in_block] == nFaulty + 1) {
@@ -1128,15 +757,6 @@ void CPbft::UpdateTxValidity(const CCollabMultiBlockMsg& msg) {
             /* add the tx to inValidTxQ */
             localInvalidTxQ.push_back(std::move(txIdx));
         }
-    }
-
-    /* prune entries in mapBlockCollabRes.
-     * All blocks meeting the following two conditions can be removed:
-     * 1) have height lower than < lastBlockVerifiedThisGroup 
-     * 2) whose tx are all fully collab-verified 
-     */
-    for (auto iter = mapBlockCollabRes.begin(); iter != mapBlockCollabRes.end() && iter->first < lowestHeightOutstandingBlock;) {
-        mapBlockCollabRes.erase(iter++);
     }
 
     //std::cout << "processed collabMulBlk msg from peer " << msg.peerID << ", has " << msg.validTxs.size() << " valid tx, " <<  msg.invalidTxs.size() << " invalid tx" << std::endl;
@@ -1306,12 +926,10 @@ void  ThruputLogger::logServerSideThruput(struct timeval& curTime, uint32_t comp
         return;
     }
     double thruput = (completedTxCnt - lastCompletedTxCnt) / (timeElapsed.tv_sec + timeElapsed.tv_usec * 0.000001);
-    thruputSS << curTime.tv_sec << "." << curTime.tv_usec << "," << completedTxCnt << "," << thruput << "," << g_pbft->mapTxDependency.size() << "," << g_pbft->mapPrereqCnt.size() << "\n";
+    thruputSS << curTime.tv_sec << "." << curTime.tv_usec << "," << completedTxCnt << "," << thruput << "\n";
     lastLogTime = curTime;
     lastCompletedTxCnt = completedTxCnt;
 }
-
-CSkippedBlockEntry::CSkippedBlockEntry(const struct timeval& blockMetTimeIn, std::deque<char>&& collabStatusIn, uint32_t outstandingTxCntIn):blockMetTime(blockMetTimeIn), collabStatus(collabStatusIn), outstandingTxCnt(outstandingTxCntIn) { }
 
 void CPbft::computeVG(const uint256& block_hash, const uint32_t height){
     std::map<uint, uint> mapHashValues;

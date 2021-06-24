@@ -68,21 +68,7 @@ void WaitForShutdown()
         }
         fShutdown = ShutdownRequested();
     }
-    std::cout << "total executed tx cnt = " << pbft.nCompletedTx << ", still have " << pbft.mapTxDependency.size() << " tx in the dependency graph." << std::endl;
-
-    std::cout << " tx in the dependency graph are: " << std::endl;
-    for (auto& p: pbft.mapTxDependency) {
-        std::cout << p.first.ToString() << " has dependent tx:  ";
-        for (TxIndexOnChain& txIdx: p.second) {
-            std::cout <<  txIdx.ToString() << ", ";
-        }
-        std::cout << std::endl;
-    }
-    for (auto& p: pbft.mapPrereqCnt) {
-        std::cout << p.first.ToString() << ", hash = " << pbft.log[p.first.block_height].pPbftBlock->vReq[p.first.offset_in_block]->GetHash().ToString() << ", prereq cnt = " << p.second.remaining_prereq_tx_cnt << ", collab status = " << (int) p.second.collab_status << std::endl;
-    }
-
-    std::cout << "mapUtxoConflict.size() = " << pbft.mapUtxoConflict.size() << std::endl;
+    std::cout << "total executed tx cnt = " << pbft.nCompletedTx << std::endl;
 
     std::cout << pbft.thruputLogger.thruputSS.str();
 

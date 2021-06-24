@@ -113,6 +113,13 @@ bool VerifyButNoExecuteTx(const CTransaction& tx, const int seq, CCoinsViewCache
 }
 
 bool ExecuteTx(const CTransaction& tx, const int seq, CCoinsViewCache& view) {
+    /* check for missing inputs before update the system state. */
+    CValidationState state;
+    CAmount txfee = 0;
+    if (!Consensus::CheckTxInputs(tx, state, view, INT_MAX, txfee)) {
+        std::cerr << __func__ << ": Consensus::CheckTxInputs: " << tx.GetHash().ToString() << ", " << FormatStateMessage(state) << std::endl;
+        return false;
+    }
     UpdateCoins(tx, view, seq);
     return true;
 }
@@ -149,102 +156,47 @@ void CPbftBlock::ComputeHash(){
     hasher.Finalize((unsigned char*)&hash);
 }
 
-/* check if the tx have create-spend or spend-spend dependency with tx not yet verified. */
-static bool havePrereqTx(uint32_t height, uint32_t txSeq) {
-    CPbft& pbft= *g_pbft;
-    CTransactionRef tx = pbft.log[height].pPbftBlock->vReq[txSeq];
-    if (tx->IsCoinBase()) {
-        return false;
-    }
-    std::unordered_set<uint256, uint256Hasher> preReqTxs;
-    for (const CTxIn& inputUtxo: tx->vin) {
-        /* check create-spend dependency. */
-        if (pbft.mapTxDependency.find(inputUtxo.prevout.hash) != pbft.mapTxDependency.end()) {
-            preReqTxs.emplace(inputUtxo.prevout.hash);
-        }
-        /* check spend-spend dependency. */
-        if (pbft.mapUtxoConflict.find(inputUtxo.prevout) != pbft.mapUtxoConflict.end()) {
-            for (uint256& conflictTx: pbft.mapUtxoConflict[inputUtxo.prevout]) {
-                preReqTxs.emplace(conflictTx);
-                std::cout << "UTXO-conflict tx of (" << height << ", " << txSeq << "): " << conflictTx.ToString() << std::endl;
-            }
-            /* add this tx to the UTXO spending list so that future tx spending this UTXO
-             * know this tx is a prerequisite tx for it. */
-            pbft.mapUtxoConflict[inputUtxo.prevout].emplace_back(tx->GetHash());
-        }
-    }
-
-    if (preReqTxs.size() != 0) {
-        /* add this tx as a dependent tx to the dependency graph. */
-        for (const uint256& prereqTx: preReqTxs) {
-            pbft.mapTxDependency[prereqTx].emplace_back(height, txSeq);
-        }
-        pbft.mapPrereqCnt.emplace(TxIndexOnChain(height, txSeq), PendingTxStatus(preReqTxs.size(), 2));
-        /* add this tx as a potential prereqTx to the dependency graph. */
-        pbft.mapTxDependency.emplace(tx->GetHash(), std::deque<TxIndexOnChain>()); 
-        for (const CTxIn& inputUtxo: tx->vin) {
-            if (pbft.mapUtxoConflict.find(inputUtxo.prevout) == pbft.mapUtxoConflict.end()) {
-                pbft.mapUtxoConflict.emplace(inputUtxo.prevout, std::deque<uint256>(1, tx->GetHash())); // create an entry for this UTXO and put this tx in the list
-            }
-        }
-        return true;
-    }
-    return false;
-}
-
-
 uint32_t CPbftBlock::Verify(const int seq, CCoinsViewCache& view) const {
     std::vector<uint32_t> validTxs; 
-    std::vector<uint32_t> invalidTxs;
+    std::deque<uint32_t> invalidTxs;
     uint32_t validTxCnt = 0;
-    /* a queue of tx that are not executed b/c dependency. */
-    std::deque<uint32_t> qDependentTx; 
     struct timeval start_time, end_time;
     struct timeval totalVrfTime = {0, 0};
-    struct timeval totalDependencyCheckTime = {0, 0};
     for (uint i = 0; i < vReq.size(); i++) {
-        /* the block is not yet collab verified. We have to verify tx.*/
         gettimeofday(&start_time, NULL);
-        bool hasPrereqTx = havePrereqTx(seq, i);
+        bool isValid = VerifyTx(*vReq[i], seq, view);
+        //std::cout << " verified tx " << vReq[i]->GetHash().ToString() << "of block " << seq << std::endl;
         gettimeofday(&end_time, NULL);
-        totalDependencyCheckTime += end_time - start_time;
-        if (hasPrereqTx) {
-            qDependentTx.push_back(i);
-            //std::cout << " tx " << vReq[i]->GetHash().ToString() << "of block " << seq << " has pending parent " << std::endl;
+        totalVrfTime += end_time - start_time;
+        if (isValid) {
+            //std::cout << __func__ << ": tx (" << seq << ", "  << i << ") " << vReq[i]->GetHash().ToString().substr(0, 10) << " is valid" << std::endl;
+            validTxs.push_back(i); 
+            validTxCnt++;
         } else {
-            gettimeofday(&start_time, NULL);
-            bool isValid = VerifyTx(*vReq[i], seq, view);
-            //std::cout << " verified tx " << vReq[i]->GetHash().ToString() << "of block " << seq << std::endl;
-            gettimeofday(&end_time, NULL);
-            totalVrfTime += end_time - start_time;
-            if (isValid) {
-                //std::cout << __func__ << ": tx (" << seq << ", "  << i << ") " << vReq[i]->GetHash().ToString().substr(0, 10) << " is valid" << std::endl;
-                validTxs.push_back(i); 
-                validTxCnt++;
-            } else {
-                invalidTxs.push_back(i);
-            }
+            invalidTxs.push_back(i);
         }
-        if(validTxs.size() + invalidTxs.size() == vrfResBatchSize  || i == vReq.size() - 1) {
+        if(validTxs.size() == vrfResBatchSize  || i == vReq.size() - 1) {
+            /* do no count invalid tx. our goal here is to only count how many tx
+             * will be executed by simply sharing vrf results without tracking dependency. */
             /* processed enough tx, move them to the global queue. */
             //std::cout << "verified to tx "  << i << " in block " << seq << ". valid tx cnt = " << validTxs.size() << std::endl;
-            g_pbft->Copy2CollabMsgQ(seq, vReq.size(), validTxs, invalidTxs);
+            std::vector<uint32_t> dummy;
+            g_pbft->Copy2CollabMsgQ(seq, vReq.size(), validTxs, dummy);
             validTxs.clear();
-            invalidTxs.clear();
         }
     }
 
-    if (vReq.size() > qDependentTx.size()) {
-        std::cout << "Average verify time of block " << seq << ": " << (totalVrfTime.tv_sec * 1000000 + totalVrfTime.tv_usec) / (vReq.size() - qDependentTx.size()) << " us/req";
+    if (validTxCnt > 0) {
+        std::cout << "Average verify time of block " << seq << ": " << (totalVrfTime.tv_sec * 1000000 + totalVrfTime.tv_usec) / (validTxCnt) << " us/req";
     } else {
-        std::cout << "Average verify time of block " << seq << ": 0 tx are verified";
+        std::cout << "Average verify time of block " << seq << ": all tx are invalid";
     }
-    std::cout << ". valid tx cnt = " << validTxCnt << ". invalid tx cnt = " << invalidTxs.size() << ", average dependency checking time = " << (totalDependencyCheckTime.tv_sec * 1000000 + totalDependencyCheckTime.tv_usec)/vReq.size() << std::endl;
+    std::cout << ". valid tx cnt = " << validTxCnt << ". invalid tx cnt = " << invalidTxs.size() << std::endl;
     /* inform the reply sending thread of what tx is not executed. 
      * We cannot include invalid tx because all reply are hard-coded to 
      * positive execution results.
      */
-    g_pbft->informReplySendingThread(seq, qDependentTx);
+    g_pbft->informReplySendingThread(seq, invalidTxs);
     return validTxCnt;
 }
 

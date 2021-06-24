@@ -138,21 +138,6 @@ public:
     void logServerSideThruput(struct timeval& curTime, uint32_t completedTxCnt);
 };
 
-class CSkippedBlockEntry {
-public:
-    struct timeval blockMetTime;
-    /*a vector of tx verfication status: 1 ---verified valid
-     * by the other subgroup; -1 --- verified invalid by the other subgroup; 
-     * 0---not verified by the other subgroup. We only need to know which tx
-     * is not collab-verified yet, but this format let us reuse entry of the
-     * futureCollabVrfedBlocks
-     */
-    std::deque<char> collabStatus; 
-    /* number of tx not executed yet. */
-    uint32_t outstandingTxCnt;
-    CSkippedBlockEntry(const struct timeval& blockMetTimeIn, std::deque<char>&& collabStatusIn, uint32_t outstandingTxCntIn);
-};
-
 class CPbft{
 public:
     // TODO: may need to recycle log slots for throughput test. Consider deque.
@@ -203,32 +188,7 @@ public:
      * Blocks of the other subgroup are added to this graph in Step 1, and removed in
      * Step 2 or Step 3.
      */
-    std::map<uint32_t, CSkippedBlockEntry> mapSkippedBlocks;
-    /* the first block height in the  mapSkippedBlocks. This is used to inform the 
-     * msg-hand thread what collab msg are stale and can be discard. */
-    volatile uint32_t firstOutstandingBlock;
 
-    
-    /* adjancy matrix for dependency graph for unverified tx.
-     * Key is an unverified tx; Value is all tx depend on the Key tx
-     * (both create-spend and spend-spend dependency).
-     * Also used to decide if a tx should be added to the dependency graph
-     * due to create-spend dependency.
-     */
-    std::unordered_map<uint256, std::deque<TxIndexOnChain>, uint256Hasher> mapTxDependency;
-    /* prerequite tx count map.
-     * Key is an unverified tx; Value is the count of the remaining 
-     * not-yet-verified prerequite tx. 
-     * Used to decide if a tx can be removed from the dependency graph and executed.
-     */
-    std::map<TxIndexOnChain, PendingTxStatus> mapPrereqCnt;
-    /* UTXO conflict list.
-     * Key is an UTXO, value is a list of unverified tx spending this UTXO.
-     * Used to detect if a tx should be added to the dependency graph due to 
-     * spend-spend dependency. 
-     */
-    std::unordered_map<COutPoint, std::deque<uint256>, OutpointHasher> mapUtxoConflict;
-    
     /* key is block height, value is the collab_valid status of this block. 
      * Used for avoiding process more than necessary Collab Message for a tx.
      */
@@ -309,12 +269,7 @@ public:
     CReply assembleReply(std::deque<uint256>& vTx, const char exe_res) const;
     bool checkBlkMsg(CBlockMsg& msg);
     bool checkMsg(CPbftMessage* msg);
-    /* resolve dependency. preReqTxs are all prereqTx. */
-    bool havePrereqTxCollab(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs, bool alreadyInGraph);
-    void addTx2GraphAsDependent(uint32_t height, uint32_t txSeq, std::unordered_set<uint256, uint256Hasher>& preReqTxs);
-    void addTx2GraphAsPrerequiste(CTransactionRef pTx);
     bool executeLog(struct timeval& start_process_first_block);
-    void executePrereqTx(const TxIndexOnChain& txIdx, std::vector<TxIndexOnChain>& validTxs, std::vector<TxIndexOnChain>& invalidTxs);
     void informReplySendingThread(uint32_t height, std::deque<uint32_t>& qDependentTx);
     /* when received collab msg from the other subgroup, update our block valid bit.
      * Called by the net_processing theread. */
