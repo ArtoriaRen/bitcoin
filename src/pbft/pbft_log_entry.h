@@ -34,7 +34,7 @@ public:
     int successorBlockPassing;
 
     //---placeholder. default phase should be pre-prepare.
-    CPbftLogEntry(): prepareCount(0), commitCount(0), phase(PbftPhase::pre_prepare), pPbftBlock(nullptr), txCnt(0), successorBlockPassing(-1) {}
+    CPbftLogEntry(): prepareCount(0), commitCount(0), pPbftBlock(nullptr), phase(PbftPhase::pre_prepare), txCnt(0), successorBlockPassing(-1) {}
 };
 
 

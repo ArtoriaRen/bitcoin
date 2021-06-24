@@ -1931,7 +1931,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     else if (strCommand == NetMsgType::PBFT_P) {
         CPbftMessage pMsg;
         vRecv >> pMsg;
-	    std::cout << __func__ << ": received PREPARE msg from peer " << pMsg.peerID <<std::endl;
+	    //std::cout << __func__ << ": received PREPARE msg from peer " << pMsg.peerID <<std::endl;
 	if(!pbft->ProcessP(connman, pMsg)) {
 	    std::cout << __func__ << ": process pMsg failed" <<std::endl;
 	}
@@ -1940,7 +1940,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     else if (strCommand == NetMsgType::PBFT_C) {
         CPbftMessage cMsg;
         vRecv >> cMsg;
-	    std::cout << __func__ << ": received COMMIT msg from peer " <<cMsg.peerID  <<std::endl;
+	    //std::cout << __func__ << ": received COMMIT msg from peer " <<cMsg.peerID  <<std::endl;
 	if(!pbft->ProcessC(connman, cMsg)) {
 	    std::cout << __func__ << ": process cMsg failed" <<std::endl;
 	}

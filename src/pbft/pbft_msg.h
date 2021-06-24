@@ -163,11 +163,11 @@ class CBlockMsg {
 public:
     uint32_t logSlot;
     std::shared_ptr<CPbftBlock> pPbftBlock;
-    CBlockMsg(std::shared_ptr<CPbftBlock> pPbftBlockIn, uint32_t seq);
     int32_t peerID;
     uint32_t sigSize;
     std::vector<unsigned char> vchSig; //serilized ecdsa signature.
 
+    CBlockMsg(std::shared_ptr<CPbftBlock> pPbftBlockIn, uint32_t seq);
     template<typename Stream>
     void Serialize(Stream& s) const {
         s.write((char*) &logSlot, sizeof (logSlot));

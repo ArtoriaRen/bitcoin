@@ -133,7 +133,7 @@ void CPbftBlock::Clear() {
     vReq.clear();
 }
 
-CBlockMsg::CBlockMsg(std::shared_ptr<CPbftBlock> pPbftBlockIn, uint32_t seq) : pPbftBlock(pPbftBlockIn), logSlot(seq), peerID(pbftID) {
+CBlockMsg::CBlockMsg(std::shared_ptr<CPbftBlock> pPbftBlockIn, uint32_t seq) : logSlot(seq), pPbftBlock(pPbftBlockIn), peerID(pbftID) {
 }
 
 void CBlockMsg::getHash(uint256& result) const {

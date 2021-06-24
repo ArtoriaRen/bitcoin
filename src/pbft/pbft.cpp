@@ -328,7 +328,7 @@ bool CPbft::executeLog(struct timeval& start_process_first_block) {
      * their seqs are greater than the seq passed in. If we only execute up to
      * the seq passed in, a slot missing a pbftc msg might permanently block
      * log slots after it to be executed. */
-    for (; i < logSize && log[i].phase == PbftPhase::reply; i++) {
+    for (; i < logSize && log[i].phase == PbftPhase::reply && log[i].pPbftBlock != nullptr; i++) {
         gettimeofday(&start_time, NULL);
         log[i].txCnt = log[i].pPbftBlock->Execute(i, *pcoinsTip);
         gettimeofday(&end_time, NULL);
