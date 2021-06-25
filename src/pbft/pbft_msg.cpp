@@ -116,9 +116,11 @@ bool ExecuteTx(const CTransaction& tx, const int seq, CCoinsViewCache& view) {
     /* check for missing inputs before update the system state. */
     CValidationState state;
     CAmount txfee = 0;
-    if (!Consensus::CheckTxInputs(tx, state, view, INT_MAX, txfee)) {
-        std::cerr << __func__ << ": Consensus::CheckTxInputs: " << tx.GetHash().ToString() << ", " << FormatStateMessage(state) << std::endl;
-        return false;
+    if(!tx.IsCoinBase()) {
+        if (!Consensus::CheckTxInputs(tx, state, view, INT_MAX, txfee)) {
+            std::cerr << __func__ << ": Consensus::CheckTxInputs: " << tx.GetHash().ToString() << ", " << FormatStateMessage(state) << std::endl;
+            return false;
+        }
     }
     UpdateCoins(tx, view, seq);
     return true;
