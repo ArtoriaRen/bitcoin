@@ -398,6 +398,31 @@ int CPbft::readBlocksFromFile() {
     return lastExecutedSeqWarmUp;
 }
 
+void CPbft::CountInputUTXO() {
+    CCoinsViewCache view_warmup(pcoinsTip.get());
+    int lastExecutedSeqWarmUp = readBlocksFromFile();
+    uint32_t nInputUTXO = 0, nTx = 0, nTotalTx = 0;
+
+    for (int i = 0; i <= lastExecutedSeqWarmUp; i++) {
+        CPbftBlock& block = *log[i].pPbftBlock;
+            for (CTransactionRef pReq: block.vReq) {
+                nTx++;
+                if(!pReq->IsCoinBase()) {
+                    nInputUTXO +=  pReq->vin.size();
+                }
+                /* log input UTXO count per 100 tx. */
+                if (nTx == 100) {
+                nTotalTx += nTx; 
+                std::cout << nTotalTx << "," << nInputUTXO << std::endl;
+                nTx = 0;
+                nInputUTXO = 0;
+                }
+            }
+    }
+    nTotalTx += nTx; 
+    std::cout << nTotalTx << "," << nInputUTXO << std::endl;
+}
+
 void CPbft::WarmUpMemoryCache() {
     CCoinsViewCache view_warmup(pcoinsTip.get());
     int lastExecutedSeqWarmUp = readBlocksFromFile();

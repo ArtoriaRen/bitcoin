@@ -148,6 +148,7 @@ public:
     void saveBlocks2File() const;
     int readBlocksFromFile();
     void WarmUpMemoryCache();
+    void CountInputUTXO();
 private:
     // private ECDSA key used to sign messages
     CKey privateKey;

@@ -1830,6 +1830,7 @@ bool AppInitMain()
     //randomPlaceTxInBlock();
     if (nWarmUpBlocks > 0) {
         g_pbft->WarmUpMemoryCache();
+        //g_pbft->CountInputUTXO();
     }
     return true;
 }
